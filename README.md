@@ -1,4 +1,4 @@
-# Handy App
+# Handy (it's a handy app)
 
 A user-friendly desktop application that makes the [Handy voice assistant](https://github.com/cjpais/handy) more accessible and easier to distribute. This app provides a native interface for voice-controlled AI interactions, making it simple for users to get started without dealing with Python setup.
 
