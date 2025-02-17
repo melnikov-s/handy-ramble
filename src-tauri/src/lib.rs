@@ -20,12 +20,7 @@ fn try_send_event(event: &EventType) {
 
 fn send(event: EventType) {
     try_send_event(&event);
-    thread::sleep(time::Duration::from_millis(20));
-}
-
-fn send_multiple(events: &[EventType]) {
-    events.iter().for_each(try_send_event);
-    thread::sleep(time::Duration::from_millis(20));
+    thread::sleep(time::Duration::from_millis(30));
 }
 
 fn send_paste() {
@@ -39,14 +34,9 @@ fn send_paste() {
     send(EventType::KeyPress(modifier_key));
     send(EventType::KeyPress(Key::KeyV));
 
-    // Release both keys simultaneously
-    send_multiple(&[
-        EventType::KeyRelease(Key::KeyV),
-        EventType::KeyRelease(modifier_key),
-    ]);
-
-    // Additional delay after the complete combination
-    thread::sleep(time::Duration::from_millis(20));
+    // Release both keys
+    send(EventType::KeyRelease(Key::KeyV));
+    send(EventType::KeyRelease(modifier_key));
 }
 
 fn send_copy() {
@@ -60,11 +50,9 @@ fn send_copy() {
     send(EventType::KeyPress(modifier_key));
     send(EventType::KeyPress(Key::KeyC));
 
-    // Release both keys simultaneously
-    send_multiple(&[
-        EventType::KeyRelease(Key::KeyC),
-        EventType::KeyRelease(modifier_key),
-    ]);
+    // Release both keys
+    send(EventType::KeyRelease(Key::KeyC));
+    send(EventType::KeyRelease(modifier_key));
 }
 
 fn paste(text: String, app_handle: tauri::AppHandle) {

@@ -63,7 +63,6 @@ impl TranscriptionManager {
                 .full_get_segment_text(i)
                 .expect("failed to get segment");
             result.push_str(&segment);
-            result.push(' ');
         }
 
         let et = std::time::Instant::now();
