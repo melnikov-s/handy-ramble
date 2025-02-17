@@ -30,6 +30,7 @@ whisper-rs = { version = "0.13.2", features = ["whisper-cpp-log"] }
 anyhow = "1.0.95"
 rubato = "0.16.1"
 samplerate = "0.2.4"
+rig-core = "0.8.0"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 whisper-rs = { version = "0.13.2", features = ["metal"] }
