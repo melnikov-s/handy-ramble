@@ -1,5 +1,6 @@
 mod managers;
 
+use log::{info, Level};
 use managers::keybinding::KeyBindingManager;
 use managers::transcription::TranscriptionManager;
 use managers::{audio::AudioRecordingManager, transcription};
@@ -10,6 +11,8 @@ use tauri_plugin_autostart::MacosLauncher;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    env_logger::init();
+
     let recording_manager =
         Arc::new(AudioRecordingManager::new().expect("Failed to initialize recording manager"));
     let transcription_manager =
@@ -39,11 +42,12 @@ pub fn run() {
             "ctrl-meta".to_string(),
             vec![Key::ControlRight, Key::MetaRight],
             |ctx| {
-                println!("Ctrl+Meta pressed!");
+                info!("Ctrl+Meta pressed!");
                 ctx.recording_manager.try_start_recording("ctrl-meta");
                 None
             },
             |ctx| {
+                info!("release being called from ctrl-meta");
                 let ctx = ctx.clone();
                 Some(tauri::async_runtime::spawn(async move {
                     if let Some(samples) = ctx.recording_manager.stop_recording("ctrl-meta") {
@@ -61,11 +65,12 @@ pub fn run() {
             "shift-alt".to_string(),
             vec![Key::ShiftLeft, Key::Alt],
             |ctx| {
-                println!("Shift+Alt pressed!");
+                info!("Shift+Alt pressed!");
                 ctx.recording_manager.try_start_recording("shift-alt");
                 None
             },
             |ctx| {
+                info!("release being called from shift-alt");
                 let ctx = ctx.clone();
                 Some(tauri::async_runtime::spawn(async move {
                     if let Some(samples) = ctx.recording_manager.stop_recording("shift-alt") {
@@ -85,11 +90,12 @@ pub fn run() {
             "ctrl-alt-meta".to_string(),
             vec![Key::ControlLeft, Key::Alt, Key::MetaLeft],
             |ctx| {
-                println!("Ctrl+Alt+Meta pressed!");
+                info!("Ctrl+Alt+Meta pressed!");
                 ctx.recording_manager.try_start_recording("ctrl-alt-meta");
                 None
             },
             |ctx| {
+                info!("release being called from ctrl-alt-meta");
                 let ctx = ctx.clone();
                 Some(tauri::async_runtime::spawn(async move {
                     if let Some(samples) = ctx.recording_manager.stop_recording("ctrl-alt-meta") {

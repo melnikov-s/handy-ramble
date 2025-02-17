@@ -44,19 +44,38 @@ impl KeyBinding {
 
     fn handle_event(&self, key: rdev::Key, is_press: bool, context: &BindingContext) -> bool {
         let mut pressed = self.currently_pressed.lock().unwrap();
+
         if is_press {
+            if !self.keys.contains(&key) {
+                return false; // Ignore keys that aren't part of this binding
+            }
+
             if pressed.contains(&key) {
                 return false;
             }
+
             pressed.insert(key);
             if pressed.len() == self.keys.len() && pressed.is_subset(&self.keys) {
                 let _ = (self.on_press)(context);
                 return true;
             }
         } else {
-            if pressed.remove(&key) && pressed.len() == self.keys.len() - 1 {
-                let _ = (self.on_release)(context);
-                return true;
+            // Release event
+            if !self.keys.contains(&key) {
+                return false;
+            }
+
+            if pressed.remove(&key) {
+                if pressed.len() == self.keys.len() - 1 {
+                    let _ = (self.on_release)(context);
+
+                    // Clear the currently_pressed set if all keys are released
+                    if pressed.is_empty() {
+                        pressed.clear();
+                    }
+
+                    return true;
+                }
             }
         }
         false
@@ -96,8 +115,12 @@ impl KeyBindingManager {
     pub fn handle_event(&self, event: &rdev::Event) {
         if let EventType::KeyPress(key) | EventType::KeyRelease(key) = event.event_type {
             let is_press = matches!(event.event_type, EventType::KeyPress(_));
+
+            // Only process the first binding that successfully handles the event
             for binding in &self.bindings {
-                binding.handle_event(key, is_press, &self.context);
+                if binding.handle_event(key, is_press, &self.context) {
+                    break; // Exit after first successful handling
+                }
             }
         }
     }

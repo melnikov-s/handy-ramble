@@ -133,6 +133,7 @@ impl AudioRecordingManager {
 
     pub fn stop_recording(&self, binding_id: &str) -> Option<Vec<f32>> {
         let mut state = self.state.lock().unwrap();
+        println!("Stop recording called from binding {}", binding_id);
         match *state {
             RecordingState::Recording {
                 binding_id: ref active_id,
@@ -144,7 +145,7 @@ impl AudioRecordingManager {
                 Some(buffer.drain(..).collect())
             }
             _ => {
-                println!("Cannot stop recording: not recording or wrong binding");
+                // println!("Cannot stop recording: not recording or wrong binding");
                 None
             }
         }
