@@ -5,7 +5,6 @@ use std::vec::Vec;
 
 #[derive(Clone, Debug)]
 pub enum RecordingState {
-    Initializing,
     Idle,
     Recording { binding_id: String },
 }
@@ -13,9 +12,6 @@ pub enum RecordingState {
 pub struct AudioRecordingManager {
     state: Arc<Mutex<RecordingState>>,
     buffer: Arc<Mutex<Vec<f32>>>,
-    channels: u16,
-    sample_rate: u32,
-    resampler: Arc<Mutex<FftFixedIn<f32>>>,
 }
 
 impl AudioRecordingManager {
@@ -27,17 +23,11 @@ impl AudioRecordingManager {
 
         let config = device.default_input_config()?;
 
-        let channels = config.channels();
+        // let channels = config.channels();
         let sample_rate = config.sample_rate().0;
 
         // Configure the resampler with more flexible parameters
-        let resampler = FftFixedIn::new(
-            sample_rate as usize,
-            16000,
-            1024,
-            2,
-            1, // Match input channels
-        )?;
+        let resampler = FftFixedIn::new(sample_rate as usize, 16000, 1024, 2, 1)?;
 
         let state = Arc::new(Mutex::new(RecordingState::Idle));
         let buffer = Arc::new(Mutex::new(Vec::new()));
@@ -94,13 +84,7 @@ impl AudioRecordingManager {
             std::thread::park();
         });
 
-        Ok(Self {
-            state,
-            buffer,
-            channels,
-            sample_rate,
-            resampler,
-        })
+        Ok(Self { state, buffer })
     }
 
     pub fn try_start_recording(&self, binding_id: &str) -> bool {
@@ -122,10 +106,6 @@ impl AudioRecordingManager {
                     "Cannot start recording: already recording for binding {}",
                     active_id
                 );
-                false
-            }
-            RecordingState::Initializing => {
-                println!("Cannot start recording: initializing");
                 false
             }
         }
@@ -168,9 +148,5 @@ impl AudioRecordingManager {
                 None
             }
         }
-    }
-
-    pub fn get_current_recording_state(&self) -> RecordingState {
-        self.state.lock().unwrap().clone()
     }
 }

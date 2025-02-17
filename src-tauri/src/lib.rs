@@ -1,15 +1,13 @@
 mod managers;
 
-use log::{info, Level};
+use log::info;
+use managers::audio::AudioRecordingManager;
 use managers::keybinding::KeyBindingManager;
 use managers::transcription::TranscriptionManager;
-use managers::{audio::AudioRecordingManager, transcription};
 use rdev::{simulate, EventType, Key, SimulateError};
-use rig::streaming::StreamingChoice;
 use rig::{completion::Prompt, providers::anthropic};
 use std::sync::{Arc, Mutex};
 use std::{thread, time};
-use tauri::RunEvent;
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
