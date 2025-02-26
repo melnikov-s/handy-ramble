@@ -2,6 +2,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rubato::{FftFixedIn, Resampler};
 use std::sync::{Arc, Mutex};
 use std::vec::Vec;
+use vad_rs::{Vad, VadStatus};
 
 #[derive(Clone, Debug)]
 pub enum RecordingState {
@@ -22,12 +23,15 @@ impl AudioRecordingManager {
             .ok_or_else(|| anyhow::Error::msg("No input device available"))?;
 
         let config = device.default_input_config()?;
-
-        // let channels = config.channels();
         let sample_rate = config.sample_rate().0;
 
-        // Configure the resampler with more flexible parameters
+        // Configure the resampler - keeping 1024 as input size for FFT efficiency
         let resampler = FftFixedIn::new(sample_rate as usize, 16000, 1024, 2, 1)?;
+
+        let vad = Arc::new(Mutex::new(
+            Vad::new("resources/silero_vad_v4.onnx", 16000).unwrap(),
+        ));
+        let vad_clone = Arc::clone(&vad);
 
         let state = Arc::new(Mutex::new(RecordingState::Idle));
         let buffer = Arc::new(Mutex::new(Vec::new()));
@@ -41,6 +45,10 @@ impl AudioRecordingManager {
         let temp_buffer = Arc::new(Mutex::new(Vec::new()));
         let temp_buffer_clone = Arc::clone(&temp_buffer);
 
+        // Create a buffer for resampled chunks waiting for VAD processing
+        let vad_buffer = Arc::new(Mutex::new(Vec::new()));
+        let vad_buffer_clone = Arc::clone(&vad_buffer);
+
         std::thread::spawn(move || {
             let stream = match config.sample_format() {
                 cpal::SampleFormat::F32 => device.build_input_stream(
@@ -52,24 +60,44 @@ impl AudioRecordingManager {
                             temp_buffer.extend_from_slice(data);
 
                             // Process when we have enough samples
-                            if temp_buffer.len() >= 1024 {
-                                // Convert input data to the format expected by Rubato
-                                let mut chunks = Vec::new();
-                                for chunk in temp_buffer.chunks(1024) {
-                                    chunks.push(chunk.to_vec());
-                                }
-                                let input_frames = vec![chunks.remove(0)]; // Take the first complete chunk
+                            while temp_buffer.len() >= 1024 {
+                                // Take the first 1024 samples for processing
+                                let chunk: Vec<f32> = temp_buffer.drain(..1024).collect();
 
-                                // Process the audio chunk
+                                // Convert input data to the format expected by Rubato
+                                let input_frames = vec![chunk];
+
+                                // Process the audio chunk through the resampler
                                 let mut resampler = resampler_clone.lock().unwrap();
                                 if let Ok(resampled) = resampler.process(&input_frames, None) {
-                                    // Store the resampled audio
-                                    let mut buffer = buffer_clone.lock().unwrap();
-                                    buffer.extend_from_slice(&resampled[0]);
-                                }
+                                    // Add resampled data to VAD buffer
+                                    let mut vad_buffer = vad_buffer_clone.lock().unwrap();
+                                    vad_buffer.extend_from_slice(&resampled[0]);
 
-                                // Keep remaining samples
-                                *temp_buffer = temp_buffer.split_off(1024);
+                                    // Process 30ms chunks (480 samples) for VAD
+                                    while vad_buffer.len() >= 480 {
+                                        let chunk = vad_buffer.drain(..480).collect::<Vec<f32>>();
+
+                                        // Use VAD to detect speech
+                                        if let Ok(mut vad) = vad_clone.lock() {
+                                            // println!("VAD lock acquired");
+                                            match vad.compute(&chunk) {
+                                                Ok(mut result) => match result.status() {
+                                                    VadStatus::Speech => {
+                                                        let mut buffer =
+                                                            buffer_clone.lock().unwrap();
+                                                        buffer.extend_from_slice(&chunk);
+                                                    }
+                                                    VadStatus::Silence => {}
+                                                    _ => {}
+                                                },
+                                                Err(error) => {
+                                                    eprintln!("Error computing VAD: {:?}", error)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                     },
