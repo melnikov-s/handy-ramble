@@ -11,14 +11,12 @@ pub struct TranscriptionManager {
 }
 
 impl TranscriptionManager {
-    pub fn new() -> Result<Self> {
+    pub fn new(whisper_path: &str) -> Result<Self> {
         install_whisper_log_trampoline();
         // Load the model
-        let context = WhisperContext::new_with_params(
-            "resources/ggml-small.bin",
-            WhisperContextParameters::default(),
-        )
-        .map_err(|e| anyhow::anyhow!("Failed to load whisper model: {}", e))?;
+        let context =
+            WhisperContext::new_with_params(whisper_path, WhisperContextParameters::default())
+                .map_err(|e| anyhow::anyhow!("Failed to load whisper model: {}", e))?;
 
         // Create state
         let state = context.create_state().expect("failed to create state");

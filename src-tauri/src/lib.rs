@@ -8,6 +8,7 @@ use rdev::{simulate, EventType, Key, SimulateError};
 use rig::{completion::Prompt, providers::anthropic};
 use std::sync::{Arc, Mutex};
 use std::{thread, time};
+use tauri::Manager;
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
@@ -19,7 +20,7 @@ fn try_send_event(event: &EventType) {
 
 fn send(event: EventType) {
     try_send_event(&event);
-    thread::sleep(time::Duration::from_millis(40));
+    thread::sleep(time::Duration::from_millis(60));
 }
 
 fn send_paste() {
@@ -137,105 +138,100 @@ fn register_bindings(manager: &mut KeyBindingManager) {
     );
 
     // Register LLM Call after Transcription
-    manager.register(
-        "shift-alt".to_string(),
-        vec![Key::ShiftLeft, Key::Alt],
-        |ctx| {
-            info!("Shift+Alt pressed!");
-            ctx.recording_manager.try_start_recording("shift-alt");
-            None
-        },
-        |ctx| {
-            info!("release being called from shift-alt");
-            let ctx = ctx.clone();
-            Some(tauri::async_runtime::spawn(async move {
-                if let Some(samples) = ctx.recording_manager.stop_recording("shift-alt") {
-                    if let Ok(transcription) = ctx.transcription_manager.transcribe(samples) {
-                        println!("Transcription: {}", transcription);
+    // manager.register(
+    //     "shift-alt".to_string(),
+    //     vec![Key::ShiftLeft, Key::Alt],
+    //     |ctx| {
+    //         info!("Shift+Alt pressed!");
+    //         ctx.recording_manager.try_start_recording("shift-alt");
+    //         None
+    //     },
+    //     |ctx| {
+    //         info!("release being called from shift-alt");
+    //         let ctx = ctx.clone();
+    //         Some(tauri::async_runtime::spawn(async move {
+    //             if let Some(samples) = ctx.recording_manager.stop_recording("shift-alt") {
+    //                 if let Ok(transcription) = ctx.transcription_manager.transcribe(samples) {
+    //                     println!("Transcription: {}", transcription);
 
-                        let instruct = ctx
-                            .anthropic
-                            .agent(anthropic::CLAUDE_3_5_SONNET)
-                            .preamble(INSTRUCT_SYS)
-                            .temperature(0.5)
-                            .build();
+    //                     let instruct = ctx
+    //                         .anthropic
+    //                         .agent(anthropic::CLAUDE_3_5_SONNET)
+    //                         .preamble(INSTRUCT_SYS)
+    //                         .temperature(0.5)
+    //                         .build();
 
-                        let highlighted_text = get_highlighted_text(ctx.app_handle.clone());
-                        println!("Highlighted Text: {}", highlighted_text);
-                        let prompt = format!("{}\n\ncontext:{}\n", transcription, highlighted_text);
+    //                     let highlighted_text = get_highlighted_text(ctx.app_handle.clone());
+    //                     println!("Highlighted Text: {}", highlighted_text);
+    //                     let prompt = format!("{}\n\ncontext:{}\n", transcription, highlighted_text);
 
-                        match instruct.prompt(prompt).await {
-                            Ok(response) => {
-                                println!("Sonnet response: {}", response);
-                                paste(response, ctx.app_handle.clone());
-                            }
-                            Err(err) => println!("Sonnet error: {}", err),
-                        }
-                    }
-                }
-            }))
-        },
-    );
+    //                     match instruct.prompt(prompt).await {
+    //                         Ok(response) => {
+    //                             println!("Sonnet response: {}", response);
+    //                             paste(response, ctx.app_handle.clone());
+    //                         }
+    //                         Err(err) => println!("Sonnet error: {}", err),
+    //                     }
+    //                 }
+    //             }
+    //         }))
+    //     },
+    // );
 
-    manager.register(
-        "ctrl-alt-meta".to_string(),
-        vec![Key::ControlLeft, Key::Alt, Key::MetaLeft],
-        |ctx| {
-            info!("Ctrl+Alt+Meta pressed!");
-            ctx.recording_manager.try_start_recording("ctrl-alt-meta");
-            None
-        },
-        |ctx| {
-            info!("release being called from ctrl-alt-meta");
-            let ctx = ctx.clone();
-            Some(tauri::async_runtime::spawn(async move {
-                if let Some(samples) = ctx.recording_manager.stop_recording("ctrl-alt-meta") {
-                    let samples: Vec<f32> = samples; // explicit type annotation
-                    match ctx.transcription_manager.transcribe(samples) {
-                        Ok(transcription) => {
-                            println!("Transcription: {}", transcription);
+    // manager.register(
+    //     "ctrl-alt-meta".to_string(),
+    //     vec![Key::ControlLeft, Key::Alt, Key::MetaLeft],
+    //     |ctx| {
+    //         info!("Ctrl+Alt+Meta pressed!");
+    //         ctx.recording_manager.try_start_recording("ctrl-alt-meta");
+    //         None
+    //     },
+    //     |ctx| {
+    //         info!("release being called from ctrl-alt-meta");
+    //         let ctx = ctx.clone();
+    //         Some(tauri::async_runtime::spawn(async move {
+    //             if let Some(samples) = ctx.recording_manager.stop_recording("ctrl-alt-meta") {
+    //                 let samples: Vec<f32> = samples; // explicit type annotation
+    //                 match ctx.transcription_manager.transcribe(samples) {
+    //                     Ok(transcription) => {
+    //                         println!("Transcription: {}", transcription);
 
-                            let code = ctx
-                                .anthropic
-                                .agent(anthropic::CLAUDE_3_5_SONNET)
-                                .preamble(CODE_SYS)
-                                .temperature(0.5)
-                                .build();
+    //                         let code = ctx
+    //                             .anthropic
+    //                             .agent(anthropic::CLAUDE_3_5_SONNET)
+    //                             .preamble(CODE_SYS)
+    //                             .temperature(0.5)
+    //                             .build();
 
-                            let highlighted_text = get_highlighted_text(ctx.app_handle.clone());
-                            let prompt =
-                                format!("{}\n\ncontext:{}\n", transcription, highlighted_text);
+    //                         let highlighted_text = get_highlighted_text(ctx.app_handle.clone());
+    //                         let prompt =
+    //                             format!("{}\n\ncontext:{}\n", transcription, highlighted_text);
 
-                            match code.prompt(prompt).await {
-                                Ok(response) => {
-                                    println!("Sonnet response: {}", response);
-                                    paste(response, ctx.app_handle.clone());
-                                }
-                                Err(err) => println!("Sonnet error: {}", err),
-                            }
-                        }
-                        Err(err) => println!("Transcription error: {}", err),
-                    }
-                } else {
-                    println!("No samples recorded");
-                }
-            }))
-        },
-    );
+    //                         match code.prompt(prompt).await {
+    //                             Ok(response) => {
+    //                                 println!("Sonnet response: {}", response);
+    //                                 paste(response, ctx.app_handle.clone());
+    //                             }
+    //                             Err(err) => println!("Sonnet error: {}", err),
+    //                         }
+    //                     }
+    //                     Err(err) => println!("Transcription error: {}", err),
+    //                 }
+    //             } else {
+    //                 println!("No samples recorded");
+    //             }
+    //         }))
+    //     },
+    // );
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     env_logger::init();
 
-    let recording_manager =
-        Arc::new(AudioRecordingManager::new().expect("Failed to initialize recording manager"));
-    let transcription_manager =
-        Arc::new(TranscriptionManager::new().expect("Failed to initialize transcription manager"));
-    // let transcription_manager = Arc::new(TranscriptionManager::new());
-    let claude_client = Arc::new(anthropic::Client::from_env());
-
     tauri::Builder::default()
+        .plugin(tauri_plugin_stronghold::Builder::new(|pass| todo!()).build())
+        .plugin(tauri_plugin_upload::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_autostart::init(
@@ -247,10 +243,33 @@ pub fn run() {
         .setup(move |app| {
             let app_handle = app.handle().clone();
 
+            let vad_path = app.path().resolve(
+                "resources/silero_vad_v4.onnx",
+                tauri::path::BaseDirectory::Resource,
+            )?;
+
+            let whisper_path = app.path().resolve(
+                "resources/ggml-small.bin",
+                tauri::path::BaseDirectory::Resource,
+            )?;
+
+            let recording_manager = Arc::new(
+                AudioRecordingManager::new(&vad_path)
+                    .expect("Failed to initialize recording manager"),
+            );
+            let transcription_manager = Arc::new(
+                TranscriptionManager::new(
+                    whisper_path
+                        .to_str()
+                        .expect("Path contains invalid UTF-8 Chars"),
+                )
+                .expect("Failed to initialize transcription manager"),
+            );
+
             let manager = Arc::new(Mutex::new(KeyBindingManager::new(
                 recording_manager.clone(),
                 transcription_manager.clone(),
-                claude_client.clone(),
+                // claude_client.clone(),
                 app_handle.clone(),
             )));
 

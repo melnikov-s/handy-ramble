@@ -1,4 +1,4 @@
-import React from 'react';
+import React from "react";
 
 interface Shortcut {
   id: string;
@@ -11,23 +11,23 @@ export const KeyboardShortcuts: React.FC = () => {
   // These would normally come from the backend configuration
   const shortcuts: Shortcut[] = [
     {
-      id: 'transcribe',
-      name: 'Transcribe',
-      description: 'Convert speech to text',
-      keys: ['⌃', '⌘'],
+      id: "transcribe",
+      name: "Transcribe",
+      description: "Convert speech to text",
+      keys: ["⌃", "⌘"],
     },
-    {
-      id: 'instruct',
-      name: 'AI Chat',
-      description: 'Start a conversation with AI',
-      keys: ['⇧', '⌥'],
-    },
-    {
-      id: 'code',
-      name: 'Generate Code',
-      description: 'Generate code from voice input',
-      keys: ['⌃', '⌥', '⌘'],
-    },
+    // {
+    //   id: 'instruct',
+    //   name: 'AI Chat',
+    //   description: 'Start a conversation with AI',
+    //   keys: ['⇧', '⌥'],
+    // },
+    // {
+    //   id: 'code',
+    //   name: 'Generate Code',
+    //   description: 'Generate code from voice input',
+    //   keys: ['⌃', '⌥', '⌘'],
+    // },
   ];
 
   return (
@@ -38,7 +38,9 @@ export const KeyboardShortcuts: React.FC = () => {
           className="flex items-center justify-between p-4 rounded-lg border border-gray-200 hover:bg-gray-50"
         >
           <div>
-            <h3 className="text-sm font-medium text-gray-900">{shortcut.name}</h3>
+            <h3 className="text-sm font-medium text-gray-900">
+              {shortcut.name}
+            </h3>
             <p className="text-sm text-gray-500">{shortcut.description}</p>
           </div>
           <div className="flex items-center space-x-1">
@@ -60,7 +62,7 @@ export const KeyboardShortcuts: React.FC = () => {
         <div className="flex">
           <div className="ml-3">
             <p className="text-sm text-yellow-700">
-              Note: Keyboard shortcuts are currently managed by the system. 
+              Note: Keyboard shortcuts are currently managed by the system.
               Custom configuration will be available in a future update.
             </p>
           </div>

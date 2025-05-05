@@ -1,5 +1,6 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rubato::{FftFixedIn, Resampler};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::vec::Vec;
 use vad_rs::{Vad, VadStatus};
@@ -16,7 +17,7 @@ pub struct AudioRecordingManager {
 }
 
 impl AudioRecordingManager {
-    pub fn new() -> Result<Self, anyhow::Error> {
+    pub fn new(vad_path: &PathBuf) -> Result<Self, anyhow::Error> {
         let host = cpal::default_host();
         let device = host
             .default_input_device()
@@ -28,9 +29,7 @@ impl AudioRecordingManager {
         // Configure the resampler - keeping 1024 as input size for FFT efficiency
         let resampler = FftFixedIn::new(sample_rate as usize, 16000, 1024, 2, 1)?;
 
-        let vad = Arc::new(Mutex::new(
-            Vad::new("resources/silero_vad_v4.onnx", 16000).unwrap(),
-        ));
+        let vad = Arc::new(Mutex::new(Vad::new(vad_path, 16000).unwrap()));
         let vad_clone = Arc::clone(&vad);
 
         let state = Arc::new(Mutex::new(RecordingState::Idle));
@@ -82,15 +81,13 @@ impl AudioRecordingManager {
                                         if let Ok(mut vad) = vad_clone.lock() {
                                             // println!("VAD lock acquired");
                                             match vad.compute(&chunk) {
-                                                Ok(mut result) => match result.status() {
-                                                    VadStatus::Speech => {
+                                                Ok(mut result) => {
+                                                    if result.prob > 0.15 {
                                                         let mut buffer =
                                                             buffer_clone.lock().unwrap();
                                                         buffer.extend_from_slice(&chunk);
                                                     }
-                                                    VadStatus::Silence => {}
-                                                    _ => {}
-                                                },
+                                                }
                                                 Err(error) => {
                                                     eprintln!("Error computing VAD: {:?}", error)
                                                 }
