@@ -150,10 +150,12 @@ pub fn run() {
 
             Ok(())
         })
-        .on_window_event(|app, event| match event {
+        .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { api, .. } => {
-                app.hide().unwrap();
                 api.prevent_close();
+
+                // TODO may be different on windows, this works for macos
+                tauri::AppHandle::hide(window.app_handle()).unwrap();
             }
             _ => {}
         })
