@@ -2,7 +2,6 @@ mod managers;
 
 use log::info;
 use managers::audio::AudioRecordingManager;
-use managers::keybinding::KeyBindingManager;
 use managers::transcription::TranscriptionManager;
 use rdev::{simulate, EventType, Key, SimulateError};
 use std::sync::{Arc, Mutex};
@@ -51,33 +50,6 @@ fn paste(text: String, app_handle: tauri::AppHandle) {
     clipboard.write_text(&clipboard_content).unwrap();
 }
 
-fn register_bindings(manager: &mut KeyBindingManager) {
-    manager.register(
-        "ctrl-meta".to_string(),
-        vec![Key::ControlRight, Key::MetaRight],
-        |ctx| {
-            info!("Ctrl+Meta pressed!");
-            ctx.recording_manager.try_start_recording("ctrl-meta");
-            None
-        },
-        |ctx| {
-            info!("release being called from ctrl-meta");
-            let ctx = ctx.clone();
-            Some(tauri::async_runtime::spawn(async move {
-                if let Some(samples) = ctx.recording_manager.stop_recording("ctrl-meta") {
-                    match ctx.transcription_manager.transcribe(samples) {
-                        Ok(transcription) => {
-                            println!("Transcription: {}", transcription);
-                            paste(transcription, ctx.app_handle.clone());
-                        }
-                        Err(err) => println!("Transcription error: {}", err),
-                    }
-                }
-            }))
-        },
-    );
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     env_logger::init();
@@ -94,8 +66,6 @@ pub fn run() {
         .plugin(tauri_plugin_macos_permissions::init())
         .plugin(tauri_plugin_opener::init())
         .setup(move |app| {
-            let app_handle = app.handle().clone();
-
             let vad_path = app.path().resolve(
                 "resources/silero_vad_v4.onnx",
                 tauri::path::BaseDirectory::Resource,
@@ -119,54 +89,54 @@ pub fn run() {
                 .expect("Failed to initialize transcription manager"),
             );
 
-            let manager = Arc::new(Mutex::new(KeyBindingManager::new(
-                recording_manager.clone(),
-                transcription_manager.clone(),
-                // claude_client.clone(),
-                app_handle.clone(),
-            )));
-
-            {
-                let mut manager = manager.lock().unwrap();
-                register_bindings(&mut manager);
-            }
-
-            let manager_clone = manager.clone();
-            tauri::async_runtime::spawn(async move {
-                rdev::listen(move |event| {
-                    if let Ok(manager) = manager_clone.lock() {
-                        manager.handle_event(&event);
-                    }
-                })
-                .unwrap();
-            });
-
             #[cfg(desktop)]
             {
                 use tauri_plugin_global_shortcut::{Code, Modifiers, ShortcutState};
 
+                // Clone resources needed for the global shortcut handler
+                let rm_for_shortcut_handler = recording_manager.clone();
+                let tm_for_shortcut_handler = transcription_manager.clone();
+
                 app.handle().plugin(
                     tauri_plugin_global_shortcut::Builder::new()
-                        .with_shortcuts(["ctrl+d", "alt+space"])?
-                        .with_handler(|app, shortcut, event| {
-                            if event.state == ShortcutState::Pressed {
-                                if shortcut.matches(Modifiers::CONTROL, Code::KeyD) {
-                                    let _ = app.emit("shortcut-event", "Ctrl+D triggered");
-                                    println!("Ctrl+D triggered");
-                                }
-                                if shortcut.matches(Modifiers::ALT, Code::Space) {
-                                    let _ = app.emit("shortcut-event", "Alt+Space triggered");
-                                    println!("Alt+Space triggered");
-                                }
-                            }
-                            if event.state == ShortcutState::Released {
-                                if shortcut.matches(Modifiers::CONTROL, Code::KeyD) {
-                                    let _ = app.emit("shortcut-event", "Ctrl+D released");
-                                    println!("Ctrl+D released");
-                                }
-                                if shortcut.matches(Modifiers::ALT, Code::Space) {
-                                    let _ = app.emit("shortcut-event", "Alt+Space released");
-                                    println!("Alt+Space released");
+                        .with_shortcuts(["alt+space"])? // Register "alt+space"
+                        .with_handler(move |app_handle_from_plugin, shortcut, event| {
+                            // Clone Arcs for potential async tasks to move ownership
+                            let recording_manager = rm_for_shortcut_handler.clone();
+                            let transcription_manager = tm_for_shortcut_handler.clone();
+                            let app_handle_for_async_tasks = app_handle_from_plugin.clone();
+
+                            if shortcut.matches(Modifiers::ALT, Code::Space) {
+                                if event.state == ShortcutState::Pressed {
+                                    info!("Alt+Space pressed! (Global Shortcut)");
+                                    // Use the "alt-space" identifier for consistency
+                                    recording_manager.try_start_recording("alt-space");
+                                } else if event.state == ShortcutState::Released {
+                                    info!("Alt+Space released! (Global Shortcut)");
+                                    tauri::async_runtime::spawn(async move {
+                                        // recording_manager, transcription_manager, and app_handle_for_async_tasks are moved into this async block
+                                        if let Some(samples) =
+                                            recording_manager.stop_recording("alt-space")
+                                        {
+                                            match transcription_manager.transcribe(samples) {
+                                                // Not .await, as transcribe is synchronous
+                                                Ok(transcription) => {
+                                                    println!(
+                                                        "Global Shortcut Transcription: {}",
+                                                        transcription
+                                                    );
+                                                    paste(
+                                                        transcription,
+                                                        app_handle_for_async_tasks,
+                                                    );
+                                                }
+                                                Err(err) => println!(
+                                                    "Global Shortcut Transcription error: {}",
+                                                    err
+                                                ),
+                                            }
+                                        }
+                                    });
                                 }
                             }
                         })

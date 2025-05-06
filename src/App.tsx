@@ -20,6 +20,10 @@ function App() {
       }
       setHasAccessibility(hasPermissions);
     });
+
+    register("ctrl+d", () => {
+      console.log("Ctrl+D pressed");
+    });
   }, []);
 
   return (
