@@ -102,7 +102,7 @@ pub fn run() {
 
                 app.handle().plugin(
                     tauri_plugin_global_shortcut::Builder::new()
-                        .with_shortcuts(["alt+space"])? // Register "alt+space"
+                        .with_shortcuts(["alt+space", "ctrl+d"])? // Register "alt+space"
                         .with_handler(move |app_handle_from_plugin, shortcut, event| {
                             // Retrieve managers from state
                             let recording_manager_state =

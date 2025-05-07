@@ -14,20 +14,8 @@ export const KeyboardShortcuts: React.FC = () => {
       id: "transcribe",
       name: "Transcribe",
       description: "Convert speech to text",
-      keys: ["⌃", "⌘"],
+      keys: ["⌃", "Space"],
     },
-    // {
-    //   id: 'instruct',
-    //   name: 'AI Chat',
-    //   description: 'Start a conversation with AI',
-    //   keys: ['⇧', '⌥'],
-    // },
-    // {
-    //   id: 'code',
-    //   name: 'Generate Code',
-    //   description: 'Generate code from voice input',
-    //   keys: ['⌃', '⌥', '⌘'],
-    // },
   ];
 
   return (
@@ -57,17 +45,6 @@ export const KeyboardShortcuts: React.FC = () => {
           </div>
         </div>
       ))}
-
-      <div className="mt-4 rounded-md bg-yellow-50 p-4">
-        <div className="flex">
-          <div className="ml-3">
-            <p className="text-sm text-yellow-700">
-              Note: Keyboard shortcuts are currently managed by the system.
-              Custom configuration will be available in a future update.
-            </p>
-          </div>
-        </div>
-      </div>
     </div>
   );
 };
