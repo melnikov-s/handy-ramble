@@ -1,25 +1,18 @@
 mod managers;
 mod shortcut;
 
-use log::info;
 use managers::audio::AudioRecordingManager;
 use managers::transcription::TranscriptionManager;
-use rdev::{simulate, EventType, Key, SimulateError};
 use std::sync::Arc;
-use std::{thread, time};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Manager};
+use tauri::Manager;
 use tauri_plugin_autostart::MacosLauncher;
-use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, ShortcutEvent, ShortcutState};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     env_logger::init();
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_stronghold::Builder::new(|_pass| todo!()).build())
-        .plugin(tauri_plugin_upload::init())
-        // .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
@@ -27,6 +20,7 @@ pub fn run() {
         ))
         .plugin(tauri_plugin_macos_permissions::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_store::Builder::default().build())
         .setup(move |app| {
             let _tray = TrayIconBuilder::new().build(app)?;
 
@@ -57,7 +51,7 @@ pub fn run() {
             app.manage(recording_manager.clone());
             app.manage(transcription_manager.clone());
 
-            shortcut::enable_shortcut(app);
+            shortcut::init_shortcuts(app);
 
             Ok(())
         })

@@ -3,6 +3,8 @@ use std::thread;
 use std::time;
 
 use rdev::{simulate, EventType, Key, SimulateError};
+use serde::Deserialize;
+use serde::Serialize;
 use tauri::App;
 use tauri::AppHandle;
 use tauri::Manager;
@@ -13,6 +15,41 @@ use tauri_plugin_store::{JsonValue, StoreExt};
 
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::transcription::TranscriptionManager;
+
+#[derive(Serialize, Deserialize, Debug, Clone)] // Clone is useful
+pub struct ShortcutBinding {
+    id: String,
+    name: String,
+    description: String,
+    default_binding: String,
+    current_binding: String,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+pub struct AppSettings {
+    bindings: Vec<ShortcutBinding>,
+}
+
+fn get_default_settings() -> AppSettings {
+    AppSettings {
+        bindings: vec![
+            ShortcutBinding {
+                id: "transcribe".to_string(),
+                name: "Transcribe".to_string(),
+                description: "Converts your speech into text.".to_string(),
+                default_binding: "alt+space".to_string(),
+                current_binding: "alt+space".to_string(),
+            },
+            ShortcutBinding {
+                id: "test".to_string(),
+                name: "Test".to_string(),
+                description: "This is a test binding.".to_string(),
+                default_binding: "ctrl+d".to_string(),
+                current_binding: "ctrl+d".to_string(),
+            },
+        ],
+    }
+}
 
 fn try_send_event(event: &EventType) {
     if let Err(SimulateError) = simulate(event) {
@@ -82,7 +119,25 @@ fn transcribe_released(app: &AppHandle) {
     });
 }
 
-pub fn enable_shortcut(app: &App) {
+pub fn init_shortcuts(app: &App) {
+    // init store
+    let kb_store = app
+        .store("settings_store.json")
+        .expect("Failed to initialize store");
+
+    if let Some(bindings) = kb_store.get("settings") {
+        // print the bindings that exist
+        println!("Bindings: {:?}", bindings);
+    } else {
+        kb_store.set(
+            "settings",
+            serde_json::to_value(&get_default_settings()).unwrap(),
+        );
+        // create the default bindings
+    }
+
+    // load state from store
+
     _register_shortcut_upon_start(
         app,
         "alt+space"
