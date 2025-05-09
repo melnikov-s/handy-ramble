@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use serde::Serialize;
 use tauri::App;
 use tauri::AppHandle;
 use tauri::Manager;
@@ -45,22 +46,54 @@ pub fn init_shortcuts(app: &App) {
     }
 }
 
+#[derive(Serialize)]
+pub struct BindingResponse {
+    success: bool,
+    binding: Option<ShortcutBinding>,
+    error: Option<String>,
+}
+
 #[tauri::command]
-pub fn change_binding(app: AppHandle, id: String, binding: String) -> ShortcutBinding {
+pub fn change_binding(
+    app: AppHandle,
+    id: String,
+    binding: String,
+) -> Result<BindingResponse, String> {
     let mut settings = settings::get_settings(&app);
 
     // Get the binding to modify
-    let binding_to_modify = settings.bindings.get(&id).unwrap().clone();
+    let binding_to_modify = match settings.bindings.get(&id) {
+        Some(binding) => binding.clone(),
+        None => {
+            return Ok(BindingResponse {
+                success: false,
+                binding: None,
+                error: Some(format!("Binding with id '{}' not found", id)),
+            })
+        }
+    };
 
     // Unregister the existing binding
-    _unregister_shortcut(&app, binding_to_modify.clone());
+    if let Err(e) = _unregister_shortcut(&app, binding_to_modify.clone()) {
+        return Ok(BindingResponse {
+            success: false,
+            binding: None,
+            error: Some(format!("Failed to unregister shortcut: {}", e)),
+        });
+    }
 
     // Create an updated binding
     let mut updated_binding = binding_to_modify;
     updated_binding.current_binding = binding;
 
     // Register the new binding
-    _register_shortcut(&app, updated_binding.clone());
+    if let Err(e) = _register_shortcut(&app, updated_binding.clone()) {
+        return Ok(BindingResponse {
+            success: false,
+            binding: None,
+            error: Some(format!("Failed to register shortcut: {}", e)),
+        });
+    }
 
     // Update the binding in the settings
     settings.bindings.insert(id, updated_binding.clone());
@@ -69,17 +102,26 @@ pub fn change_binding(app: AppHandle, id: String, binding: String) -> ShortcutBi
     settings::write_settings(&app, settings);
 
     // Return the updated binding
-    updated_binding
+    Ok(BindingResponse {
+        success: true,
+        binding: Some(updated_binding),
+        error: None,
+    })
 }
 
 #[tauri::command]
-pub fn reset_binding(app: AppHandle, id: String) -> ShortcutBinding {
+pub fn reset_binding(app: AppHandle, id: String) -> Result<BindingResponse, String> {
     let binding = settings::get_stored_binding(&app, &id);
+
     return change_binding(app, id, binding.default_binding);
 }
 
-fn _register_shortcut(app: &AppHandle, binding: ShortcutBinding) {
-    let shortcut = binding.current_binding.parse::<Shortcut>().unwrap();
+fn _register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<(), String> {
+    // Parse shortcut and return error if it fails
+    let shortcut = match binding.current_binding.parse::<Shortcut>() {
+        Ok(s) => s,
+        Err(e) => return Err(format!("Failed to parse shortcut: {}", e)),
+    };
 
     app.global_shortcut()
         .on_shortcut(shortcut, move |handler_app, scut, event| {
@@ -92,13 +134,20 @@ fn _register_shortcut(app: &AppHandle, binding: ShortcutBinding) {
                 }
             }
         })
-        .expect("couldnt register shortcut");
+        .map_err(|e| format!("Couldn't register shortcut: {}", e))?;
+
+    Ok(())
 }
 
-fn _unregister_shortcut(app: &AppHandle, binding: ShortcutBinding) {
-    let shortcut = binding.current_binding.parse::<Shortcut>().unwrap();
+fn _unregister_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<(), String> {
+    let shortcut = match binding.current_binding.parse::<Shortcut>() {
+        Ok(s) => s,
+        Err(e) => return Err(format!("Failed to parse shortcut: {}", e)),
+    };
 
     app.global_shortcut()
         .unregister(shortcut)
-        .expect("couldnt unregister shortcut");
+        .map_err(|e| format!("Failed to unregister shortcut: {}", e))?;
+
+    Ok(())
 }

@@ -17,6 +17,13 @@ export const SettingsSchema = z.object({
   bindings: ShortcutBindingsMapSchema,
 });
 
+export const BindingResponseSchema = z.object({
+  success: z.boolean(),
+  binding: ShortcutBindingSchema.nullable(),
+  error: z.string().nullable(),
+});
+
+export type BindingResponse = z.infer<typeof BindingResponseSchema>;
 export type ShortcutBinding = z.infer<typeof ShortcutBindingSchema>;
 export type ShortcutBindingsMap = z.infer<typeof ShortcutBindingsMapSchema>;
 export type Settings = z.infer<typeof SettingsSchema>;
