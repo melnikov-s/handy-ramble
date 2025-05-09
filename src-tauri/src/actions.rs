@@ -25,7 +25,7 @@ fn transcribe_pressed_action(app: &AppHandle, _shortcut_str: &str) {
         Image::from_path(
             app.path()
                 .resolve(
-                    "resources/tray_recording_64x64.png",
+                    "resources/tray_recording.png",
                     tauri::path::BaseDirectory::Resource,
                 )
                 .expect("failed to resolve"),

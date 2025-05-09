@@ -27,18 +27,18 @@ function App() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-gray-100 flex flex-col items-center pt-6 w-full">
+    <div className="min-h-screen flex flex-col items-center pt-6 w-full">
       {!hasAccessibility && (
         <div className="bg-yellow-50 p-4 w-full">
           <div className="flex justify-between items-center">
             <div className="ml-3">
-              <p className="text-sm font-medium text-yellow-800">
+              <p className="text-sm font-medium">
                 Accessibility permissions are required for keyboard shortcuts.
               </p>
             </div>
             <button
               onClick={checkPermissions}
-              className="bg-yellow-200 hover:bg-yellow-300 text-yellow-800 font-medium py-1 px-3 rounded text-sm mr-4"
+              className="bg-yellow-200 hover:bg-yellow-300 font-medium py-1 px-3 rounded text-sm mr-4"
             >
               Recheck Permissions
             </button>

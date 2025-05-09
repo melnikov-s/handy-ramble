@@ -108,34 +108,34 @@ export const KeyboardShortcuts: React.FC = () => {
     return recordedKeys.length > 0 ? recordedKeys.join("+") : "Press keys...";
   };
 
+  // TEXT SELECT
+
   return (
     <div className="space-y-4">
       {Object.entries(bindings).map(([id, binding]) => (
         <div
           key={id}
-          className="flex items-center justify-between p-4 rounded-lg border border-gray-200 hover:bg-gray-50"
+          className="flex items-center justify-between p-4 rounded-lg border border-[#808080]/20 "
         >
           <div>
-            <h3 className="text-sm font-medium text-gray-900">
-              {binding.name}
-            </h3>
-            <p className="text-sm text-gray-500">{binding.description}</p>
+            <h3 className="text-sm font-medium ">{binding.name}</h3>
+            <p className="text-sm">{binding.description}</p>
           </div>
           <div className="flex items-center space-x-1">
             {editingShortcutId === id ? (
-              <div className="px-2 py-1 text-sm font-semibold text-blue-600 bg-blue-50 border border-blue-200 rounded min-w-[100px] text-center">
+              <div className="px-2 py-1 text-sm font-semibold  border border-[#FAA2CA] bg-[#FAA2CA]/30 rounded min-w-[100px] text-center">
                 {formatCurrentKeys()}
               </div>
             ) : (
               <div
-                className="px-2 py-1 text-sm font-semibold text-gray-800 bg-gray-100 border border-gray-200 rounded cursor-pointer hover:bg-gray-200"
+                className="px-2 py-1 text-sm font-semibold bg-[#808080]/10 border border-gray-200 hover:bg-[#FAA2CA]/10 rounded cursor-pointer hover:border-[#FAA2CA]"
                 onClick={() => startRecording(id)}
               >
                 {binding.current_binding}
               </div>
             )}
             <button
-              className="px-2 py-1 text-sm font-semibold text-gray-800 bg-gray-100 border border-gray-200 rounded hover:bg-gray-50"
+              className="px-2 py-1 text-sm font-semibold  border  bg-[#808080]/10 hover:bg-[#FAA2CA]/10 border-gray-200 rounded"
               onClick={() => {
                 invoke("reset_binding", { id }).then((b) => {
                   console.log("reset");

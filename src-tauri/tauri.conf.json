@@ -13,8 +13,9 @@
     "windows": [
       {
         "title": "Handy",
-        "width": 400,
-        "height": 600
+        "width": 540,
+        "height": 400,
+        "resizable": false
       }
     ],
     "security": {
