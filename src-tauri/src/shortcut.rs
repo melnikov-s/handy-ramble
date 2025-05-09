@@ -1,6 +1,8 @@
 use std::sync::Arc;
 
 use serde::Serialize;
+use tauri::image::Image;
+use tauri::tray::TrayIcon;
 use tauri::App;
 use tauri::AppHandle;
 use tauri::Manager;
@@ -14,11 +16,37 @@ use crate::settings::ShortcutBinding;
 use crate::utils;
 
 fn transcribe_pressed(app: &AppHandle) {
+    let tray = app.state::<TrayIcon>();
+    tray.set_icon(Some(
+        Image::from_path(
+            app.path()
+                .resolve(
+                    "resources/tray_recording_64x64.png",
+                    tauri::path::BaseDirectory::Resource,
+                )
+                .expect("failed to resolve"),
+        )
+        .expect("failed to set icon"),
+    ));
+
     let rm = app.state::<Arc<AudioRecordingManager>>();
     rm.try_start_recording("transcribe");
 }
 
 fn transcribe_released(app: &AppHandle) {
+    let tray = app.state::<TrayIcon>();
+    tray.set_icon(Some(
+        Image::from_path(
+            app.path()
+                .resolve(
+                    "resources/tray_64x64.png",
+                    tauri::path::BaseDirectory::Resource,
+                )
+                .expect("failed to resolve"),
+        )
+        .expect("failed to set icon"),
+    ));
+
     let ah = app.clone();
     let rm = Arc::clone(&app.state::<Arc<AudioRecordingManager>>());
     let tm = Arc::clone(&app.state::<Arc<TranscriptionManager>>());

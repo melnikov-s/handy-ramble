@@ -7,6 +7,8 @@ use managers::audio::AudioRecordingManager;
 use managers::transcription::TranscriptionManager;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use tauri::image::Image;
+use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::Manager;
 use tauri_plugin_autostart::MacosLauncher;
@@ -40,15 +42,36 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(AppState::new())
         .setup(move |app| {
-            let _tray = TrayIconBuilder::new().build(app)?;
+            let settings_i = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
+            let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&settings_i, &quit_i])?;
+            let tray = TrayIconBuilder::new()
+                .icon(Image::from_path(app.path().resolve(
+                    "resources/tray_64x64.png",
+                    tauri::path::BaseDirectory::Resource,
+                )?)?)
+                .menu(&menu)
+                .show_menu_on_left_click(true)
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "settings" => {
+                        let settings_window = app.get_webview_window("main").unwrap();
+                        settings_window.show().unwrap();
+                    }
+                    "quit" => {
+                        app.exit(0);
+                    }
+                    _ => {}
+                })
+                .build(app)?;
+            app.manage(tray);
 
             let vad_path = app.path().resolve(
-                "resources/silero_vad_v4.onnx",
+                "resources/models/silero_vad_v4.onnx",
                 tauri::path::BaseDirectory::Resource,
             )?;
 
             let whisper_path = app.path().resolve(
-                "resources/ggml-small.bin",
+                "resources/models/ggml-small.bin",
                 tauri::path::BaseDirectory::Resource,
             )?;
 
@@ -75,6 +98,14 @@ pub fn run() {
         })
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { api, .. } => {
+                #[cfg(target_os = "macos")]
+                let res = window
+                    .app_handle()
+                    .set_activation_policy(tauri::ActivationPolicy::Accessory);
+                if let Err(e) = res {
+                    println!("Failed to set activation policy: {}", e);
+                }
+
                 api.prevent_close();
 
                 // TODO may be different on windows, this works for macos

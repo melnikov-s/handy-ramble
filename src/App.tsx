@@ -8,6 +8,24 @@ import {
 import { register } from "@tauri-apps/plugin-global-shortcut";
 import HandyTextLogo from "./components/icons/HandyTextLogo";
 import { invoke } from "@tauri-apps/api/core";
+// import { TrayIcon } from "@tauri-apps/api/tray";
+// import { Menu } from "@tauri-apps/api/menu";
+// import { defaultWindowIcon } from "@tauri-apps/api/app";
+
+// const menu = await Menu.new({
+//   items: [
+//     {
+//       id: "quit",
+//       text: "Quit",
+//     },
+//   ],
+// });
+
+// const options = {
+//   icon: await defaultWindowIcon(),
+//   menu,
+//   menuOnLeftClick: true,
+// };
 
 function App() {
   const [hasAccessibility, setHasAccessibility] = useState(false);
@@ -22,6 +40,10 @@ function App() {
       }
       setHasAccessibility(hasPermissions);
     });
+
+    // TrayIcon.new(options).then((t) => {
+    //   console.log("tray init", t);
+    // });
 
     // invoke("set_binding", {
     //   id: "test",
