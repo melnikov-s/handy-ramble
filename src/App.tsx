@@ -45,7 +45,7 @@ function App() {
           </div>
         </div>
       )}
-      <HandyTextLogo width={250} />
+      <HandyTextLogo width={300} />
       <Settings />
     </div>
   );
