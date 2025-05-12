@@ -8,6 +8,7 @@ import {
 } from "../../lib/types";
 import { invoke } from "@tauri-apps/api/core";
 import keycode from "keycode";
+import ResetIcon from "../icons/ResetIcon";
 
 export const KeyboardShortcuts: React.FC = () => {
   const [bindings, setBindings] = React.useState<ShortcutBindingsMap>({});
@@ -148,7 +149,7 @@ export const KeyboardShortcuts: React.FC = () => {
       {Object.entries(bindings).map(([id, binding]) => (
         <div
           key={id}
-          className="flex items-center justify-between p-4 rounded-lg border border-[#808080]/20 "
+          className="flex items-center justify-between p-4 rounded-lg border border-mid-gray/20 "
         >
           <div>
             <h3 className="text-sm font-medium ">{binding.name}</h3>
@@ -158,20 +159,20 @@ export const KeyboardShortcuts: React.FC = () => {
             {editingShortcutId === id ? (
               <div
                 ref={(ref) => setShortcutRef(id, ref)}
-                className="px-2 py-1 text-sm font-semibold border border-[#FAA2CA] bg-[#FAA2CA]/30 rounded min-w-[100px] text-center"
+                className="px-2 py-1 text-sm font-semibold border border-logo-primary bg-logo-primary/30 rounded min-w-[100px] text-center"
               >
                 {formatCurrentKeys()}
               </div>
             ) : (
               <div
-                className="px-2 py-1 text-sm font-semibold bg-[#808080]/10 border border-gray-200 hover:bg-[#FAA2CA]/10 rounded cursor-pointer hover:border-[#FAA2CA]"
+                className="px-2 py-1 text-sm font-semibold bg-mid-gray/10 border  border-mid-gray/80 hover:bg-logo-primary/10 rounded cursor-pointer hover:border-logo-primary"
                 onClick={() => startRecording(id)}
               >
                 {binding.current_binding}
               </div>
             )}
             <button
-              className="px-2 py-1 text-sm font-semibold border bg-[#808080]/10 hover:bg-[#FAA2CA]/10 border-gray-200 rounded"
+              className="px-2 py-1 hover:bg-logo-primary/30 active:bg-logo-primary/50 active:scale-95 rounded fill-text hover:cursor-pointer hover:border-logo-primary border border-transparent transition-all duration-150"
               onClick={() => {
                 invoke("reset_binding", { id }).then((b) => {
                   console.log("reset");
@@ -188,7 +189,7 @@ export const KeyboardShortcuts: React.FC = () => {
                 });
               }}
             >
-              reset
+              <ResetIcon className="" />
             </button>
           </div>
         </div>

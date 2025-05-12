@@ -1,27 +1,37 @@
 @import "tailwindcss";
 
-/* @font-face {
-  src: url("/src/assets/fonts/ShortStack-Regular.ttf");
-  font-family: 'Short Stack';
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-} */
+@theme {
+  --color-text: #0f0f0f;
+  --color-background: #fbfbfb;
+  --color-logo-primary: #FAA2CA;
+  --color-logo-stroke: #382731;
+  --color-text-stroke: #f6f6f6;
+  --color-mid-gray: #808080;
+}
 
 :root {
-  /* font-family: 'Short Stack', sans-serif; */
+  /* Typography */
   font-size: 16px;
   line-height: 24px;
   font-weight: 400;
 
-  color: #0f0f0f;
-  background-color: #fbfbfb;
+  /* Colors - Light Theme */
+  /* --color-text: #0f0f0f;
+  --color-background: #fbfbfb;
+  --color-logo-primary: #FAA2CA;
+  --color-logo-stroke: #382731;
+  --color-text-stroke: #f6f6f6; */
 
+  /* Typography settings */
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   -webkit-text-size-adjust: 100%;
+
+  /* Apply colors */
+  color: var(--color-text);
+  background-color: var(--color-background);
 }
 
 .container {
@@ -35,13 +45,26 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    color: #fbfbfb;
-    background-color: #2c2b29;
+    /* Colors - Dark Theme */
+    --color-text: #fbfbfb;
+    --color-background: #2c2b29;
+    --color-logo-primary: #F28CBB;
+    --color-logo-stroke: #FAD1ED;
   }
 }
 
 @layer utilities {
   .text-stroke {
-    -webkit-text-stroke: 2px #f6f6f6;
+    -webkit-text-stroke: 2px var(--color-text-stroke);
   }
+}
+
+.logo-primary {
+  fill: var(--color-logo-primary);
+}
+
+.logo-stroke {
+  fill: var(--color-logo-stroke);
+  stroke: var(--color-logo-stroke);
+  stroke-width: 1;
 }

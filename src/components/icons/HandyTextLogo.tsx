@@ -15,30 +15,6 @@ const HandyTextLogo = ({
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
     >
-      <style>
-        {`
-          .logo-primary {
-            fill: #FAA2CA;
-          }
-
-          .logo-stroke {
-            fill: #382731;
-            stroke: #382731;
-            stroke-width: 1;
-          }
-
-          @media (prefers-color-scheme: dark) {
-            .logo-stroke {
-              fill: #FAD1ED;
-              stroke: #FAD1ED;
-            }
-
-            .logo-primary {
-              fill: #F28CBB;
-            }
-          }
-        `}
-      </style>
       <path
         fillRule="evenodd"
         clipRule="evenodd"
