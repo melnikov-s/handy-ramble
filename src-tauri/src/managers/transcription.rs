@@ -1,5 +1,6 @@
 use anyhow::Result;
 use std::sync::Mutex;
+use tauri::{App, Manager};
 use whisper_rs::install_whisper_log_trampoline;
 use whisper_rs::{
     FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters, WhisperState,
@@ -11,12 +12,19 @@ pub struct TranscriptionManager {
 }
 
 impl TranscriptionManager {
-    pub fn new(whisper_path: &str) -> Result<Self> {
+    pub fn new(app: &App) -> Result<Self> {
+        let whisper_path = app.path().resolve(
+            "resources/models/ggml-small.bin",
+            tauri::path::BaseDirectory::Resource,
+        )?;
+        let path = whisper_path
+            .to_str()
+            .expect("Path contains invalid UTF-8 Chars");
+
         install_whisper_log_trampoline();
         // Load the model
-        let context =
-            WhisperContext::new_with_params(whisper_path, WhisperContextParameters::default())
-                .map_err(|e| anyhow::anyhow!("Failed to load whisper model: {}", e))?;
+        let context = WhisperContext::new_with_params(path, WhisperContextParameters::default())
+            .map_err(|e| anyhow::anyhow!("Failed to load whisper model: {}", e))?;
 
         // Create state
         let state = context.create_state().expect("failed to create state");

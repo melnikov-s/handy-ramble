@@ -10,9 +10,9 @@ fn try_send_event(event: &EventType) {
     }
 }
 
-fn send(event: EventType) {
+fn send_with_delay(event: EventType, delay_ms: u64) {
     try_send_event(&event);
-    thread::sleep(time::Duration::from_millis(60));
+    thread::sleep(time::Duration::from_millis(delay_ms));
 }
 
 fn send_paste() {
@@ -23,12 +23,12 @@ fn send_paste() {
     let modifier_key = Key::ControlLeft; // Control key on other systems
 
     // Press both keys
-    send(EventType::KeyPress(modifier_key));
-    send(EventType::KeyPress(Key::KeyV));
+    send_with_delay(EventType::KeyPress(modifier_key), 100);
+    send_with_delay(EventType::KeyPress(Key::KeyV), 100);
 
     // Release both keys
-    send(EventType::KeyRelease(Key::KeyV));
-    send(EventType::KeyRelease(modifier_key));
+    send_with_delay(EventType::KeyRelease(Key::KeyV), 0);
+    send_with_delay(EventType::KeyRelease(modifier_key), 0);
 }
 
 pub fn paste(text: String, app_handle: AppHandle) {

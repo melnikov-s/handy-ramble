@@ -1,8 +1,8 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rubato::{FftFixedIn, Resampler};
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::vec::Vec;
+use tauri::{App, Manager};
 use vad_rs::Vad;
 
 #[derive(Clone, Debug)]
@@ -17,7 +17,11 @@ pub struct AudioRecordingManager {
 }
 
 impl AudioRecordingManager {
-    pub fn new(vad_path: &PathBuf) -> Result<Self, anyhow::Error> {
+    pub fn new(app: &App) -> Result<Self, anyhow::Error> {
+        let vad_path = app.path().resolve(
+            "resources/models/silero_vad_v4.onnx",
+            tauri::path::BaseDirectory::Resource,
+        )?;
         let host = cpal::default_host();
         let device = host
             .default_input_device()
