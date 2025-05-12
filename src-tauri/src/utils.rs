@@ -1,7 +1,10 @@
 use rdev::{simulate, EventType, Key, SimulateError};
 use std::thread;
 use std::time;
+use tauri::image::Image;
+use tauri::tray::TrayIcon;
 use tauri::AppHandle;
+use tauri::Manager;
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
 fn try_send_event(event: &EventType) {
@@ -42,4 +45,27 @@ pub fn paste(text: String, app_handle: AppHandle) {
 
     // restore the clipboard
     clipboard.write_text(&clipboard_content).unwrap();
+}
+
+pub enum TrayIconState {
+    Idle,
+    Recording,
+}
+
+pub fn change_tray_icon(app: &AppHandle, icon: TrayIconState) {
+    let tray = app.state::<TrayIcon>();
+
+    let icon_path = match icon {
+        TrayIconState::Idle => "resources/tray_idle.png",
+        TrayIconState::Recording => "resources/tray_recording.png",
+    };
+
+    let _ = tray.set_icon(Some(
+        Image::from_path(
+            app.path()
+                .resolve(icon_path, tauri::path::BaseDirectory::Resource)
+                .expect("failed to resolve"),
+        )
+        .expect("failed to set icon"),
+    ));
 }

@@ -6,12 +6,21 @@ mod utils;
 
 use managers::audio::AudioRecordingManager;
 use managers::transcription::TranscriptionManager;
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::Manager;
 use tauri_plugin_autostart::MacosLauncher;
+
+#[derive(Default)]
+struct ShortcutToggleStates {
+    // Map: shortcut_binding_id -> is_active
+    active_toggles: HashMap<String, bool>,
+}
+
+type ManagedToggleState = Mutex<ShortcutToggleStates>;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -27,13 +36,14 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .manage(Mutex::new(ShortcutToggleStates::default()))
         .setup(move |app| {
             let settings_i = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
             let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&settings_i, &quit_i])?;
             let tray = TrayIconBuilder::new()
                 .icon(Image::from_path(app.path().resolve(
-                    "resources/tray_64x64.png",
+                    "resources/tray_idle.png",
                     tauri::path::BaseDirectory::Resource,
                 )?)?)
                 .menu(&menu)
@@ -86,7 +96,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             shortcut::change_binding,
-            shortcut::reset_binding
+            shortcut::reset_binding,
+            shortcut::change_ptt_setting
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

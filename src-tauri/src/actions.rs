@@ -1,11 +1,11 @@
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::transcription::TranscriptionManager;
 use crate::utils;
+use crate::utils::change_tray_icon;
+use crate::utils::TrayIconState;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tauri::image::Image;
-use tauri::tray::TrayIcon;
 use tauri::AppHandle;
 use tauri::Manager;
 
@@ -13,6 +13,7 @@ use tauri::Manager;
 pub type PressAction = fn(app: &AppHandle, shortcut_str: &str);
 pub type ReleaseAction = fn(app: &AppHandle, shortcut_str: &str);
 
+// TODO refactor to start and stop
 pub struct ActionSet {
     pub press: PressAction,
     pub release: ReleaseAction,
@@ -20,45 +21,22 @@ pub struct ActionSet {
 
 // Handler Functions
 fn transcribe_pressed_action(app: &AppHandle, _shortcut_str: &str) {
-    let tray = app.state::<TrayIcon>();
-    tray.set_icon(Some(
-        Image::from_path(
-            app.path()
-                .resolve(
-                    "resources/tray_recording.png",
-                    tauri::path::BaseDirectory::Resource,
-                )
-                .expect("failed to resolve"),
-        )
-        .expect("failed to set icon"),
-    ));
+    change_tray_icon(app, TrayIconState::Recording);
 
     let rm = app.state::<Arc<AudioRecordingManager>>();
     rm.try_start_recording("transcribe");
 }
 
 fn transcribe_released_action(app: &AppHandle, _shortcut_str: &str) {
-    let tray = app.state::<TrayIcon>();
-    tray.set_icon(Some(
-        Image::from_path(
-            app.path()
-                .resolve(
-                    "resources/tray_64x64.png",
-                    tauri::path::BaseDirectory::Resource,
-                )
-                .expect("failed to resolve"),
-        )
-        .expect("failed to set icon"),
-    ));
-
     let ah = app.clone();
     let rm = Arc::clone(&app.state::<Arc<AudioRecordingManager>>());
     let tm = Arc::clone(&app.state::<Arc<TranscriptionManager>>());
 
+    change_tray_icon(app, TrayIconState::Idle);
+
     tauri::async_runtime::spawn(async move {
         if let Some(samples) = rm.stop_recording("transcribe") {
             match tm.transcribe(samples) {
-                // Not .await, as transcribe is synchronous
                 Ok(transcription) => {
                     println!("Global Shortcut Transcription: {}", transcription);
                     utils::paste(transcription, ah);

@@ -15,6 +15,7 @@ export const ShortcutBindingsMapSchema = z.record(
 
 export const SettingsSchema = z.object({
   bindings: ShortcutBindingsMapSchema,
+  push_to_talk: z.boolean(),
 });
 
 export const BindingResponseSchema = z.object({

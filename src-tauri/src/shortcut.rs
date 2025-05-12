@@ -1,11 +1,12 @@
 use serde::Serialize;
-use tauri::{App, AppHandle};
+use tauri::{App, AppHandle, Manager};
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 use tauri_plugin_global_shortcut::{Shortcut, ShortcutState};
 
 use crate::actions::ACTION_MAP;
-use crate::settings;
 use crate::settings::ShortcutBinding;
+use crate::settings::{self, get_settings};
+use crate::ManagedToggleState;
 
 pub fn init_shortcuts(app: &App) {
     let settings = settings::load_or_create_app_settings(app);
@@ -89,6 +90,19 @@ pub fn reset_binding(app: AppHandle, id: String) -> Result<BindingResponse, Stri
     return change_binding(app, id, binding.default_binding);
 }
 
+#[tauri::command]
+pub fn change_ptt_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+
+    // TODO if the setting is currently false, we probably want to
+    // cancel any ongoing recordings or actions
+    settings.push_to_talk = enabled;
+
+    settings::write_settings(&app, settings);
+
+    Ok(())
+}
+
 fn _register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<(), String> {
     // Parse shortcut and return error if it fails
     let shortcut = match binding.current_binding.parse::<Shortcut>() {
@@ -100,15 +114,34 @@ fn _register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<(), S
     let binding_id_for_closure = binding.id.clone();
 
     app.global_shortcut()
-        .on_shortcut(shortcut, move |handler_app, scut, event| {
+        .on_shortcut(shortcut, move |ah, scut, event| {
             if scut == &shortcut {
                 let shortcut_string = scut.into_string();
+                let settings = get_settings(ah);
 
                 if let Some(action_set) = ACTION_MAP.get(&binding_id_for_closure) {
-                    if event.state == ShortcutState::Pressed {
-                        (action_set.press)(handler_app, &shortcut_string);
-                    } else if event.state == ShortcutState::Released {
-                        (action_set.release)(handler_app, &shortcut_string);
+                    if settings.push_to_talk {
+                        if event.state == ShortcutState::Pressed {
+                            (action_set.press)(ah, &shortcut_string);
+                        } else if event.state == ShortcutState::Released {
+                            (action_set.release)(ah, &shortcut_string);
+                        }
+                    } else {
+                        if event.state == ShortcutState::Pressed {
+                            let toggle_state_manager = ah.state::<ManagedToggleState>();
+
+                            let mut states = toggle_state_manager.lock().expect("Failed to lock toggle state manager");
+
+                            let is_currently_active = states.active_toggles.entry(binding_id_for_closure.clone()).or_insert(false);
+
+                            if *is_currently_active {
+                                (action_set.release)(ah, &shortcut_string);
+                                *is_currently_active = false; // Update state to inactive
+                            } else {
+                                (action_set.press)(ah, &shortcut_string);
+                                *is_currently_active = true; // Update state to active
+                            }
+                        }
                     }
                 } else {
                     println!(

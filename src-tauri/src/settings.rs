@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, sync::Arc};
-use tauri::{App, AppHandle, Runtime};
-use tauri_plugin_store::{Store, StoreExt};
+use std::collections::HashMap;
+use tauri::{App, AppHandle};
+use tauri_plugin_store::StoreExt;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ShortcutBinding {
@@ -16,6 +16,7 @@ pub struct ShortcutBinding {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AppSettings {
     pub bindings: HashMap<String, ShortcutBinding>,
+    pub push_to_talk: bool,
 }
 
 pub const SETTINGS_STORE_PATH: &str = "settings_store.json";
@@ -32,18 +33,21 @@ pub fn get_default_settings() -> AppSettings {
             current_binding: "alt+space".to_string(),
         },
     );
-    bindings.insert(
-        "test".to_string(),
-        ShortcutBinding {
-            id: "test".to_string(),
-            name: "Test".to_string(),
-            description: "This is a test binding.".to_string(),
-            default_binding: "ctrl+d".to_string(),
-            current_binding: "ctrl+d".to_string(),
-        },
-    );
+    // bindings.insert(
+    //     "test".to_string(),
+    //     ShortcutBinding {
+    //         id: "test".to_string(),
+    //         name: "Test".to_string(),
+    //         description: "This is a test binding.".to_string(),
+    //         default_binding: "ctrl+d".to_string(),
+    //         current_binding: "ctrl+d".to_string(),
+    //     },
+    // );
 
-    AppSettings { bindings }
+    AppSettings {
+        bindings,
+        push_to_talk: true,
+    }
 }
 
 pub fn load_or_create_app_settings(app: &App) -> AppSettings {

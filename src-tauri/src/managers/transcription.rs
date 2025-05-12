@@ -54,6 +54,7 @@ impl TranscriptionManager {
         params.set_print_progress(false);
         params.set_print_realtime(false);
         params.set_print_timestamps(false);
+        params.set_suppress_blank(true);
         params.set_suppress_non_speech_tokens(true);
 
         state
