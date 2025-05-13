@@ -1,4 +1,5 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::SampleFormat;
 use rubato::{FftFixedIn, Resampler};
 use std::sync::{Arc, Mutex};
 use std::vec::Vec;
@@ -14,6 +15,34 @@ pub enum RecordingState {
 pub struct AudioRecordingManager {
     state: Arc<Mutex<RecordingState>>,
     buffer: Arc<Mutex<Vec<f32>>>,
+}
+
+trait SampleToF32 {
+    fn to_f32(&self) -> f32;
+}
+
+impl SampleToF32 for i8 {
+    fn to_f32(&self) -> f32 {
+        *self as f32 / 128.0
+    }
+}
+
+impl SampleToF32 for i16 {
+    fn to_f32(&self) -> f32 {
+        *self as f32 / 32768.0
+    }
+}
+
+impl SampleToF32 for i32 {
+    fn to_f32(&self) -> f32 {
+        *self as f32 / 2147483648.0
+    }
+}
+
+impl SampleToF32 for f32 {
+    fn to_f32(&self) -> f32 {
+        *self
+    }
 }
 
 impl AudioRecordingManager {
@@ -52,64 +81,140 @@ impl AudioRecordingManager {
         let vad_buffer = Arc::new(Mutex::new(Vec::new()));
         let vad_buffer_clone = Arc::clone(&vad_buffer);
 
-        std::thread::spawn(move || {
-            let stream = match config.sample_format() {
-                cpal::SampleFormat::F32 => device.build_input_stream(
-                    &config.into(),
-                    move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                        let state_guard = state_clone.lock().unwrap();
-                        if let RecordingState::Recording { .. } = *state_guard {
-                            let mut temp_buffer = temp_buffer_clone.lock().unwrap();
-                            temp_buffer.extend_from_slice(data);
+        // Generic function to process audio data
+        fn process_audio<T: SampleToF32 + Send + 'static>(
+            data: &[T],
+            state_clone: Arc<Mutex<RecordingState>>,
+            temp_buffer_clone: Arc<Mutex<Vec<f32>>>,
+            resampler_clone: Arc<Mutex<FftFixedIn<f32>>>,
+            vad_buffer_clone: Arc<Mutex<Vec<f32>>>,
+            buffer_clone: Arc<Mutex<Vec<f32>>>,
+            vad_clone: Arc<Mutex<Vad>>,
+        ) {
+            let state_guard = state_clone.lock().unwrap();
+            if let RecordingState::Recording { .. } = *state_guard {
+                let mut temp_buffer = temp_buffer_clone.lock().unwrap();
 
-                            // Process when we have enough samples
-                            while temp_buffer.len() >= 1024 {
-                                // Take the first 1024 samples for processing
-                                let chunk: Vec<f32> = temp_buffer.drain(..1024).collect();
+                // Convert incoming data to f32
+                let f32_data: Vec<f32> = data.iter().map(|sample| sample.to_f32()).collect();
+                temp_buffer.extend_from_slice(&f32_data);
 
-                                // Convert input data to the format expected by Rubato
-                                let input_frames = vec![chunk];
+                // Process when we have enough samples
+                while temp_buffer.len() >= 1024 {
+                    // Take the first 1024 samples for processing
+                    let chunk: Vec<f32> = temp_buffer.drain(..1024).collect();
 
-                                // Process the audio chunk through the resampler
-                                let mut resampler = resampler_clone.lock().unwrap();
-                                if let Ok(resampled) = resampler.process(&input_frames, None) {
-                                    // Add resampled data to VAD buffer
-                                    let mut vad_buffer = vad_buffer_clone.lock().unwrap();
-                                    vad_buffer.extend_from_slice(&resampled[0]);
+                    // Convert input data to the format expected by Rubato
+                    let input_frames = vec![chunk];
 
-                                    // Process 30ms chunks (480 samples) for VAD
-                                    while vad_buffer.len() >= 480 {
-                                        let chunk = vad_buffer.drain(..480).collect::<Vec<f32>>();
+                    // Process the audio chunk through the resampler
+                    let mut resampler = resampler_clone.lock().unwrap();
+                    if let Ok(resampled) = resampler.process(&input_frames, None) {
+                        // Add resampled data to VAD buffer
+                        let mut vad_buffer = vad_buffer_clone.lock().unwrap();
+                        vad_buffer.extend_from_slice(&resampled[0]);
 
-                                        // Use VAD to detect speech
-                                        if let Ok(mut vad) = vad_clone.lock() {
-                                            // println!("VAD lock acquired");
-                                            match vad.compute(&chunk) {
-                                                Ok(result) => {
-                                                    if result.prob > 0.15 {
-                                                        let mut buffer =
-                                                            buffer_clone.lock().unwrap();
-                                                        buffer.extend_from_slice(&chunk);
-                                                    }
-                                                }
-                                                Err(error) => {
-                                                    eprintln!("Error computing VAD: {:?}", error)
-                                                }
-                                            }
+                        // Process 30ms chunks (480 samples) for VAD
+                        while vad_buffer.len() >= 480 {
+                            let chunk = vad_buffer.drain(..480).collect::<Vec<f32>>();
+
+                            // Use VAD to detect speech
+                            if let Ok(mut vad) = vad_clone.lock() {
+                                match vad.compute(&chunk) {
+                                    Ok(result) => {
+                                        if result.prob > 0.15 {
+                                            let mut buffer = buffer_clone.lock().unwrap();
+                                            buffer.extend_from_slice(&chunk);
                                         }
+                                    }
+                                    Err(error) => {
+                                        eprintln!("Error computing VAD: {:?}", error)
                                     }
                                 }
                             }
                         }
+                    }
+                }
+            }
+        }
+
+        std::thread::spawn(move || {
+            let err_fn = |err| eprintln!("Error in stream: {}", err);
+
+            // Build the appropriate stream based on the sample format
+            let stream = match config.sample_format() {
+                SampleFormat::I8 => device.build_input_stream(
+                    &config.into(),
+                    move |data: &[i8], _| {
+                        process_audio(
+                            data,
+                            Arc::clone(&state_clone),
+                            Arc::clone(&temp_buffer_clone),
+                            Arc::clone(&resampler_clone),
+                            Arc::clone(&vad_buffer_clone),
+                            Arc::clone(&buffer_clone),
+                            Arc::clone(&vad_clone),
+                        )
                     },
-                    |err| eprintln!("Error in stream: {}", err),
+                    err_fn,
                     None,
                 ),
-                sample_format => panic!("Unsupported sample format: {:?}", sample_format),
+                SampleFormat::I16 => device.build_input_stream(
+                    &config.into(),
+                    move |data: &[i16], _| {
+                        process_audio(
+                            data,
+                            Arc::clone(&state_clone),
+                            Arc::clone(&temp_buffer_clone),
+                            Arc::clone(&resampler_clone),
+                            Arc::clone(&vad_buffer_clone),
+                            Arc::clone(&buffer_clone),
+                            Arc::clone(&vad_clone),
+                        )
+                    },
+                    err_fn,
+                    None,
+                ),
+                SampleFormat::I32 => device.build_input_stream(
+                    &config.into(),
+                    move |data: &[i32], _| {
+                        process_audio(
+                            data,
+                            Arc::clone(&state_clone),
+                            Arc::clone(&temp_buffer_clone),
+                            Arc::clone(&resampler_clone),
+                            Arc::clone(&vad_buffer_clone),
+                            Arc::clone(&buffer_clone),
+                            Arc::clone(&vad_clone),
+                        )
+                    },
+                    err_fn,
+                    None,
+                ),
+                SampleFormat::F32 => device.build_input_stream(
+                    &config.into(),
+                    move |data: &[f32], _| {
+                        process_audio(
+                            data,
+                            Arc::clone(&state_clone),
+                            Arc::clone(&temp_buffer_clone),
+                            Arc::clone(&resampler_clone),
+                            Arc::clone(&vad_buffer_clone),
+                            Arc::clone(&buffer_clone),
+                            Arc::clone(&vad_clone),
+                        )
+                    },
+                    err_fn,
+                    None,
+                ),
+                sample_format => {
+                    // Use anyhow to return a proper error instead of panicking
+                    panic!("Unsupported sample format: {:?}", sample_format);
+                }
             }
-            .unwrap();
+            .expect("Failed to build input stream");
 
-            stream.play().unwrap();
+            stream.play().expect("Failed to play stream");
             std::thread::park();
         });
 
