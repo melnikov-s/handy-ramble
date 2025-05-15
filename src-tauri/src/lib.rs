@@ -98,6 +98,8 @@ pub fn run() {
         })
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { api, .. } => {
+                api.prevent_close();
+                let _res = window.hide();
                 #[cfg(target_os = "macos")]
                 {
                     let res = window
@@ -107,10 +109,8 @@ pub fn run() {
                         println!("Failed to set activation policy: {}", e);
                     }
 
-                    api.prevent_close();
-
                     // TODO may be different on windows, this works for macos
-                    tauri::AppHandle::hide(window.app_handle()).unwrap();
+                    // tauri::AppHandle::hide(window.app_handle()).unwrap();
                 }
             }
             _ => {}
