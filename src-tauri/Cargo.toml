@@ -1,8 +1,8 @@
 [package]
-name = "handy-app"
+name = "handy"
 version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+description = "Handy"
+authors = ["cjpais"]
 edition = "2021"
 
 [profile.dev]
