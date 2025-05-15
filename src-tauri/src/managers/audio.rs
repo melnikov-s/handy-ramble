@@ -12,6 +12,7 @@ pub enum RecordingState {
     Recording { binding_id: String },
 }
 
+#[derive(Clone)]
 pub struct AudioRecordingManager {
     state: Arc<Mutex<RecordingState>>,
     buffer: Arc<Mutex<Vec<f32>>>,
@@ -84,6 +85,7 @@ impl AudioRecordingManager {
         // Generic function to process audio data
         fn process_audio<T: SampleToF32 + Send + 'static>(
             data: &[T],
+            channels: usize,
             state_clone: Arc<Mutex<RecordingState>>,
             temp_buffer_clone: Arc<Mutex<Vec<f32>>>,
             resampler_clone: Arc<Mutex<FftFixedIn<f32>>>,
@@ -95,9 +97,20 @@ impl AudioRecordingManager {
             if let RecordingState::Recording { .. } = *state_guard {
                 let mut temp_buffer = temp_buffer_clone.lock().unwrap();
 
-                // Convert incoming data to f32
-                let f32_data: Vec<f32> = data.iter().map(|sample| sample.to_f32()).collect();
-                temp_buffer.extend_from_slice(&f32_data);
+                // Handle multichannel audio by mixing down to mono
+                if channels > 1 {
+                    // Process chunks of `channels` samples at a time (each chunk is one audio frame)
+                    for chunk in data.chunks(channels) {
+                        // Average the channels to create a mono sample
+                        let mono_sample: f32 =
+                            chunk.iter().map(|s| s.to_f32()).sum::<f32>() / channels as f32;
+                        temp_buffer.push(mono_sample);
+                    }
+                } else {
+                    // Single channel processing
+                    let f32_data: Vec<f32> = data.iter().map(|sample| sample.to_f32()).collect();
+                    temp_buffer.extend_from_slice(&f32_data);
+                }
 
                 // Process when we have enough samples
                 while temp_buffer.len() >= 1024 {
@@ -142,12 +155,17 @@ impl AudioRecordingManager {
             let err_fn = |err| eprintln!("Error in stream: {}", err);
 
             // Build the appropriate stream based on the sample format
+            // Store the number of channels for use in the closure
+            let channels = config.channels() as usize;
+            println!("Using {} channel(s) for recording", channels);
+
             let stream = match config.sample_format() {
                 SampleFormat::I8 => device.build_input_stream(
                     &config.into(),
                     move |data: &[i8], _| {
                         process_audio(
                             data,
+                            channels,
                             Arc::clone(&state_clone),
                             Arc::clone(&temp_buffer_clone),
                             Arc::clone(&resampler_clone),
@@ -164,6 +182,7 @@ impl AudioRecordingManager {
                     move |data: &[i16], _| {
                         process_audio(
                             data,
+                            channels,
                             Arc::clone(&state_clone),
                             Arc::clone(&temp_buffer_clone),
                             Arc::clone(&resampler_clone),
@@ -180,6 +199,7 @@ impl AudioRecordingManager {
                     move |data: &[i32], _| {
                         process_audio(
                             data,
+                            channels,
                             Arc::clone(&state_clone),
                             Arc::clone(&temp_buffer_clone),
                             Arc::clone(&resampler_clone),
@@ -196,6 +216,7 @@ impl AudioRecordingManager {
                     move |data: &[f32], _| {
                         process_audio(
                             data,
+                            channels,
                             Arc::clone(&state_clone),
                             Arc::clone(&temp_buffer_clone),
                             Arc::clone(&resampler_clone),
@@ -268,7 +289,7 @@ impl AudioRecordingManager {
                 } else {
                     // Pad to minimum 1000ms if needed
                     if duration_ms < 1000.0 {
-                        let target_samples = (16400.0 * (1000.0 / 1000.0)) as usize; // 16000 samples for 1 second
+                        let target_samples = (16000.0 * (1000.0 / 1000.0)) as usize; // 16000 samples for 1 second
                         let mut padded_audio = audio_data;
                         padded_audio.resize(target_samples, 0.0); // Pad with silence (zeros)
                         Some(padded_audio)

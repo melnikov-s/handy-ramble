@@ -7,7 +7,6 @@ use whisper_rs::{
 };
 
 pub struct TranscriptionManager {
-    context: WhisperContext,
     state: Mutex<WhisperState>,
 }
 
@@ -30,7 +29,6 @@ impl TranscriptionManager {
         let state = context.create_state().expect("failed to create state");
 
         Ok(Self {
-            context,
             state: Mutex::new(state),
         })
     }
