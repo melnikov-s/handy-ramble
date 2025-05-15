@@ -3,7 +3,7 @@ use tauri::{App, AppHandle, Manager};
 use tauri_plugin_global_shortcut::GlobalShortcutExt;
 use tauri_plugin_global_shortcut::{Shortcut, ShortcutState};
 
-use crate::actions::ACTION_MAP;
+use crate::actions::{ShortcutAction, ACTION_MAP};
 use crate::settings::ShortcutBinding;
 use crate::settings::{self, get_settings};
 use crate::ManagedToggleState;
@@ -119,12 +119,12 @@ fn _register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<(), S
                 let shortcut_string = scut.into_string();
                 let settings = get_settings(ah);
 
-                if let Some(action_set) = ACTION_MAP.get(&binding_id_for_closure) {
+                if let Some(action) = ACTION_MAP.get(&binding_id_for_closure) {
                     if settings.push_to_talk {
                         if event.state == ShortcutState::Pressed {
-                            (action_set.press)(ah, &shortcut_string);
+                            action.start(ah, &binding_id_for_closure, &shortcut_string);
                         } else if event.state == ShortcutState::Released {
-                            (action_set.release)(ah, &shortcut_string);
+                            action.stop(ah, &binding_id_for_closure, &shortcut_string);
                         }
                     } else {
                         if event.state == ShortcutState::Pressed {
@@ -132,13 +132,19 @@ fn _register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<(), S
 
                             let mut states = toggle_state_manager.lock().expect("Failed to lock toggle state manager");
 
-                            let is_currently_active = states.active_toggles.entry(binding_id_for_closure.clone()).or_insert(false);
+                            let is_currently_active = states.active_toggles
+                                .entry(binding_id_for_closure.clone())
+                                .or_insert(false);
 
                             if *is_currently_active {
-                                (action_set.release)(ah, &shortcut_string);
+                                action.stop(
+                                    ah,
+                                    &binding_id_for_closure,
+                                    &shortcut_string,
+                                );
                                 *is_currently_active = false; // Update state to inactive
                             } else {
-                                (action_set.press)(ah, &shortcut_string);
+                                action.start(ah, &binding_id_for_closure, &shortcut_string);
                                 *is_currently_active = true; // Update state to active
                             }
                         }

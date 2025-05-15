@@ -9,78 +9,83 @@ use std::sync::Arc;
 use tauri::AppHandle;
 use tauri::Manager;
 
-// Action Handler Types
-pub type PressAction = fn(app: &AppHandle, shortcut_str: &str);
-pub type ReleaseAction = fn(app: &AppHandle, shortcut_str: &str);
-
-// TODO refactor to start and stop
-pub struct ActionSet {
-    pub press: PressAction,
-    pub release: ReleaseAction,
+// Shortcut Action Trait
+pub trait ShortcutAction: Send + Sync {
+    fn start(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str);
+    fn stop(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str);
 }
 
-// Handler Functions
-fn transcribe_pressed_action(app: &AppHandle, _shortcut_str: &str) {
-    change_tray_icon(app, TrayIconState::Recording);
+// Transcribe Action
+struct TranscribeAction;
 
-    let rm = app.state::<Arc<AudioRecordingManager>>();
-    rm.try_start_recording("transcribe");
-}
+impl ShortcutAction for TranscribeAction {
+    fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
+        let binding_id = binding_id.to_string();
+        change_tray_icon(app, TrayIconState::Recording);
 
-fn transcribe_released_action(app: &AppHandle, _shortcut_str: &str) {
-    let ah = app.clone();
-    let rm = Arc::clone(&app.state::<Arc<AudioRecordingManager>>());
-    let tm = Arc::clone(&app.state::<Arc<TranscriptionManager>>());
+        let rm = app.state::<Arc<AudioRecordingManager>>();
+        rm.try_start_recording(&binding_id);
+    }
 
-    change_tray_icon(app, TrayIconState::Idle);
+    fn stop(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
+        let ah = app.clone();
+        let rm = Arc::clone(&app.state::<Arc<AudioRecordingManager>>());
+        let tm = Arc::clone(&app.state::<Arc<TranscriptionManager>>());
 
-    tauri::async_runtime::spawn(async move {
-        if let Some(samples) = rm.stop_recording("transcribe") {
-            match tm.transcribe(samples) {
-                Ok(transcription) => {
-                    println!("Global Shortcut Transcription: {}", transcription);
-                    if transcription != "" {
-                        utils::paste(transcription, ah);
+        change_tray_icon(app, TrayIconState::Idle);
+
+        let binding_id = binding_id.to_string(); // Clone binding_id for the async task
+
+        tauri::async_runtime::spawn(async move {
+            let binding_id = binding_id.clone(); // Clone for the inner async task
+            if let Some(samples) = rm.stop_recording(&binding_id) {
+                match tm.transcribe(samples) {
+                    Ok(transcription) => {
+                        println!("Global Shortcut Transcription: {}", transcription);
+                        if !transcription.is_empty() {
+                            utils::paste(transcription, ah);
+                        }
                     }
+                    Err(err) => println!("Global Shortcut Transcription error: {}", err),
                 }
-                Err(err) => println!("Global Shortcut Transcription error: {}", err),
             }
-        }
-    });
+        });
+    }
 }
 
-fn test_binding_pressed_action(app: &AppHandle, shortcut_str: &str) {
-    println!(
-        "Shortcut ID 'test': Pressed - {} (App: {})",
-        shortcut_str,
-        app.package_info().name
-    );
-}
+// Test Action
+struct TestAction;
 
-fn test_binding_released_action(app: &AppHandle, shortcut_str: &str) {
-    println!(
-        "Shortcut ID 'test': Released - {} (App: {})",
-        shortcut_str,
-        app.package_info().name
-    );
+impl ShortcutAction for TestAction {
+    fn start(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str) {
+        println!(
+            "Shortcut ID '{}': Started - {} (App: {})", // Changed "Pressed" to "Started" for consistency
+            binding_id,
+            shortcut_str,
+            app.package_info().name
+        );
+    }
+
+    fn stop(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str) {
+        println!(
+            "Shortcut ID '{}': Stopped - {} (App: {})", // Changed "Released" to "Stopped" for consistency
+            binding_id,
+            shortcut_str,
+            app.package_info().name
+        );
+    }
 }
 
 // Static Action Map
-pub static ACTION_MAP: Lazy<HashMap<String, ActionSet>> = Lazy::new(|| {
+pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::new(|| {
     let mut map = HashMap::new();
     map.insert(
         "transcribe".to_string(),
-        ActionSet {
-            press: transcribe_pressed_action,
-            release: transcribe_released_action,
-        },
+        Arc::new(TranscribeAction) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "test".to_string(),
-        ActionSet {
-            press: test_binding_pressed_action,
-            release: test_binding_released_action,
-        },
+        Arc::new(TestAction) as Arc<dyn ShortcutAction>,
     );
     map
 });
