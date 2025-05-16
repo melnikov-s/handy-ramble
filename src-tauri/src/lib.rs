@@ -85,13 +85,6 @@ pub fn run() {
             let autostart_manager = app.autolaunch();
             // Enable autostart
             let _ = autostart_manager.enable();
-            // Check enable state
-            println!(
-                "registered for autostart? {}",
-                autostart_manager.is_enabled().unwrap()
-            );
-            // Disable autostart
-            let _ = autostart_manager.disable();
 
             let recording_manager = Arc::new(
                 AudioRecordingManager::new(app).expect("Failed to initialize recording manager"),
@@ -121,9 +114,6 @@ pub fn run() {
                     if let Err(e) = res {
                         println!("Failed to set activation policy: {}", e);
                     }
-
-                    // TODO may be different on windows, this works for macos
-                    // tauri::AppHandle::hide(window.app_handle()).unwrap();
                 }
             }
             _ => {}

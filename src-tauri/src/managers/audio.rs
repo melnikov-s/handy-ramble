@@ -137,14 +137,9 @@ impl AudioRecordingManager {
                             if let Ok(mut vad) = vad_clone.lock() {
                                 match vad.compute(&chunk) {
                                     Ok(result) => {
-                                        println!("VAD PROB {}", result.prob);
                                         if result.prob > 0.1 {
                                             let mut buffer = buffer_clone.lock().unwrap();
                                             buffer.extend_from_slice(&chunk);
-                                            println!(
-                                                "EXTENDED BUFFER. BUFFER LENGTH {}",
-                                                buffer.len()
-                                            );
                                         }
                                     }
                                     Err(error) => {
@@ -284,13 +279,9 @@ impl AudioRecordingManager {
                 println!("Stopped recording for binding {}", binding_id);
 
                 let mut buffer = self.buffer.lock().unwrap();
-                println!("READING BUFFER");
                 let audio_data: Vec<f32> = buffer.drain(..).collect();
-                println!("READ BUFFER");
 
                 let samples = audio_data.len();
-
-                println!("SAMPLE AFTER VAD {}, DURATION {}", samples, samples / 1000);
 
                 if samples < WHISPER_SAMPLE_RATE && samples > 1000 {
                     let target_samples = WHISPER_SAMPLE_RATE * 5 / 4; // sample rate * 1.25

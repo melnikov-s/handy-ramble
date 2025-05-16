@@ -41,7 +41,7 @@ impl ShortcutAction for TranscribeAction {
             if let Some(samples) = rm.stop_recording(&binding_id) {
                 match tm.transcribe(samples) {
                     Ok(transcription) => {
-                        println!("Global Shortcut Transcription: {}", transcription);
+                        println!("Transcription Result: {}", transcription);
                         if !transcription.is_empty() {
                             utils::paste(transcription, ah);
                         }

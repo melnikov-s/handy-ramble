@@ -71,7 +71,7 @@ impl TranscriptionManager {
         }
 
         let et = std::time::Instant::now();
-        println!("\n\ntook {}ms", (et - st).as_millis());
+        println!("\ntook {}ms", (et - st).as_millis());
 
         Ok(result.trim().to_string())
     }
