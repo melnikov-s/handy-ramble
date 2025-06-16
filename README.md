@@ -79,7 +79,7 @@ Handy is built as a Tauri application combining:
 
 ## Known Issues & Current Limitations
 
-This project is actively being developed and has some known issues. We believe in transparency about the current state:
+This project is actively being developed and has some [known issues](https://github.com/cjpais/Handy/issues). We believe in transparency about the current state:
 
 ### Platform Support
 - **Apple Silicon Macs**
