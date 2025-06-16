@@ -1,145 +1,143 @@
-# Handy (it's a handy app)
+# Handy
 
-A user-friendly desktop application that makes the [Handy voice assistant](https://github.com/cjpais/handy) more accessible and easier to distribute. This app provides a native interface for voice-controlled AI interactions, making it simple for users to get started without dealing with Python setup.
+**A free, open source, and extensible speech-to-text application that works completely offline.**
 
-## Core Purpose
+Handy is a cross-platform desktop application built with Tauri (Rust + React/TypeScript) that provides simple, privacy-focused speech transcription. Press a shortcut, speak, and have your words appear in any text field—all without sending your voice to the cloud.
 
-- 📦 Make Handy easily distributable and installable for everyone
-- 🎯 Provide the same powerful voice-controlled AI capabilities as the CLI version
-- 🧠 Support flexible LLM configuration (local or remote)
-- ⚙️ Offer simple configuration for keyboard shortcuts
-- 🪟 Enable floating windows for AI chat interactions
+> **Note**: This is a Tauri v2 project using Bun as the package manager/runtime.
 
-## Key Features
+## Why Handy?
 
-### V1 (Primary Focus)
-- 🎙️ Voice-to-text transcription using MLX Whisper
-- 🤖 Flexible AI model support:
-  - Remote APIs (OpenRouter, OpenAI, Anthropic, etc.)
-  - Local models (llama.cpp, MLX models, etc.)
-  - Custom API endpoints
-- 💬 Floating chat windows for AI interactions
-- ⚡ Native desktop app experience
-- ⚙️ User-friendly configuration UI
+Handy was created to fill the gap for a truly open source, extensible speech-to-text tool. As stated on [handy.computer](https://handy.computer):
 
-### Future Enhancements
-- 📋 Smart clipboard management for context
-- 📸 Screenshot capabilities
-- 🔄 MCP provider functionality
-- 📝 Extended context window management
+- **Free**: Accessibility tooling belongs in everyone's hands, not behind a paywall
+- **Open Source**: Together we can build further. Extend Handy for yourself and contribute to something bigger
+- **Private**: Your voice stays on your computer. Get transcriptions without sending audio to the cloud
+- **Simple**: One tool, one job. Transcribe what you say and put it into a text box
 
-## Requirements
+Handy isn't trying to be the best speech-to-text app—it's trying to be the most forkable one.
 
-- macOS (currently macOS-only)
-- Internet connection for remote AI services (optional)
-- API keys for remote services (optional)
+## How It Works
+
+1. **Press** a configurable keyboard shortcut to start/stop recording (or use push-to-talk mode)
+2. **Speak** your words while the shortcut is active
+3. **Release** and Handy processes your speech using Whisper
+4. **Get** your transcribed text pasted directly into whatever app you're using
+
+The process is entirely local:
+- Silence is filtered using VAD (Voice Activity Detection) with Silero
+- Transcription uses Whisper Small model with GPU acceleration when available
+- Works on Windows, macOS, and Linux (currently macOS-only in this Tauri version)
 
 ## Quick Start
 
-1. Download the latest release from the releases page
-2. Install the application
-3. Launch and grant necessary permissions
-4. Configure your AI preferences:
-   - Use existing environment variables if set
-   - Configure through UI:
-     - Select local or remote models
-     - Add API keys if needed
-     - Customize model parameters
-5. Start using voice commands with the default shortcuts!
+### Installation
 
-## Environment Variables
+1. Download the latest release from the [releases page](https://github.com/cjpais/Handy/releases)
+2. Install the application following platform-specific instructions
+3. Launch Handy and grant necessary system permissions (microphone, accessibility)
+4. Configure your preferred keyboard shortcuts in Settings
+5. Start transcribing!
 
-The app automatically detects and uses common environment variables:
+### Development Setup
+
+**Prerequisites:**
+- [Rust](https://rustup.rs/) (latest stable)
+- [Bun](https://bun.sh/) package manager
+- Platform-specific requirements:
+  - **macOS**: Xcode Command Line Tools
+  - **Windows**: Microsoft C++ Build Tools
+  - **Linux**: Build essentials, ALSA development libraries
+
+**Getting Started:**
+
 ```bash
-# Remote API Keys
-OPENAI_API_KEY=your_openai_key
-OPENROUTER_API_KEY=your_openrouter_key
-ANTHROPIC_API_KEY=your_anthropic_key
+# Clone the repository
+git clone git@github.com:cjpais/Handy.git
+cd Handy
 
-# Model Configuration
-DEFAULT_MODEL=gpt-4  # Example model choice
-MODEL_BASE_URL=http://localhost:8080  # For custom API endpoints
-```
-
-## Configuration
-
-The app allows you to configure:
-- AI Model Settings:
-  - Model provider (local or remote)
-  - API endpoints and keys
-  - Model parameters (temperature, context length, etc.)
-- Keyboard shortcuts
-- Window preferences for AI chat
-- Transcription settings
-
-## Development Setup
-
-1. Clone the repository:
-```bash
-git clone [repository-url]
-```
-
-2. Install dependencies:
-```bash
-# Using npm
-npm install
-
-# Or using Bun
+# Install dependencies
 bun install
-```
 
-3. Run the development version:
-```bash
-npm run tauri dev
-# or
+# Run in development mode
 bun run tauri dev
+
+# Build for production
+bun run tauri build
 ```
 
 ## Architecture
 
-- **Frontend**: React + TypeScript for the user interface
-- **Backend**: Rust-based Tauri for system integration
-- **Key Plugins**:
-  - `@tauri-apps/plugin-global-shortcut`: Keyboard shortcut management
-  - `tauri-plugin-macos-permissions-api`: System permissions
-  - `@tauri-apps/plugin-window`: Multi-window management
+Handy is built as a Tauri application combining:
 
-## Comparison with CLI Version
+- **Frontend**: React + TypeScript with Tailwind CSS for the settings UI
+- **Backend**: Rust for system integration, audio processing, and ML inference
+- **Core Libraries**:
+  - `whisper-rs`: Local speech recognition with Whisper models
+  - `cpal`: Cross-platform audio I/O
+  - `vad-rs`: Voice Activity Detection
+  - `rdev`: Global keyboard shortcuts and system events
+  - `rubato`: Audio resampling
 
-This desktop app provides the same core functionality as the [original Handy CLI](https://github.com/cjpais/handy) but with these improvements:
-- No Python setup required
-- Easy installation process
-- Native desktop experience
-- Configurable through UI
-- Floating chat windows
-- More flexible LLM configuration
-- Future support for visual features
+## Known Issues & Current Limitations
+
+This project is actively being developed and has some known issues. We believe in transparency about the current state:
+
+### Platform Support
+- **Apple Silicon Macs**
+- **x64 Windows**
+- **x64 Linux**
+- **No Intel Mac support** - ARM (Apple Silicon) only at this time
+- **No ARM Support on Windows/Linux**
+
+### Active Issues
+- Paste functionality occasionally produces just 'v' instead of full text on macOS
+- VAD filter sometimes includes trailing "thank you" in transcriptions
+- Transcription end-cutting due to potential threading issues
+- Microphone remains active for optimal latency (design choice under discussion)
 
 ## Contributing
 
-Contributions are welcome! The priority is currently on:
-1. Core functionality parity with CLI version
-2. Installation and configuration experience
-3. Chat window implementation
-4. Model configuration interface
+We're actively seeking contributors! Priority areas include:
 
-## Roadmap
+### High Priority
+1. **Cross-platform support** - Windows and Linux compatibility
+2. **Code quality improvements** - Better error handling, architecture refinements
+3. **Bug fixes** - Address the known issues listed above
+4. **Performance optimization** - Reduce latency, improve resource usage
 
-### V1
-- [ ] Core voice-to-text functionality
-- [ ] Flexible AI model integration
-- [ ] Settings configuration
-- [ ] Easy installation process
-- [ ] Environment variable support
+### Feature Requests
+- Configurable microphone selection
+- Multiple STT model options (beyond Whisper Small)
+- Modifier-only key bindings
+- Enhanced VAD configuration
 
-### Future
-- [ ] Basic chat windows
-- [ ] Clipboard management integration
-- [ ] Screenshot capabilities
-- [ ] MCP provider functionality
-- [ ] Extended context management
-- [ ] Multiple chat window layouts
+### How to Contribute
+
+1. **Check existing issues** at [github.com/cjpais/Handy/issues](https://github.com/cjpais/Handy/issues)
+2. **Fork the repository** and create a feature branch
+3. **Test thoroughly** on your target platform
+4. **Submit a pull request** with clear description of changes
+5. **Join the discussion** - reach out at [contact@handy.computer](mailto:contact@handy.computer)
+
+The goal is to create both a useful tool and a foundation for others to build upon—a well-patterned, simple codebase that serves the community.
 
 ## Related Projects
 
-- [Handy CLI](https://github.com/cjpais/handy) - The original command-line interface version
+- **[Handy CLI](https://github.com/cjpais/handy-cli)** - The original Python command-line version
+- **[handy.computer](https://handy.computer)** - Project website with demos and documentation
+
+## License
+
+MIT License - see [LICENSE](LICENSE) file for details.
+
+## Acknowledgments
+
+- **Whisper** by OpenAI for the speech recognition model
+- **Silero** for great lightweight VAD
+- **Tauri** team for the excellent Rust-based app framework
+- **Community contributors** helping make Handy better
+
+---
+
+*"Your search for the right speech-to-text tool can end here—not because Handy is perfect, but because you can make it perfect for you."*
