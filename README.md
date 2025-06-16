@@ -85,8 +85,6 @@ This project is actively being developed and has some known issues. We believe i
 - **Apple Silicon Macs**
 - **x64 Windows**
 - **x64 Linux**
-- **No Intel Mac support** - ARM (Apple Silicon) only at this time
-- **No ARM Support on Windows/Linux**
 
 ### Active Issues
 - Paste functionality occasionally produces just 'v' instead of full text on macOS
