@@ -25,7 +25,7 @@ Handy isn't trying to be the best speech-to-text app—it's trying to be the mos
 The process is entirely local:
 - Silence is filtered using VAD (Voice Activity Detection) with Silero
 - Transcription uses Whisper Small model with GPU acceleration when available
-- Works on Windows, macOS, and Linux (currently macOS-only in this Tauri version)
+- Works on Windows, macOS, and Linux
 
 ## Quick Start
 
