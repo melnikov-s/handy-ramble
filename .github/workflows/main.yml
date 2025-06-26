@@ -35,11 +35,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev libopenblas-dev libx11-dev libxtst-dev libxrandr-dev
 
-      # - name: Install Vulkan SDK
-      #   uses: humbletim/install-vulkan-sdk@v1.2
-      #   with:
-      #     version: 1.4.309.0
-      #     cache: true
+      - name: Install Vulkan SDK
+        if: matrix.platform == 'windows-latest' # This must match the platform value defined above.
+        uses: humbletim/install-vulkan-sdk@v1.2
+        with:
+          version: 1.4.309.0
+          cache: true
       
       - name: Prepare Vulkan SDK for Ubuntu 22.04
         run: |
