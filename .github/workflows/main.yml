@@ -1,8 +1,9 @@
-name: "test-on-pr"
+name: "test-every-commit"
 
-on: [pull_request]
-
-# This workflow will build your tauri app without uploading it anywhere.
+on:
+  push:
+    branches:
+      - "test-build"
 
 jobs:
   test-tauri:
@@ -79,5 +80,8 @@ jobs:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ env.CERT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
         with:
           args: ${{ matrix.args }}
