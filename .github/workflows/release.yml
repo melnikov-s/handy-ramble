@@ -62,6 +62,12 @@ jobs:
           sudo apt-get install -y mesa-vulkan-drivers
         if: matrix.platform == 'ubuntu-22.04'
 
+      - name: Download model files
+        run: |
+          mkdir -p src-tauri/resources/models
+          curl -o src-tauri/resources/models/ggml-small.bin https://blob.handy.computer/ggml-small.bin
+          curl -o src-tauri/resources/models/silero_vad_v4.onnx https://blob.handy.computer/silero_vad_v4.onnx
+
       - name: install frontend dependencies
         run: bun install # change this to npm, pnpm or bun depending on which one you use.
 
