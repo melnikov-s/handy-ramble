@@ -11,7 +11,8 @@ use std::sync::{Arc, Mutex};
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::Manager;
+use tauri::Emitter;
+use tauri::{AppHandle, Manager};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
 #[derive(Default)]
@@ -21,6 +22,13 @@ struct ShortcutToggleStates {
 }
 
 type ManagedToggleState = Mutex<ShortcutToggleStates>;
+
+#[tauri::command]
+fn trigger_update_check(app: AppHandle) -> Result<(), String> {
+    app.emit("check-for-updates", ())
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -108,7 +116,7 @@ pub fn run() {
                         }
                     }
                     "check_updates" => {
-                        // TODO: Implement update check
+                        let _ = app.emit("check-for-updates", ());
                     }
                     "quit" => {
                         app.exit(0);
@@ -158,7 +166,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             shortcut::change_binding,
             shortcut::reset_binding,
-            shortcut::change_ptt_setting
+            shortcut::change_ptt_setting,
+            trigger_update_check
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

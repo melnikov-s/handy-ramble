@@ -16,7 +16,7 @@
         "width": 540,
         "height": 400,
         "minWidth": 460,
-        "minHeight": 400,
+        "minHeight": 440,
         "resizable": true,
         "maximizable": false
       }
