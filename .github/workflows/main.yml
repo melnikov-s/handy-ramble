@@ -42,6 +42,10 @@ jobs:
           version: 1.4.309.0
           cache: true
       
+      - name: Install trusted-signing-cli
+        if: matrix.platform == 'windows-latest' # This must match the platform value defined above.
+        run: cargo install trusted-signing-cli
+      
       - name: Prepare Vulkan SDK for Ubuntu 22.04
         run: |
           wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc
