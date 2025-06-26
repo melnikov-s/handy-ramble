@@ -1,13 +1,16 @@
-name: "test-every-commit"
+name: "Release"
 
-# on: workflow_dispatch
 on:
-  push:
-    branches:
-      - "test-build"
+  workflow_dispatch
+# on:
+#   push:
+#     branches:
+#       - "test-build"
 
 jobs:
-  test-tauri:
+  publish-tauri:
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -88,7 +91,8 @@ jobs:
           echo "Certificate imported."
 
       # If tagName and releaseId are omitted tauri-action will only build the app and won't try to upload any assets.
-      - uses: tauri-apps/tauri-action@v0
+      - name: Build
+        uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
@@ -102,4 +106,7 @@ jobs:
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
         with:
+          tagName: v__VERSION__
+          releaseName: "v__VERSION__"
           args: ${{ matrix.args }}
+          prerelease: true
