@@ -43,15 +43,28 @@ pub fn run() {
             let version = env!("CARGO_PKG_VERSION");
             let version_label = format!("Handy v{}", version);
             let version_i = MenuItem::with_id(app, "version", &version_label, false, None::<&str>)?;
-            let settings_i = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
+
+            // Platform-specific accelerators
+            #[cfg(target_os = "macos")]
+            let settings_accelerator = Some("Cmd+,");
+            #[cfg(not(target_os = "macos"))]
+            let settings_accelerator = Some("Ctrl+,");
+
+            #[cfg(target_os = "macos")]
+            let quit_accelerator = Some("Cmd+Q");
+            #[cfg(not(target_os = "macos"))]
+            let quit_accelerator = Some("Ctrl+Q");
+
+            let settings_i =
+                MenuItem::with_id(app, "settings", "Settings...", true, settings_accelerator)?;
             let check_updates_i = MenuItem::with_id(
                 app,
                 "check_updates",
-                "Check for Updates",
+                "Check for Updates...",
                 true,
                 None::<&str>,
             )?;
-            let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let quit_i = MenuItem::with_id(app, "quit", "Quit", true, quit_accelerator)?;
             let menu = Menu::with_items(
                 app,
                 &[
