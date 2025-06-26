@@ -57,7 +57,7 @@ jobs:
           sudo apt update
           sudo apt install vulkan-sdk -y
           sudo apt-get install -y mesa-vulkan-drivers
-        if: ${{ contains(matrix.platform, 'ubuntu-22.04') && contains(matrix.args, 'vulkan') }}
+        if: matrix.platform == 'ubuntu-22.04'
 
       - name: install frontend dependencies
         run: bun install # change this to npm, pnpm or bun depending on which one you use.
