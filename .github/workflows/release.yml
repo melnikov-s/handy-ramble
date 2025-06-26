@@ -115,4 +115,4 @@ jobs:
           tagName: v__VERSION__
           releaseName: "v__VERSION__"
           args: ${{ matrix.args }}
-          prerelease: true
+          releaseDraft: true
