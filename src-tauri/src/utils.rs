@@ -1,51 +1,61 @@
-use rdev::{simulate, EventType, Key, SimulateError};
-use std::thread;
-use std::time;
+use enigo::Enigo;
+use enigo::Key;
+use enigo::Keyboard;
+use enigo::Settings;
+
 use tauri::image::Image;
 use tauri::tray::TrayIcon;
 use tauri::AppHandle;
 use tauri::Manager;
 use tauri_plugin_clipboard_manager::ClipboardExt;
 
-fn try_send_event(event: &EventType) {
-    if let Err(SimulateError) = simulate(event) {
-        println!("We could not send {:?}", event);
-    }
-}
-
-fn send_with_delay(event: EventType, delay_ms: u64) {
-    try_send_event(&event);
-    thread::sleep(time::Duration::from_millis(delay_ms));
-}
-
-// TODO: use enigo for paste not on macos?
-fn send_paste() {
+fn send_paste() -> Result<(), String> {
     // Determine the modifier key based on the OS
     #[cfg(target_os = "macos")]
-    let modifier_key = Key::MetaLeft; // Command key on macOS
+    let modifier_key = Key::Meta; // Command key on macOS
     #[cfg(not(target_os = "macos"))]
-    let modifier_key = Key::ControlLeft; // Control key on other systems
+    let modifier_key = Key::Control; // Control key on other systems
+
+    let mut enigo = Enigo::new(&Settings::default())
+        .map_err(|e| format!("Failed to initialize Enigo: {}", e))?;
 
     // Press both keys
-    send_with_delay(EventType::KeyPress(modifier_key), 100);
-    send_with_delay(EventType::KeyPress(Key::KeyV), 100);
+    enigo
+        .key(modifier_key, enigo::Direction::Press)
+        .map_err(|e| format!("Failed to press modifier key: {}", e))?;
+    enigo
+        .key(Key::Unicode('v'), enigo::Direction::Press)
+        .map_err(|e| format!("Failed to press V key: {}", e))?;
 
     // Release both keys
-    send_with_delay(EventType::KeyRelease(Key::KeyV), 100);
-    send_with_delay(EventType::KeyRelease(modifier_key), 0);
+    enigo
+        .key(Key::Unicode('v'), enigo::Direction::Release)
+        .map_err(|e| format!("Failed to release V key: {}", e))?;
+    enigo
+        .key(modifier_key, enigo::Direction::Release)
+        .map_err(|e| format!("Failed to release modifier key: {}", e))?;
+
+    Ok(())
 }
 
-pub fn paste(text: String, app_handle: AppHandle) {
+pub fn paste(text: String, app_handle: AppHandle) -> Result<(), String> {
     let clipboard = app_handle.clipboard();
 
     // get the current clipboard content
     let clipboard_content = clipboard.read_text().unwrap_or_default();
 
-    clipboard.write_text(&text).unwrap();
-    send_paste();
+    clipboard
+        .write_text(&text)
+        .map_err(|e| format!("Failed to write to clipboard: {}", e))?;
+
+    send_paste()?;
 
     // restore the clipboard
-    clipboard.write_text(&clipboard_content).unwrap();
+    clipboard
+        .write_text(&clipboard_content)
+        .map_err(|e| format!("Failed to restore clipboard: {}", e))?;
+
+    Ok(())
 }
 
 pub enum TrayIconState {
