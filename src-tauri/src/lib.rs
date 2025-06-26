@@ -9,9 +9,10 @@ use managers::transcription::TranscriptionManager;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tauri::image::Image;
-use tauri::menu::{Menu, MenuItem};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::Manager;
+use tauri::Emitter;
+use tauri::{AppHandle, Manager};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 
 #[derive(Default)]
@@ -22,11 +23,19 @@ struct ShortcutToggleStates {
 
 type ManagedToggleState = Mutex<ShortcutToggleStates>;
 
+#[tauri::command]
+fn trigger_update_check(app: AppHandle) -> Result<(), String> {
+    app.emit("check-for-updates", ())
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     env_logger::init();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_macos_permissions::init())
@@ -39,9 +48,42 @@ pub fn run() {
         ))
         .manage(Mutex::new(ShortcutToggleStates::default()))
         .setup(move |app| {
-            let settings_i = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
-            let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&settings_i, &quit_i])?;
+            let version = env!("CARGO_PKG_VERSION");
+            let version_label = format!("Handy v{}", version);
+            let version_i = MenuItem::with_id(app, "version", &version_label, false, None::<&str>)?;
+
+            // Platform-specific accelerators
+            #[cfg(target_os = "macos")]
+            let settings_accelerator = Some("Cmd+,");
+            #[cfg(not(target_os = "macos"))]
+            let settings_accelerator = Some("Ctrl+,");
+
+            #[cfg(target_os = "macos")]
+            let quit_accelerator = Some("Cmd+Q");
+            #[cfg(not(target_os = "macos"))]
+            let quit_accelerator = Some("Ctrl+Q");
+
+            let settings_i =
+                MenuItem::with_id(app, "settings", "Settings...", true, settings_accelerator)?;
+            let check_updates_i = MenuItem::with_id(
+                app,
+                "check_updates",
+                "Check for Updates...",
+                true,
+                None::<&str>,
+            )?;
+            let quit_i = MenuItem::with_id(app, "quit", "Quit", true, quit_accelerator)?;
+            let menu = Menu::with_items(
+                app,
+                &[
+                    &version_i,
+                    &PredefinedMenuItem::separator(app)?,
+                    &settings_i,
+                    &check_updates_i,
+                    &PredefinedMenuItem::separator(app)?,
+                    &quit_i,
+                ],
+            )?;
             let tray = TrayIconBuilder::new()
                 .icon(Image::from_path(app.path().resolve(
                     "resources/tray_idle.png",
@@ -72,6 +114,9 @@ pub fn run() {
                         } else {
                             eprintln!("Main window not found");
                         }
+                    }
+                    "check_updates" => {
+                        let _ = app.emit("check-for-updates", ());
                     }
                     "quit" => {
                         app.exit(0);
@@ -121,7 +166,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             shortcut::change_binding,
             shortcut::reset_binding,
-            shortcut::change_ptt_setting
+            shortcut::change_ptt_setting,
+            trigger_update_check
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

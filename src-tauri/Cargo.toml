@@ -54,3 +54,4 @@ whisper-rs = { version = "0.13.2", features = ["openblas", "vulkan"] }
 tauri-plugin-autostart = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2"
