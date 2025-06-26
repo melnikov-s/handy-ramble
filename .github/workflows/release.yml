@@ -1,7 +1,6 @@
 name: "Release"
 
-on:
-  workflow_dispatch
+on: workflow_dispatch
 # on:
 #   push:
 #     branches:
@@ -48,11 +47,11 @@ jobs:
         with:
           version: 1.4.309.0
           cache: true
-      
+
       - name: Install trusted-signing-cli
         if: matrix.platform == 'windows-latest' # This must match the platform value defined above.
         run: cargo install trusted-signing-cli
-      
+
       - name: Prepare Vulkan SDK for Ubuntu 22.04
         run: |
           wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc | sudo tee /etc/apt/trusted.gpg.d/lunarg.asc
@@ -111,6 +110,8 @@ jobs:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           tagName: v__VERSION__
           releaseName: "v__VERSION__"
