@@ -38,13 +38,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libasound2-dev libopenblas-dev libx11-dev libxtst-dev libxrandr-dev
 
-      - name: Prepare Vulkan SDK (windows and ubuntu)
-        if: matrix.platform != 'macos-latest'
-        uses: humbletim/setup-vulkan-sdk@v1.2.1
+      - name: Install Vulkan SDK
+        uses: humbletim/install-vulkan-sdk@v1.2
         with:
-          vulkan-query-version: 1.4.304.1
-          vulkan-components: Vulkan-Headers, Vulkan-Loader, Glslang, SPIRV-Tools, SPIRV-Headers
-          vulkan-use-cache: true
+          version: 1.4.309.0
+          cache: true
 
       - name: install frontend dependencies
         run: bun install # change this to npm, pnpm or bun depending on which one you use.
