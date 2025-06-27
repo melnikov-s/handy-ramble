@@ -17,6 +17,7 @@ pub struct ShortcutBinding {
 pub struct AppSettings {
     pub bindings: HashMap<String, ShortcutBinding>,
     pub push_to_talk: bool,
+    pub audio_feedback: bool,
 }
 
 pub const SETTINGS_STORE_PATH: &str = "settings_store.json";
@@ -47,6 +48,7 @@ pub fn get_default_settings() -> AppSettings {
     AppSettings {
         bindings,
         push_to_talk: true,
+        audio_feedback: false,
     }
 }
 

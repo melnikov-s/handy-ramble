@@ -168,6 +168,7 @@ pub fn run() {
             shortcut::change_binding,
             shortcut::reset_binding,
             shortcut::change_ptt_setting,
+            shortcut::change_audio_feedback_setting,
             trigger_update_check
         ])
         .run(tauri::generate_context!())

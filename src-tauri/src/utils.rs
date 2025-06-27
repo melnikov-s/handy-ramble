@@ -1,8 +1,14 @@
+use crate::settings;
+
 use enigo::Enigo;
 use enigo::Key;
 use enigo::Keyboard;
 use enigo::Settings;
 
+use rodio::{Decoder, OutputStream, Sink};
+use std::fs::File;
+use std::io::BufReader;
+use std::thread;
 use tauri::image::Image;
 use tauri::tray::TrayIcon;
 use tauri::AppHandle;
@@ -79,4 +85,69 @@ pub fn change_tray_icon(app: &AppHandle, icon: TrayIconState) {
         )
         .expect("failed to set icon"),
     ));
+}
+
+/// Plays an audio resource from the resources directory.
+/// Checks if audio feedback is enabled in settings before playing.
+pub fn play_sound(app: &AppHandle, resource_path: &str) {
+    // Check if audio feedback is enabled
+    let settings = settings::get_settings(app);
+    if !settings.audio_feedback {
+        return;
+    }
+
+    let app_handle = app.clone();
+    let resource_path = resource_path.to_string();
+
+    // Spawn a new thread to play the audio without blocking the main thread
+    thread::spawn(move || {
+        // Get the path to the audio file in resources
+        let audio_path = match app_handle
+            .path()
+            .resolve(&resource_path, tauri::path::BaseDirectory::Resource)
+        {
+            Ok(path) => path,
+            Err(e) => {
+                eprintln!(
+                    "Failed to resolve audio file path '{}': {}",
+                    resource_path, e
+                );
+                return;
+            }
+        };
+
+        // Try to play the audio file
+        if let Err(e) = play_audio_file(&audio_path) {
+            eprintln!("Failed to play sound '{}': {}", resource_path, e);
+        }
+    });
+}
+
+/// Convenience function to play the recording start sound
+pub fn play_recording_start_sound(app: &AppHandle) {
+    play_sound(app, "resources/rec_start.wav");
+}
+
+/// Convenience function to play the recording stop sound
+pub fn play_recording_stop_sound(app: &AppHandle) {
+    play_sound(app, "resources/rec_stop.wav");
+}
+
+fn play_audio_file(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+    // Get a output stream handle to the default physical sound device
+    let (_stream, stream_handle) = OutputStream::try_default()?;
+
+    // Load the audio file
+    let file = File::open(path)?;
+    let buf_reader = BufReader::new(file);
+    let source = Decoder::new(buf_reader)?;
+
+    // Create a sink to play the audio
+    let sink = Sink::try_new(&stream_handle)?;
+    sink.append(source);
+
+    // Wait for the audio to finish playing
+    sink.sleep_until_end();
+
+    Ok(())
 }
