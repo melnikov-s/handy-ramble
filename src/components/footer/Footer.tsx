@@ -12,7 +12,7 @@ const Footer: React.FC = () => {
   const [version, setVersion] = useState("");
   const [showUpToDate, setShowUpToDate] = useState(false);
 
-  const upToDateTimeoutRef = useRef<NodeJS.Timeout>();
+  const upToDateTimeoutRef = useRef<ReturnType<typeof setTimeout>>();
   const isManualCheckRef = useRef(false);
   const downloadedBytesRef = useRef(0);
   const contentLengthRef = useRef(0);
