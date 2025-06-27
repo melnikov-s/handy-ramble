@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { getVersion } from "@tauri-apps/api/app";
@@ -7,40 +7,43 @@ import { listen } from "@tauri-apps/api/event";
 const Footer: React.FC = () => {
   const [isChecking, setIsChecking] = useState(false);
   const [updateAvailable, setUpdateAvailable] = useState(false);
-  const [isUpdating, setIsUpdating] = useState(false);
+  const [isInstalling, setIsInstalling] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
   const [version, setVersion] = useState("");
   const [showUpToDate, setShowUpToDate] = useState(false);
-  const [isManualCheck, setIsManualCheck] = useState(false);
+
+  const upToDateTimeoutRef = useRef<NodeJS.Timeout>();
+  const isManualCheckRef = useRef(false);
+  const downloadedBytesRef = useRef(0);
+  const contentLengthRef = useRef(0);
 
   useEffect(() => {
-    // Get version from Tauri app info
     const fetchVersion = async () => {
       try {
         const appVersion = await getVersion();
         setVersion(appVersion);
       } catch (error) {
         console.error("Failed to get app version:", error);
-        setVersion("0.1.3"); // fallback version
+        setVersion("0.1.2");
       }
     };
 
     fetchVersion();
-
-    // Automatically check for updates on launch
     checkForUpdates();
 
-    // Listen for menu-triggered update checks
     const unlisten = listen("check-for-updates", () => {
-      checkForUpdates();
+      handleManualUpdateCheck();
     });
 
     return () => {
+      if (upToDateTimeoutRef.current) {
+        clearTimeout(upToDateTimeoutRef.current);
+      }
       unlisten.then((fn) => fn());
     };
   }, []);
 
   const checkForUpdates = async () => {
-    // Don't check again if already checking
     if (isChecking) return;
 
     try {
@@ -50,49 +53,99 @@ const Footer: React.FC = () => {
       if (update) {
         setUpdateAvailable(true);
         setShowUpToDate(false);
-        console.log("Update available:", update.version);
       } else {
-        console.log("No updates available");
-        // Reset update available state in case it was previously true
         setUpdateAvailable(false);
 
-        // Show "up to date" message only for manual checks
-        if (isManualCheck) {
+        if (isManualCheckRef.current) {
           setShowUpToDate(true);
-          // Hide the message after 3 seconds
-          setTimeout(() => setShowUpToDate(false), 3000);
+          if (upToDateTimeoutRef.current) {
+            clearTimeout(upToDateTimeoutRef.current);
+          }
+          upToDateTimeoutRef.current = setTimeout(() => {
+            setShowUpToDate(false);
+          }, 3000);
         }
       }
     } catch (error) {
       console.error("Failed to check for updates:", error);
     } finally {
       setIsChecking(false);
-      setIsManualCheck(false);
+      isManualCheckRef.current = false;
     }
   };
 
   const handleManualUpdateCheck = () => {
-    setIsManualCheck(true);
+    isManualCheckRef.current = true;
     checkForUpdates();
   };
 
   const installUpdate = async () => {
     try {
-      setIsUpdating(true);
+      setIsInstalling(true);
+      setDownloadProgress(0);
+      downloadedBytesRef.current = 0;
+      contentLengthRef.current = 0;
       const update = await check();
 
-      if (update) {
-        console.log("Installing update...");
-        await update.downloadAndInstall();
-
-        // Restart the app to apply the update
-        await relaunch();
+      if (!update) {
+        console.log("No update available during install attempt");
+        return;
       }
+
+      await update.downloadAndInstall((event) => {
+        switch (event.event) {
+          case "Started":
+            downloadedBytesRef.current = 0;
+            contentLengthRef.current = event.data.contentLength ?? 0;
+            break;
+          case "Progress":
+            downloadedBytesRef.current += event.data.chunkLength;
+            const progress =
+              contentLengthRef.current > 0
+                ? Math.round(
+                    (downloadedBytesRef.current / contentLengthRef.current) *
+                      100,
+                  )
+                : 0;
+            setDownloadProgress(Math.min(progress, 100));
+            break;
+        }
+      });
+      await relaunch();
     } catch (error) {
       console.error("Failed to install update:", error);
-      setIsUpdating(false);
+    } finally {
+      setIsInstalling(false);
+      setDownloadProgress(0);
+      downloadedBytesRef.current = 0;
+      contentLengthRef.current = 0;
     }
   };
+
+  const getStatusText = () => {
+    if (isInstalling) {
+      return downloadProgress > 0 && downloadProgress < 100
+        ? `Downloading... ${downloadProgress.toString().padStart(3)}%`
+        : downloadProgress === 100
+          ? "Installing..."
+          : "Preparing...";
+    }
+    if (isChecking) return "Checking...";
+    if (showUpToDate) return "Up to date";
+    if (updateAvailable) return "Update available";
+    return "Check for updates";
+  };
+
+  const getStatusAction = () => {
+    if (updateAvailable && !isInstalling) return installUpdate;
+    if (!isChecking && !isInstalling && !updateAvailable)
+      return handleManualUpdateCheck;
+    return undefined;
+  };
+
+  const isDisabled = isChecking || isInstalling;
+  const isClickable =
+    !isDisabled && (updateAvailable || (!isChecking && !showUpToDate));
 
   return (
     <div className="w-full border-t border-mid-gray/20 mt-4 pt-3">
@@ -101,25 +154,29 @@ const Footer: React.FC = () => {
           <span>v{version}</span>
         </div>
 
-        <div className="flex items-center gap-2">
-          {updateAvailable ? (
+        <div className="flex items-center gap-3">
+          {isClickable ? (
             <button
-              onClick={installUpdate}
-              disabled={isUpdating}
-              className="text-logo-primary hover:text-logo-primary/80 transition-colors disabled:opacity-50 font-medium"
+              onClick={getStatusAction()}
+              disabled={isDisabled}
+              className={`transition-colors disabled:opacity-50 tabular-nums ${
+                updateAvailable
+                  ? "text-logo-primary hover:text-logo-primary/80 font-medium"
+                  : "text-text/60 hover:text-text/80"
+              }`}
             >
-              {isUpdating ? "Installing..." : "Update available"}
+              {getStatusText()}
             </button>
-          ) : showUpToDate ? (
-            <span className="text-text/60">Up to date</span>
           ) : (
-            <button
-              onClick={handleManualUpdateCheck}
-              disabled={isChecking}
-              className="text-text/60 hover:text-text/80 transition-colors disabled:opacity-50"
-            >
-              {isChecking ? "Checking..." : "Check for updates"}
-            </button>
+            <span className="text-text/60 tabular-nums">{getStatusText()}</span>
+          )}
+
+          {isInstalling && downloadProgress > 0 && downloadProgress < 100 && (
+            <progress
+              value={downloadProgress}
+              max={100}
+              className="w-20 h-2 [&::-webkit-progress-bar]:rounded-full [&::-webkit-progress-bar]:bg-mid-gray/20 [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-logo-primary"
+            />
           )}
         </div>
       </div>
