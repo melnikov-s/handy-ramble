@@ -1,8 +1,14 @@
+use crate::settings;
+
 use enigo::Enigo;
 use enigo::Key;
 use enigo::Keyboard;
 use enigo::Settings;
 
+use rodio::{Decoder, OutputStream, Sink};
+use std::fs::File;
+use std::io::BufReader;
+use std::thread;
 use tauri::image::Image;
 use tauri::tray::TrayIcon;
 use tauri::AppHandle;
@@ -79,4 +85,53 @@ pub fn change_tray_icon(app: &AppHandle, icon: TrayIconState) {
         )
         .expect("failed to set icon"),
     ));
+}
+
+pub fn play_recording_sound(app: &AppHandle) {
+    // Check if audio feedback is enabled
+    let settings = settings::get_settings(app);
+    if !settings.audio_feedback {
+        return;
+    }
+
+    let app_handle = app.clone();
+
+    // Spawn a new thread to play the audio without blocking the main thread
+    thread::spawn(move || {
+        // Get the path to the rec.wav file in resources
+        let audio_path = match app_handle
+            .path()
+            .resolve("resources/rec.wav", tauri::path::BaseDirectory::Resource)
+        {
+            Ok(path) => path,
+            Err(e) => {
+                eprintln!("Failed to resolve audio file path: {}", e);
+                return;
+            }
+        };
+
+        // Try to play the audio file
+        if let Err(e) = play_audio_file(&audio_path) {
+            eprintln!("Failed to play recording sound: {}", e);
+        }
+    });
+}
+
+fn play_audio_file(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
+    // Get a output stream handle to the default physical sound device
+    let (_stream, stream_handle) = OutputStream::try_default()?;
+
+    // Load the audio file
+    let file = File::open(path)?;
+    let buf_reader = BufReader::new(file);
+    let source = Decoder::new(buf_reader)?;
+
+    // Create a sink to play the audio
+    let sink = Sink::try_new(&stream_handle)?;
+    sink.append(source);
+
+    // Wait for the audio to finish playing
+    sink.sleep_until_end();
+
+    Ok(())
 }
