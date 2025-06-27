@@ -2,6 +2,8 @@ use crate::managers::audio::AudioRecordingManager;
 use crate::managers::transcription::TranscriptionManager;
 use crate::utils;
 use crate::utils::change_tray_icon;
+use crate::utils::play_recording_start_sound;
+use crate::utils::play_recording_stop_sound;
 use crate::utils::TrayIconState;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
@@ -23,6 +25,9 @@ impl ShortcutAction for TranscribeAction {
         let binding_id = binding_id.to_string();
         change_tray_icon(app, TrayIconState::Recording);
 
+        // Play audio feedback for recording start
+        play_recording_start_sound(app);
+
         let rm = app.state::<Arc<AudioRecordingManager>>();
         rm.try_start_recording(&binding_id);
     }
@@ -33,6 +38,9 @@ impl ShortcutAction for TranscribeAction {
         let tm = Arc::clone(&app.state::<Arc<TranscriptionManager>>());
 
         change_tray_icon(app, TrayIconState::Idle);
+
+        // Play audio feedback for recording stop
+        play_recording_stop_sound(app);
 
         let binding_id = binding_id.to_string(); // Clone binding_id for the async task
 

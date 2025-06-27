@@ -14,6 +14,8 @@ import ResetIcon from "../icons/ResetIcon";
 export const KeyboardShortcuts: React.FC = () => {
   const [bindings, setBindings] = React.useState<ShortcutBindingsMap>({});
   const [pttEnabled, setPttEnabled] = React.useState<boolean>(false);
+  const [audioFeedbackEnabled, setAudioFeedbackEnabled] =
+    React.useState<boolean>(false);
   const [keyPressed, setKeyPressed] = useState<string[]>([]);
   const [recordedKeys, setRecordedKeys] = useState<string[]>([]);
   const [editingShortcutId, setEditingShortcutId] = useState<string | null>(
@@ -77,6 +79,7 @@ export const KeyboardShortcuts: React.FC = () => {
         const settings = SettingsSchema.parse(s);
         setBindings(settings.bindings);
         setPttEnabled(settings.push_to_talk);
+        setAudioFeedbackEnabled(settings.audio_feedback);
       });
     });
   }, []);
@@ -225,6 +228,30 @@ export const KeyboardShortcuts: React.FC = () => {
               setPttEnabled(newValue);
 
               invoke("change_ptt_setting", {
+                enabled: newValue,
+              });
+            }}
+          />
+          <div className="relative w-11 h-6 bg-mid-gray/20 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-logo-primary rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-logo-primary"></div>
+        </label>
+      </div>
+      <div className="flex items-center justify-between p-4 rounded-lg border border-mid-gray/20 ">
+        <div className="max-w-2/3">
+          <h3 className="text-sm font-medium ">Audio Feedback</h3>
+          <p className="text-sm">Play sound when recording starts and stops</p>
+        </div>
+        <label className="inline-flex items-center cursor-pointer">
+          <input
+            type="checkbox"
+            value=""
+            className="sr-only peer"
+            checked={audioFeedbackEnabled}
+            onChange={(e) => {
+              console.log("change audio feedback setting", e.target.checked);
+              const newValue = e.target.checked;
+              setAudioFeedbackEnabled(newValue);
+
+              invoke("change_audio_feedback_setting", {
                 enabled: newValue,
               });
             }}
