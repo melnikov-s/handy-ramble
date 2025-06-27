@@ -15,7 +15,7 @@ export const KeyboardShortcuts: React.FC = () => {
   const [bindings, setBindings] = React.useState<ShortcutBindingsMap>({});
   const [pttEnabled, setPttEnabled] = React.useState<boolean>(false);
   const [audioFeedbackEnabled, setAudioFeedbackEnabled] =
-    React.useState<boolean>(true);
+    React.useState<boolean>(false);
   const [keyPressed, setKeyPressed] = useState<string[]>([]);
   const [recordedKeys, setRecordedKeys] = useState<string[]>([]);
   const [editingShortcutId, setEditingShortcutId] = useState<string | null>(

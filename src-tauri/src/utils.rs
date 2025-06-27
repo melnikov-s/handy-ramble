@@ -87,7 +87,9 @@ pub fn change_tray_icon(app: &AppHandle, icon: TrayIconState) {
     ));
 }
 
-pub fn play_recording_sound(app: &AppHandle) {
+/// Plays an audio resource from the resources directory.
+/// Checks if audio feedback is enabled in settings before playing.
+pub fn play_sound(app: &AppHandle, resource_path: &str) {
     // Check if audio feedback is enabled
     let settings = settings::get_settings(app);
     if !settings.audio_feedback {
@@ -95,26 +97,40 @@ pub fn play_recording_sound(app: &AppHandle) {
     }
 
     let app_handle = app.clone();
+    let resource_path = resource_path.to_string();
 
     // Spawn a new thread to play the audio without blocking the main thread
     thread::spawn(move || {
-        // Get the path to the rec.wav file in resources
+        // Get the path to the audio file in resources
         let audio_path = match app_handle
             .path()
-            .resolve("resources/rec.wav", tauri::path::BaseDirectory::Resource)
+            .resolve(&resource_path, tauri::path::BaseDirectory::Resource)
         {
             Ok(path) => path,
             Err(e) => {
-                eprintln!("Failed to resolve audio file path: {}", e);
+                eprintln!(
+                    "Failed to resolve audio file path '{}': {}",
+                    resource_path, e
+                );
                 return;
             }
         };
 
         // Try to play the audio file
         if let Err(e) = play_audio_file(&audio_path) {
-            eprintln!("Failed to play recording sound: {}", e);
+            eprintln!("Failed to play sound '{}': {}", resource_path, e);
         }
     });
+}
+
+/// Convenience function to play the recording start sound
+pub fn play_recording_start_sound(app: &AppHandle) {
+    play_sound(app, "resources/rec_start.wav");
+}
+
+/// Convenience function to play the recording stop sound
+pub fn play_recording_stop_sound(app: &AppHandle) {
+    play_sound(app, "resources/rec_stop.wav");
 }
 
 fn play_audio_file(path: &std::path::Path) -> Result<(), Box<dyn std::error::Error>> {
