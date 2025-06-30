@@ -82,7 +82,7 @@ impl ModelManager {
             ModelInfo {
                 id: "turbo".to_string(),
                 name: "Whisper Turbo".to_string(),
-                description: "Good accuracy, medium speed".to_string(),
+                description: "Balanced accuracy and speed.".to_string(),
                 filename: "ggml-large-v3-turbo-q5_0.bin".to_string(),
                 url: Some("https://blob.handy.computer/ggml-large-v3-turbo-q5_0.bin".to_string()),
                 size_mb: 574, // Approximate size
