@@ -1,10 +1,12 @@
 mod actions;
+mod commands;
 mod managers;
 mod settings;
 mod shortcut;
 mod utils;
 
 use managers::audio::AudioRecordingManager;
+use managers::model::ModelManager;
 use managers::transcription::TranscriptionManager;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -135,13 +137,16 @@ pub fn run() {
             let recording_manager = Arc::new(
                 AudioRecordingManager::new(app).expect("Failed to initialize recording manager"),
             );
+            let model_manager =
+                Arc::new(ModelManager::new(&app).expect("Failed to initialize model manager"));
             let transcription_manager = Arc::new(
-                TranscriptionManager::new(&app)
+                TranscriptionManager::new(&app, model_manager.clone())
                     .expect("Failed to initialize transcription manager"),
             );
 
             // Add managers to Tauri's managed state
             app.manage(recording_manager.clone());
+            app.manage(model_manager.clone());
             app.manage(transcription_manager.clone());
 
             shortcut::init_shortcuts(app);
@@ -169,7 +174,18 @@ pub fn run() {
             shortcut::reset_binding,
             shortcut::change_ptt_setting,
             shortcut::change_audio_feedback_setting,
-            trigger_update_check
+            trigger_update_check,
+            commands::models::get_available_models,
+            commands::models::get_model_info,
+            commands::models::download_model,
+            commands::models::delete_model,
+            commands::models::set_active_model,
+            commands::models::get_current_model,
+            commands::models::get_transcription_model_status,
+            commands::models::is_model_loading,
+            commands::models::has_any_models_available,
+            commands::models::has_any_models_or_downloads,
+            commands::models::get_recommended_first_model
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -73,20 +73,23 @@ For development, you need to download the required model files:
    mkdir -p src-tauri/resources/models
    ```
 
-2. Download the required model files:
+2. Download the required VAD model for development:
    ```bash
-   # Download Whisper model (Small model)
-   curl -o src-tauri/resources/models/ggml-small.bin https://blob.handy.computer/ggml-small.bin
-   
-   # Download Silero VAD model
+   # Download Silero VAD model (required for voice activity detection)
    curl -o src-tauri/resources/models/silero_vad_v4.onnx https://blob.handy.computer/silero_vad_v4.onnx
    ```
 
-**Alternative Whisper Models:**
+   **Note:** Whisper models are no longer bundled with the app. Users will download their preferred model (Small, Medium, Turbo, or Large) from within the app on first run.
 
-The `ggml-small.bin` file can be replaced with any GGML model for whisper.cpp. Available models can be found at [huggingface.co/ggerganov/whisper.cpp](https://huggingface.co/ggerganov/whisper.cpp/tree/main).
+**Whisper Models:**
 
-**Important:** If you use a different Whisper model, you'll need to update the filename reference in the manager's transcription code to match your chosen model file.
+The app now supports dynamic model downloading and switching:
+- **Small**: Fast, good for most use cases
+- **Medium**: Better accuracy, balanced performance
+- **Turbo**: Optimized large model with improved speed
+- **Large**: Highest accuracy, slower processing
+
+Users can download and switch between models directly from the app's settings interface. No models are bundled with the app, reducing the initial download size.
 
 ## Architecture
 

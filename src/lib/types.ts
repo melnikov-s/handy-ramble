@@ -29,3 +29,13 @@ export type BindingResponse = z.infer<typeof BindingResponseSchema>;
 export type ShortcutBinding = z.infer<typeof ShortcutBindingSchema>;
 export type ShortcutBindingsMap = z.infer<typeof ShortcutBindingsMapSchema>;
 export type Settings = z.infer<typeof SettingsSchema>;
+
+export const ModelInfoSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string(),
+  size_mb: z.number(),
+  is_downloaded: z.boolean(),
+});
+
+export type ModelInfo = z.infer<typeof ModelInfoSchema>;
