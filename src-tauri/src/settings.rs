@@ -18,6 +18,14 @@ pub struct AppSettings {
     pub bindings: HashMap<String, ShortcutBinding>,
     pub push_to_talk: bool,
     pub audio_feedback: bool,
+    #[serde(default = "default_model")]
+    pub selected_model: String,
+}
+
+fn default_model() -> String {
+    // Default to empty string if no models are available yet
+    // The UI will handle prompting for model download
+    "".to_string()
 }
 
 pub const SETTINGS_STORE_PATH: &str = "settings_store.json";
@@ -49,6 +57,7 @@ pub fn get_default_settings() -> AppSettings {
         bindings,
         push_to_talk: true,
         audio_feedback: false,
+        selected_model: "".to_string(),
     }
 }
 
