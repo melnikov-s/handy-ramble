@@ -213,7 +213,7 @@ impl AudioRecordingManager {
                             if let Ok(mut vad) = vad_clone.lock() {
                                 match vad.compute(&chunk) {
                                     Ok(result) => {
-                                        if result.prob > 0.1 {
+                                        if result.prob > 0.3 {
                                             let mut buffer = buffer_clone.lock().unwrap();
                                             buffer.extend_from_slice(&chunk);
                                         }
