@@ -1,7 +1,10 @@
+use crate::settings::get_settings;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::SampleFormat;
+use log::{debug, info};
 use rubato::{FftFixedIn, Resampler};
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 use std::vec::Vec;
 use tauri::{App, Manager};
 use vad_rs::Vad;
@@ -14,10 +17,21 @@ pub enum RecordingState {
     Recording { binding_id: String },
 }
 
+#[derive(Clone, Debug)]
+pub enum MicrophoneMode {
+    AlwaysOn,
+    OnDemand,
+}
+
 #[derive(Clone)]
 pub struct AudioRecordingManager {
     state: Arc<Mutex<RecordingState>>,
     buffer: Arc<Mutex<Vec<f32>>>,
+    mode: Arc<Mutex<MicrophoneMode>>,
+    app_handle: tauri::AppHandle,
+    // For on-demand mode
+    stream_handle: Arc<Mutex<Option<std::thread::JoinHandle<()>>>>,
+    stream_active: Arc<Mutex<bool>>,
 }
 
 trait SampleToF32 {
@@ -50,31 +64,85 @@ impl SampleToF32 for f32 {
 
 impl AudioRecordingManager {
     pub fn new(app: &App) -> Result<Self, anyhow::Error> {
-        let vad_path = app.path().resolve(
-            "resources/models/silero_vad_v4.onnx",
-            tauri::path::BaseDirectory::Resource,
-        )?;
-        let host = cpal::default_host();
-        let device = host
-            .default_input_device()
-            .ok_or_else(|| anyhow::Error::msg("No input device available"))?;
-
-        let config = device.default_input_config()?;
-        let sample_rate = config.sample_rate().0;
-
-        // Configure the resampler - keeping 1024 as input size for FFT efficiency
-        let resampler = FftFixedIn::new(sample_rate as usize, WHISPER_SAMPLE_RATE, 1024, 2, 1)?;
-
-        let vad = Arc::new(Mutex::new(Vad::new(vad_path, WHISPER_SAMPLE_RATE).unwrap()));
-        let vad_clone = Arc::clone(&vad);
+        let settings = get_settings(&app.handle());
+        let mode = if settings.always_on_microphone {
+            MicrophoneMode::AlwaysOn
+        } else {
+            MicrophoneMode::OnDemand
+        };
 
         let state = Arc::new(Mutex::new(RecordingState::Idle));
         let buffer = Arc::new(Mutex::new(Vec::new()));
-        let resampler = Arc::new(Mutex::new(resampler));
+        let mode_arc = Arc::new(Mutex::new(mode.clone()));
+        let app_handle = app.handle().clone();
+        let stream_handle = Arc::new(Mutex::new(None));
+        let stream_active = Arc::new(Mutex::new(false));
 
-        let state_clone = Arc::clone(&state);
-        let buffer_clone = Arc::clone(&buffer);
+        let manager = Self {
+            state: state.clone(),
+            buffer: buffer.clone(),
+            mode: mode_arc,
+            app_handle,
+            stream_handle,
+            stream_active,
+        };
+
+        // If always-on mode, start the stream immediately
+        if matches!(mode, MicrophoneMode::AlwaysOn) {
+            manager.start_microphone_stream()?;
+        }
+
+        Ok(manager)
+    }
+
+    pub fn start_microphone_stream(&self) -> Result<(), anyhow::Error> {
+        let start_time = Instant::now();
+        debug!("Starting microphone stream initialization...");
+
+        let mut stream_active = self.stream_active.lock().unwrap();
+        if *stream_active {
+            debug!("Microphone stream already active, skipping initialization");
+            return Ok(()); // Stream already active
+        }
+
+        let vad_path = self.app_handle.path().resolve(
+            "resources/models/silero_vad_v4.onnx",
+            tauri::path::BaseDirectory::Resource,
+        )?;
+        debug!("VAD model path resolved: {:?}", vad_path);
+
+        let host = cpal::default_host();
+        debug!("Audio host initialized");
+
+        let device = host
+            .default_input_device()
+            .ok_or_else(|| anyhow::Error::msg("No input device available"))?;
+        debug!("Default input device acquired: {:?}", device.name());
+
+        let config = device.default_input_config()?;
+        let sample_rate = config.sample_rate().0;
+        debug!(
+            "Audio config - Sample rate: {}, Channels: {}, Format: {:?}",
+            sample_rate,
+            config.channels(),
+            config.sample_format()
+        );
+
+        // Configure the resampler - keeping 1024 as input size for FFT efficiency
+        let resampler_start = Instant::now();
+        let resampler = FftFixedIn::new(sample_rate as usize, WHISPER_SAMPLE_RATE, 1024, 2, 1)?;
+        debug!("Resampler initialized in {:?}", resampler_start.elapsed());
+
+        let vad_start = Instant::now();
+        let vad = Arc::new(Mutex::new(Vad::new(vad_path, WHISPER_SAMPLE_RATE).unwrap()));
+        debug!("VAD initialized in {:?}", vad_start.elapsed());
+        let vad_clone = Arc::clone(&vad);
+
+        let state_clone = Arc::clone(&self.state);
+        let buffer_clone = Arc::clone(&self.buffer);
+        let resampler = Arc::new(Mutex::new(resampler));
         let resampler_clone = Arc::clone(&resampler);
+        let stream_active_clone = Arc::clone(&self.stream_active);
 
         // Create a temporary buffer to accumulate samples
         let temp_buffer = Arc::new(Mutex::new(Vec::new()));
@@ -94,7 +162,15 @@ impl AudioRecordingManager {
             vad_buffer_clone: Arc<Mutex<Vec<f32>>>,
             buffer_clone: Arc<Mutex<Vec<f32>>>,
             vad_clone: Arc<Mutex<Vad>>,
+            stream_active_clone: Arc<Mutex<bool>>,
         ) {
+            // Check if stream should still be active
+            let stream_active = stream_active_clone.lock().unwrap();
+            if !*stream_active {
+                return;
+            }
+            drop(stream_active);
+
             let state_guard = state_clone.lock().unwrap();
             if let RecordingState::Recording { .. } = *state_guard {
                 let mut temp_buffer = temp_buffer_clone.lock().unwrap();
@@ -153,101 +229,202 @@ impl AudioRecordingManager {
             }
         }
 
-        std::thread::spawn(move || {
+        let handle = std::thread::spawn(move || {
             let err_fn = |err| eprintln!("Error in stream: {}", err);
 
             // Build the appropriate stream based on the sample format
             // Store the number of channels for use in the closure
             let channels = config.channels() as usize;
-            println!("Using {} channel(s) for recording", channels);
+            debug!(
+                "Audio stream thread started - Using {} channel(s) for recording",
+                channels
+            );
 
             let stream = match config.sample_format() {
-                SampleFormat::I8 => device.build_input_stream(
-                    &config.into(),
-                    move |data: &[i8], _| {
-                        process_audio(
-                            data,
-                            channels,
-                            Arc::clone(&state_clone),
-                            Arc::clone(&temp_buffer_clone),
-                            Arc::clone(&resampler_clone),
-                            Arc::clone(&vad_buffer_clone),
-                            Arc::clone(&buffer_clone),
-                            Arc::clone(&vad_clone),
-                        )
-                    },
-                    err_fn,
-                    None,
-                ),
-                SampleFormat::I16 => device.build_input_stream(
-                    &config.into(),
-                    move |data: &[i16], _| {
-                        process_audio(
-                            data,
-                            channels,
-                            Arc::clone(&state_clone),
-                            Arc::clone(&temp_buffer_clone),
-                            Arc::clone(&resampler_clone),
-                            Arc::clone(&vad_buffer_clone),
-                            Arc::clone(&buffer_clone),
-                            Arc::clone(&vad_clone),
-                        )
-                    },
-                    err_fn,
-                    None,
-                ),
-                SampleFormat::I32 => device.build_input_stream(
-                    &config.into(),
-                    move |data: &[i32], _| {
-                        process_audio(
-                            data,
-                            channels,
-                            Arc::clone(&state_clone),
-                            Arc::clone(&temp_buffer_clone),
-                            Arc::clone(&resampler_clone),
-                            Arc::clone(&vad_buffer_clone),
-                            Arc::clone(&buffer_clone),
-                            Arc::clone(&vad_clone),
-                        )
-                    },
-                    err_fn,
-                    None,
-                ),
-                SampleFormat::F32 => device.build_input_stream(
-                    &config.into(),
-                    move |data: &[f32], _| {
-                        process_audio(
-                            data,
-                            channels,
-                            Arc::clone(&state_clone),
-                            Arc::clone(&temp_buffer_clone),
-                            Arc::clone(&resampler_clone),
-                            Arc::clone(&vad_buffer_clone),
-                            Arc::clone(&buffer_clone),
-                            Arc::clone(&vad_clone),
-                        )
-                    },
-                    err_fn,
-                    None,
-                ),
+                SampleFormat::I8 => {
+                    let stream_active_i8 = Arc::clone(&stream_active_clone);
+                    device.build_input_stream(
+                        &config.into(),
+                        move |data: &[i8], _| {
+                            process_audio(
+                                data,
+                                channels,
+                                Arc::clone(&state_clone),
+                                Arc::clone(&temp_buffer_clone),
+                                Arc::clone(&resampler_clone),
+                                Arc::clone(&vad_buffer_clone),
+                                Arc::clone(&buffer_clone),
+                                Arc::clone(&vad_clone),
+                                Arc::clone(&stream_active_i8),
+                            )
+                        },
+                        err_fn,
+                        None,
+                    )
+                }
+
+                SampleFormat::I16 => {
+                    let stream_active_i16 = Arc::clone(&stream_active_clone);
+                    device.build_input_stream(
+                        &config.into(),
+                        move |data: &[i16], _| {
+                            process_audio(
+                                data,
+                                channels,
+                                Arc::clone(&state_clone),
+                                Arc::clone(&temp_buffer_clone),
+                                Arc::clone(&resampler_clone),
+                                Arc::clone(&vad_buffer_clone),
+                                Arc::clone(&buffer_clone),
+                                Arc::clone(&vad_clone),
+                                Arc::clone(&stream_active_i16),
+                            )
+                        },
+                        err_fn,
+                        None,
+                    )
+                }
+
+                SampleFormat::I32 => {
+                    let stream_active_i32 = Arc::clone(&stream_active_clone);
+                    device.build_input_stream(
+                        &config.into(),
+                        move |data: &[i32], _| {
+                            process_audio(
+                                data,
+                                channels,
+                                Arc::clone(&state_clone),
+                                Arc::clone(&temp_buffer_clone),
+                                Arc::clone(&resampler_clone),
+                                Arc::clone(&vad_buffer_clone),
+                                Arc::clone(&buffer_clone),
+                                Arc::clone(&vad_clone),
+                                Arc::clone(&stream_active_i32),
+                            )
+                        },
+                        err_fn,
+                        None,
+                    )
+                }
+
+                SampleFormat::F32 => {
+                    let stream_active_f32 = Arc::clone(&stream_active_clone);
+                    device.build_input_stream(
+                        &config.into(),
+                        move |data: &[f32], _| {
+                            process_audio(
+                                data,
+                                channels,
+                                Arc::clone(&state_clone),
+                                Arc::clone(&temp_buffer_clone),
+                                Arc::clone(&resampler_clone),
+                                Arc::clone(&vad_buffer_clone),
+                                Arc::clone(&buffer_clone),
+                                Arc::clone(&vad_clone),
+                                Arc::clone(&stream_active_f32),
+                            )
+                        },
+                        err_fn,
+                        None,
+                    )
+                }
+
                 sample_format => {
-                    // Use anyhow to return a proper error instead of panicking
                     panic!("Unsupported sample format: {:?}", sample_format);
                 }
             }
             .expect("Failed to build input stream");
 
+            debug!("Audio input stream built successfully");
             stream.play().expect("Failed to play stream");
-            std::thread::park();
+            debug!("Audio stream started playing");
+
+            // Keep the thread alive until stream_active becomes false
+            let stream_active_for_loop = Arc::clone(&stream_active_clone);
+            loop {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                let active = {
+                    let guard = stream_active_for_loop.lock().unwrap();
+                    *guard
+                };
+                if !active {
+                    break;
+                }
+            }
         });
 
-        Ok(Self { state, buffer })
+        *self.stream_handle.lock().unwrap() = Some(handle);
+        *stream_active = true;
+
+        let total_time = start_time.elapsed();
+        info!(
+            "Microphone stream initialization completed in {:?}",
+            total_time
+        );
+        Ok(())
+    }
+
+    pub fn stop_microphone_stream(&self) {
+        let mut stream_active = self.stream_active.lock().unwrap();
+        if !*stream_active {
+            return; // Stream already stopped
+        }
+
+        *stream_active = false;
+        drop(stream_active);
+
+        // Wait for the stream thread to finish
+        if let Some(handle) = self.stream_handle.lock().unwrap().take() {
+            let _ = handle.join();
+        }
+    }
+
+    pub fn update_mode(&self, new_mode: MicrophoneMode) -> Result<(), anyhow::Error> {
+        let mut mode = self.mode.lock().unwrap();
+        let current_mode = mode.clone();
+
+        if matches!(current_mode, MicrophoneMode::AlwaysOn)
+            && matches!(new_mode, MicrophoneMode::OnDemand)
+        {
+            // Switching from always-on to on-demand
+            // Stop the stream if not currently recording
+            let state = self.state.lock().unwrap();
+            if matches!(*state, RecordingState::Idle) {
+                drop(state);
+                drop(mode);
+                self.stop_microphone_stream();
+                mode = self.mode.lock().unwrap();
+            }
+        } else if matches!(current_mode, MicrophoneMode::OnDemand)
+            && matches!(new_mode, MicrophoneMode::AlwaysOn)
+        {
+            // Switching from on-demand to always-on
+            drop(mode);
+            self.start_microphone_stream()?;
+            mode = self.mode.lock().unwrap();
+        }
+
+        *mode = new_mode;
+        Ok(())
     }
 
     pub fn try_start_recording(&self, binding_id: &str) -> bool {
         let mut state = self.state.lock().unwrap();
         match *state {
             RecordingState::Idle => {
+                // For on-demand mode, start the microphone stream now
+                let mode = self.mode.lock().unwrap();
+                if matches!(*mode, MicrophoneMode::OnDemand) {
+                    debug!("On-demand mode: Starting microphone stream for recording");
+                    drop(mode);
+                    drop(state);
+                    if let Err(e) = self.start_microphone_stream() {
+                        eprintln!("Failed to start microphone stream: {}", e);
+                        return false;
+                    }
+                    state = self.state.lock().unwrap();
+                }
+
                 // Clear the buffer before starting new recording
                 self.buffer.lock().unwrap().clear();
                 *state = RecordingState::Recording {
@@ -277,6 +454,15 @@ impl AudioRecordingManager {
             } if active_id == binding_id => {
                 *state = RecordingState::Idle;
                 println!("Stopped recording for binding {}", binding_id);
+
+                // For on-demand mode, stop the microphone stream
+                let mode = self.mode.lock().unwrap();
+                if matches!(*mode, MicrophoneMode::OnDemand) {
+                    debug!("On-demand mode: Stopping microphone stream after recording");
+                    drop(mode);
+                    drop(state);
+                    self.stop_microphone_stream();
+                }
 
                 let mut buffer = self.buffer.lock().unwrap();
                 let audio_data: Vec<f32> = buffer.drain(..).collect();

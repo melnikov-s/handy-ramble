@@ -20,12 +20,20 @@ pub struct AppSettings {
     pub audio_feedback: bool,
     #[serde(default = "default_model")]
     pub selected_model: String,
+    #[serde(default = "default_always_on_microphone")]
+    pub always_on_microphone: bool,
 }
 
 fn default_model() -> String {
     // Default to empty string if no models are available yet
     // The UI will handle prompting for model download
     "".to_string()
+}
+
+fn default_always_on_microphone() -> bool {
+    // Default to false for better user experience
+    // True would be the old behavior (always-on for low latency)
+    false
 }
 
 pub const SETTINGS_STORE_PATH: &str = "settings_store.json";
@@ -58,6 +66,7 @@ pub fn get_default_settings() -> AppSettings {
         push_to_talk: true,
         audio_feedback: false,
         selected_model: "".to_string(),
+        always_on_microphone: false,
     }
 }
 
