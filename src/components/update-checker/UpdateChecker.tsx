@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { listen } from "@tauri-apps/api/event";
+import { ProgressBar } from "../shared";
 
 interface UpdateCheckerProps {
   className?: string;
@@ -163,10 +164,14 @@ const UpdateChecker: React.FC<UpdateCheckerProps> = ({ className = "" }) => {
       )}
 
       {isInstalling && downloadProgress > 0 && downloadProgress < 100 && (
-        <progress
-          value={downloadProgress}
-          max={100}
-          className="w-20 h-2 [&::-webkit-progress-bar]:rounded-full [&::-webkit-progress-bar]:bg-mid-gray/20 [&::-webkit-progress-value]:rounded-full [&::-webkit-progress-value]:bg-logo-primary"
+        <ProgressBar
+          progress={[
+            {
+              id: "update",
+              percentage: downloadProgress,
+            },
+          ]}
+          size="large"
         />
       )}
     </div>
