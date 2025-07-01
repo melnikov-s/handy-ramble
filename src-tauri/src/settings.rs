@@ -113,9 +113,11 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
         .store(SETTINGS_STORE_PATH)
         .expect("Failed to initialize store");
 
-    let settings = serde_json::from_value::<AppSettings>(store.get("settings").unwrap()).unwrap();
-
-    settings
+    if let Some(settings_value) = store.get("settings") {
+        serde_json::from_value::<AppSettings>(settings_value).unwrap_or_else(|_| get_default_settings())
+    } else {
+        get_default_settings()
+    }
 }
 
 pub fn write_settings(app: &AppHandle, settings: AppSettings) {
