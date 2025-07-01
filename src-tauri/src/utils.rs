@@ -54,7 +54,15 @@ pub fn paste(text: String, app_handle: AppHandle) -> Result<(), String> {
         .write_text(&text)
         .map_err(|e| format!("Failed to write to clipboard: {}", e))?;
 
+    // Add a small delay on Windows to ensure clipboard write is complete
+    #[cfg(target_os = "windows")]
+    std::thread::sleep(std::time::Duration::from_millis(50));
+
     send_paste()?;
+
+    // Add another small delay before restoring clipboard
+    #[cfg(target_os = "windows")]
+    std::thread::sleep(std::time::Duration::from_millis(50));
 
     // restore the clipboard
     clipboard
