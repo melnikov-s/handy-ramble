@@ -7,6 +7,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::{App, AppHandle, Emitter, Manager};
+use crate::settings::{get_settings, write_settings};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelInfo {
@@ -115,6 +116,9 @@ impl ModelManager {
         // Check which models are already downloaded
         manager.update_download_status()?;
 
+        // Auto-select a model if none is currently selected
+        manager.auto_select_model_if_needed()?;
+
         Ok(manager)
     }
 
@@ -163,6 +167,29 @@ impl ModelManager {
             model.is_downloaded = model_path.exists();
         }
 
+        Ok(())
+    }
+
+    fn auto_select_model_if_needed(&self) -> Result<()> {
+        // Check if we have a selected model in settings
+        let settings = get_settings(&self.app_handle);
+        
+        // If no model is selected or selected model is empty
+        if settings.selected_model.is_empty() {
+            // Find the first available (downloaded) model
+            let models = self.available_models.lock().unwrap();
+            if let Some(available_model) = models.values().find(|model| model.is_downloaded) {
+                println!("Auto-selecting model: {} ({})", available_model.id, available_model.name);
+                
+                // Update settings with the selected model
+                let mut updated_settings = settings;
+                updated_settings.selected_model = available_model.id.clone();
+                write_settings(&self.app_handle, updated_settings);
+                
+                println!("Successfully auto-selected model: {}", available_model.id);
+            }
+        }
+        
         Ok(())
     }
 
