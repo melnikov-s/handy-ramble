@@ -39,6 +39,16 @@ fn default_always_on_microphone() -> bool {
 pub const SETTINGS_STORE_PATH: &str = "settings_store.json";
 
 pub fn get_default_settings() -> AppSettings {
+    // Set platform-specific default keyboard shortcuts
+    #[cfg(target_os = "windows")]
+    let default_shortcut = "ctrl+space";
+    #[cfg(target_os = "macos")]
+    let default_shortcut = "alt+space";  // Alt key on macOS (Option key)
+    #[cfg(target_os = "linux")]
+    let default_shortcut = "ctrl+space";
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    let default_shortcut = "alt+space";  // Fallback for other platforms
+    
     let mut bindings = HashMap::new();
     bindings.insert(
         "transcribe".to_string(),
@@ -46,8 +56,8 @@ pub fn get_default_settings() -> AppSettings {
             id: "transcribe".to_string(),
             name: "Transcribe".to_string(),
             description: "Converts your speech into text.".to_string(),
-            default_binding: "alt+space".to_string(),
-            current_binding: "alt+space".to_string(),
+            default_binding: default_shortcut.to_string(),
+            current_binding: default_shortcut.to_string(),
         },
     );
     // bindings.insert(
