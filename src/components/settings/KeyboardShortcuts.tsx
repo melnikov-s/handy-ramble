@@ -8,7 +8,7 @@ import {
 } from "../../lib/types";
 import { invoke } from "@tauri-apps/api/core";
 import { type } from "@tauri-apps/plugin-os";
-import keycode from "keycode";
+import { getKeyName } from "../../lib/utils/keyboard";
 import ResetIcon from "../icons/ResetIcon";
 
 export const KeyboardShortcuts: React.FC = () => {
@@ -95,7 +95,7 @@ export const KeyboardShortcuts: React.FC = () => {
       e.preventDefault();
 
       // Get the key and normalize it (unify left/right modifiers)
-      const rawKey = keycode(e).toLowerCase();
+      const rawKey = getKeyName(e);
       const key = normalizeKey(rawKey);
 
       console.log("You pressed", rawKey, "normalized to", key);
@@ -113,7 +113,7 @@ export const KeyboardShortcuts: React.FC = () => {
       e.preventDefault();
 
       // Get the key and normalize it
-      const rawKey = keycode(e).toLowerCase();
+      const rawKey = getKeyName(e);
       const key = normalizeKey(rawKey);
 
       // Remove from currently pressed keys
