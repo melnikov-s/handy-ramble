@@ -1,3 +1,4 @@
+use crate::settings::{get_settings, write_settings};
 use anyhow::Result;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -7,7 +8,6 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::{App, AppHandle, Emitter, Manager};
-use crate::settings::{get_settings, write_settings};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelInfo {
@@ -71,9 +71,9 @@ impl ModelManager {
                 id: "medium".to_string(),
                 name: "Whisper Medium".to_string(),
                 description: "Good accuracy, medium speed".to_string(),
-                filename: "ggml-medium-q5_0.bin".to_string(),
-                url: Some("https://blob.handy.computer/ggml-medium-q5_0.bin".to_string()),
-                size_mb: 539, // Approximate size
+                filename: "whisper-medium-q4_1.bin".to_string(),
+                url: Some("https://blob.handy.computer/whisper-medium-q4_1.bin".to_string()),
+                size_mb: 491, // Approximate size
                 is_downloaded: false,
             },
         );
@@ -84,9 +84,9 @@ impl ModelManager {
                 id: "turbo".to_string(),
                 name: "Whisper Turbo".to_string(),
                 description: "Balanced accuracy and speed.".to_string(),
-                filename: "ggml-large-v3-turbo-q5_0.bin".to_string(),
-                url: Some("https://blob.handy.computer/ggml-large-v3-turbo-q5_0.bin".to_string()),
-                size_mb: 574, // Approximate size
+                filename: "ggml-large-v3-turbo.bin".to_string(),
+                url: Some("https://blob.handy.computer/ggml-large-v3-turbo.bin".to_string()),
+                size_mb: 1600, // Approximate size
                 is_downloaded: false,
             },
         );
@@ -173,23 +173,26 @@ impl ModelManager {
     fn auto_select_model_if_needed(&self) -> Result<()> {
         // Check if we have a selected model in settings
         let settings = get_settings(&self.app_handle);
-        
+
         // If no model is selected or selected model is empty
         if settings.selected_model.is_empty() {
             // Find the first available (downloaded) model
             let models = self.available_models.lock().unwrap();
             if let Some(available_model) = models.values().find(|model| model.is_downloaded) {
-                println!("Auto-selecting model: {} ({})", available_model.id, available_model.name);
-                
+                println!(
+                    "Auto-selecting model: {} ({})",
+                    available_model.id, available_model.name
+                );
+
                 // Update settings with the selected model
                 let mut updated_settings = settings;
                 updated_settings.selected_model = available_model.id.clone();
                 write_settings(&self.app_handle, updated_settings);
-                
+
                 println!("Successfully auto-selected model: {}", available_model.id);
             }
         }
-        
+
         Ok(())
     }
 
