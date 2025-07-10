@@ -23,7 +23,6 @@ enum Cmd {
 }
 
 pub struct AudioRecorder {
-    stream: Option<cpal::Stream>,
     device: Option<Device>,
     cmd_tx: Option<mpsc::Sender<Cmd>>,
     worker_handle: Option<std::thread::JoinHandle<()>>,
@@ -33,7 +32,6 @@ pub struct AudioRecorder {
 impl AudioRecorder {
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
         Ok(AudioRecorder {
-            stream: None,
             device: None,
             cmd_tx: None,
             worker_handle: None,
@@ -47,9 +45,8 @@ impl AudioRecorder {
     }
 
     pub fn open(&mut self, device: Option<Device>) -> Result<(), Box<dyn std::error::Error>> {
-        // TODO should we check the device is correct?
-        if self.stream.is_some() {
-            return Ok(());
+        if self.worker_handle.is_some() {
+            return Ok(()); // already open
         }
 
         let (sample_tx, sample_rx) = mpsc::channel::<Vec<f32>>();
@@ -57,56 +54,58 @@ impl AudioRecorder {
 
         let host = cpal::default_host();
         let device = match device {
-            Some(dev) => dev.clone(),
+            Some(dev) => dev,
             None => host
                 .default_input_device()
                 .ok_or_else(|| Error::new(std::io::ErrorKind::NotFound, "No input device found"))?,
         };
 
-        let config = self.get_preferred_config(&device)?;
-        let sample_rate = config.sample_rate().0;
-        let channels = config.channels() as usize;
-
-        // info print about the device and config
-        println!(
-            "Using device: {:?}\nSample Rate: {}\nChannels: {}\nSample Format: {:?}",
-            device.name(),
-            sample_rate,
-            channels,
-            config.sample_format()
-        );
-
-        let stream = match config.sample_format() {
-            cpal::SampleFormat::I8 => {
-                self.build_stream::<i8>(&device, &config, sample_tx, channels)?
-            }
-            cpal::SampleFormat::I16 => {
-                self.build_stream::<i16>(&device, &config, sample_tx, channels)?
-            }
-            cpal::SampleFormat::I32 => {
-                self.build_stream::<i32>(&device, &config, sample_tx, channels)?
-            }
-            cpal::SampleFormat::F32 => {
-                self.build_stream::<f32>(&device, &config, sample_tx, channels)?
-            }
-            _ => {
-                return Err(Box::new(Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    "Unsupported sample format",
-                )));
-            }
-        };
-
+        let thread_device = device.clone();
         let vad = self.vad.clone();
 
         let worker = std::thread::spawn(move || {
+            let config = AudioRecorder::get_preferred_config(&thread_device)
+                .expect("failed to fetch preferred config");
+
+            let sample_rate = config.sample_rate().0;
+            let channels = config.channels() as usize;
+
+            println!(
+                "Using device: {:?}\nSample rate: {}\nChannels: {}\nFormat: {:?}",
+                thread_device.name(),
+                sample_rate,
+                channels,
+                config.sample_format()
+            );
+
+            let stream = match config.sample_format() {
+                cpal::SampleFormat::I8 => {
+                    AudioRecorder::build_stream::<i8>(&thread_device, &config, sample_tx, channels)
+                        .unwrap()
+                }
+                cpal::SampleFormat::I16 => {
+                    AudioRecorder::build_stream::<i16>(&thread_device, &config, sample_tx, channels)
+                        .unwrap()
+                }
+                cpal::SampleFormat::I32 => {
+                    AudioRecorder::build_stream::<i32>(&thread_device, &config, sample_tx, channels)
+                        .unwrap()
+                }
+                cpal::SampleFormat::F32 => {
+                    AudioRecorder::build_stream::<f32>(&thread_device, &config, sample_tx, channels)
+                        .unwrap()
+                }
+                _ => panic!("unsupported sample format"),
+            };
+
+            stream.play().expect("failed to start stream");
+
+            // keep the stream alive while we process samples
             run_consumer(sample_rate, vad, sample_rx, cmd_rx);
+            // stream is dropped here, after run_consumer returns
         });
 
-        stream.play()?;
-
         self.device = Some(device);
-        self.stream = Some(stream);
         self.cmd_tx = Some(cmd_tx);
         self.worker_handle = Some(worker);
 
@@ -132,7 +131,6 @@ impl AudioRecorder {
         if let Some(tx) = self.cmd_tx.take() {
             let _ = tx.send(Cmd::Shutdown);
         }
-        self.stream.take(); // drop stream → stops cpal
         if let Some(h) = self.worker_handle.take() {
             let _ = h.join();
         }
@@ -141,7 +139,6 @@ impl AudioRecorder {
     }
 
     fn build_stream<T>(
-        &self,
         device: &cpal::Device,
         config: &cpal::SupportedStreamConfig,
         sample_tx: mpsc::Sender<Vec<f32>>,
@@ -188,7 +185,6 @@ impl AudioRecorder {
     }
 
     fn get_preferred_config(
-        &self,
         device: &cpal::Device,
     ) -> Result<cpal::SupportedStreamConfig, Box<dyn std::error::Error>> {
         let supported_configs = device.supported_input_configs()?;
