@@ -1,5 +1,5 @@
 use crate::settings::get_settings;
-use audio_toolkit::{vad::SmoothedVad, AudioRecorder, SileroVad};
+use crate::audio_toolkit::{vad::SmoothedVad, AudioRecorder, SileroVad};
 use log::{debug, info};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;

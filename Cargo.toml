@@ -1,3 +1,0 @@
-[workspace]
-members = ["src-tauri", "crates/audio-toolkit"]
-resolver = "2"

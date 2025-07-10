@@ -1,4 +1,5 @@
 mod actions;
+pub mod audio_toolkit;
 mod commands;
 mod managers;
 mod settings;

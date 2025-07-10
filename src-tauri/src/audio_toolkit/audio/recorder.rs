@@ -9,7 +9,7 @@ use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
 };
 
-use crate::{
+use crate::audio_toolkit::{
     VoiceActivityDetector,
     audio::FrameResampler,
     constants,

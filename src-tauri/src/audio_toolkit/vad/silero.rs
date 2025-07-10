@@ -4,7 +4,7 @@ use std::path::Path;
 use vad_rs::Vad;
 
 use super::{VadFrame, VoiceActivityDetector};
-use crate::constants;
+use crate::audio_toolkit::constants;
 
 const SILERO_FRAME_MS: u32 = 30;
 const SILERO_FRAME_SAMPLES: usize =

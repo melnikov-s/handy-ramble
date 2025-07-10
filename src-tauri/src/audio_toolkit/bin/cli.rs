@@ -1,6 +1,11 @@
-use audio_toolkit::{AudioRecorder, SileroVad, list_input_devices, vad::SmoothedVad};
 use hound::WavWriter;
 use std::io::{self, Write};
+
+use handy_app_lib::audio_toolkit::{
+    audio::{list_input_devices, CpalDeviceInfo},
+    vad::SmoothedVad,
+    AudioRecorder, SileroVad,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 enum RecorderMode {
@@ -73,7 +78,7 @@ impl RecorderState {
     fn start_recording(
         &mut self,
         device_index: Option<usize>,
-        devices: &[audio_toolkit::CpalDeviceInfo],
+        devices: &[CpalDeviceInfo],
     ) -> Result<(), Box<dyn std::error::Error>> {
         if self.is_recording {
             return Err("Already recording! Stop the current recording first.".into());
@@ -170,7 +175,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=========================");
     print_help();
 
-    let silero = SileroVad::new("./src-tauri/resources/models/silero_vad_v4.onnx", 0.5)?;
+    let silero = SileroVad::new("./resources/models/silero_vad_v4.onnx", 0.5)?;
     let smoothed_vad = SmoothedVad::new(Box::new(silero), 15, 15);
     let recorder = AudioRecorder::new()?.with_vad(Box::new(smoothed_vad));
     let mut state = RecorderState::new(recorder);
@@ -324,7 +329,7 @@ fn print_help() {
     println!();
 }
 
-fn print_devices(devices: &[audio_toolkit::CpalDeviceInfo]) {
+fn print_devices(devices: &[CpalDeviceInfo]) {
     println!("Available audio devices:");
     for (index, device) in devices.iter().enumerate() {
         println!("  {}: {}", index, device.name);
