@@ -1,0 +1,20 @@
+[package]
+name = "audio-toolkit"
+version = "0.1.0"
+edition = "2024"
+description = "Audio recording and processing toolkit for Handy"
+authors = ["cjpais"]
+
+[[bin]]
+name = "cli"
+path = "src/bin/cli.rs"
+
+[dependencies]
+anyhow = "1.0.98"
+cpal = "0.16.0"
+hound = "3.5.1"
+rubato = "0.16.2"
+vad-rs = "0.1.5"
+
+[dependencies.ort-sys]
+version = "=2.0.0-rc.9"
