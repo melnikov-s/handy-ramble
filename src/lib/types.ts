@@ -13,10 +13,20 @@ export const ShortcutBindingsMapSchema = z.record(
   ShortcutBindingSchema,
 );
 
+export const AudioDeviceSchema = z.object({
+  index: z.string(),
+  name: z.string(),
+  is_default: z.boolean(),
+});
+
 export const SettingsSchema = z.object({
   bindings: ShortcutBindingsMapSchema,
   push_to_talk: z.boolean(),
   audio_feedback: z.boolean(),
+  selected_model: z.string(),
+  always_on_microphone: z.boolean(),
+  selected_microphone: z.string().nullable().optional(),
+  selected_output_device: z.string().nullable().optional(),
 });
 
 export const BindingResponseSchema = z.object({
@@ -25,6 +35,7 @@ export const BindingResponseSchema = z.object({
   error: z.string().nullable(),
 });
 
+export type AudioDevice = z.infer<typeof AudioDeviceSchema>;
 export type BindingResponse = z.infer<typeof BindingResponseSchema>;
 export type ShortcutBinding = z.infer<typeof ShortcutBindingSchema>;
 export type ShortcutBindingsMap = z.infer<typeof ShortcutBindingsMapSchema>;

@@ -22,6 +22,10 @@ pub struct AppSettings {
     pub selected_model: String,
     #[serde(default = "default_always_on_microphone")]
     pub always_on_microphone: bool,
+    #[serde(default)]
+    pub selected_microphone: Option<String>,
+    #[serde(default)]
+    pub selected_output_device: Option<String>,
 }
 
 fn default_model() -> String {
@@ -77,6 +81,8 @@ pub fn get_default_settings() -> AppSettings {
         audio_feedback: false,
         selected_model: "".to_string(),
         always_on_microphone: false,
+        selected_microphone: None,
+        selected_output_device: None,
     }
 }
 
