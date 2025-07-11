@@ -1,21 +1,25 @@
 import React, { useEffect, useState, useRef } from "react";
-import { load } from "@tauri-apps/plugin-store";
 import {
   BindingResponseSchema,
   SettingsSchema,
-  ShortcutBindingSchema,
   ShortcutBindingsMap,
 } from "../../lib/types";
 import { invoke } from "@tauri-apps/api/core";
 import { type } from "@tauri-apps/plugin-os";
 import { getKeyName } from "../../lib/utils/keyboard";
 import ResetIcon from "../icons/ResetIcon";
+import { SettingContainer } from "../ui/SettingContainer";
 
-export const KeyboardShortcuts: React.FC = () => {
+interface HandyShortcutProps {
+  descriptionMode?: "inline" | "tooltip";
+  grouped?: boolean;
+}
+
+export const HandyShortcut: React.FC<HandyShortcutProps> = ({
+  descriptionMode = "tooltip",
+  grouped = false,
+}) => {
   const [bindings, setBindings] = React.useState<ShortcutBindingsMap>({});
-  const [pttEnabled, setPttEnabled] = React.useState<boolean>(false);
-  const [audioFeedbackEnabled, setAudioFeedbackEnabled] =
-    React.useState<boolean>(false);
   const [keyPressed, setKeyPressed] = useState<string[]>([]);
   const [recordedKeys, setRecordedKeys] = useState<string[]>([]);
   const [editingShortcutId, setEditingShortcutId] = useState<string | null>(
@@ -23,13 +27,14 @@ export const KeyboardShortcuts: React.FC = () => {
   );
   const [originalBinding, setOriginalBinding] = useState<string>("");
   const [isMacOS, setIsMacOS] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const shortcutRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
 
   // Check if running on macOS
   useEffect(() => {
     const checkOsType = async () => {
       try {
-        const osType = type();
+        const osType = await type();
         setIsMacOS(osType === "macos");
       } catch (error) {
         console.error("Error detecting OS type:", error);
@@ -72,17 +77,26 @@ export const KeyboardShortcuts: React.FC = () => {
   };
 
   useEffect(() => {
-    load("settings_store.json", { autoSave: false }).then((r) => {
-      console.log("loaded store", r);
-
-      r.get("settings").then((s) => {
-        const settings = SettingsSchema.parse(s);
-        setBindings(settings.bindings);
-        setPttEnabled(settings.push_to_talk);
-        setAudioFeedbackEnabled(settings.audio_feedback);
-      });
-    });
+    loadSettings();
   }, []);
+
+  const loadSettings = async () => {
+    try {
+      setIsLoading(true);
+      const { load } = await import("@tauri-apps/plugin-store");
+      const store = await load("settings_store.json", { autoSave: false });
+      const settings = await store.get("settings");
+
+      if (settings) {
+        const parsedSettings = SettingsSchema.parse(settings);
+        setBindings(parsedSettings.bindings);
+      }
+    } catch (error) {
+      console.error("Failed to load settings:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
     // Only add event listeners when we're in editing mode
@@ -91,7 +105,7 @@ export const KeyboardShortcuts: React.FC = () => {
     console.log("keyPressed", keyPressed);
 
     // Keyboard event listeners
-    const handleKeyDown = (e: KeyboardEvent) => {
+    const handleKeyDown = async (e: KeyboardEvent) => {
       e.preventDefault();
 
       // Get the key and normalize it (unify left/right modifiers)
@@ -109,7 +123,7 @@ export const KeyboardShortcuts: React.FC = () => {
       }
     };
 
-    const handleKeyUp = (e: KeyboardEvent) => {
+    const handleKeyUp = async (e: KeyboardEvent) => {
       e.preventDefault();
 
       // Get the key and normalize it
@@ -120,7 +134,8 @@ export const KeyboardShortcuts: React.FC = () => {
       setKeyPressed((prev) => prev.filter((k) => k !== key));
 
       // If no keys are pressed anymore, commit the shortcut
-      if (keyPressed.length === 1 && keyPressed[0] === key) {
+      const updatedKeyPressed = keyPressed.filter((k) => k !== key);
+      if (updatedKeyPressed.length === 0 && recordedKeys.length > 0) {
         // Create the shortcut string from all recorded keys
         const newShortcut = recordedKeys.join("+");
 
@@ -135,10 +150,22 @@ export const KeyboardShortcuts: React.FC = () => {
             [editingShortcutId]: updatedBinding,
           }));
 
-          invoke("change_binding", {
-            id: editingShortcutId,
-            binding: newShortcut,
-          });
+          try {
+            await invoke("change_binding", {
+              id: editingShortcutId,
+              binding: newShortcut,
+            });
+          } catch (error) {
+            console.error("Failed to change binding:", error);
+            // Restore original binding on error
+            setBindings((prev) => ({
+              ...prev,
+              [editingShortcutId]: {
+                ...prev[editingShortcutId],
+                current_binding: originalBinding,
+              },
+            }));
+          }
 
           // Exit editing mode and reset states
           setEditingShortcutId(null);
@@ -174,17 +201,19 @@ export const KeyboardShortcuts: React.FC = () => {
 
     window.addEventListener("keydown", handleKeyDown);
     window.addEventListener("keyup", handleKeyUp);
-    window.addEventListener("mousedown", handleClickOutside);
+    window.addEventListener("click", handleClickOutside);
 
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
-      window.removeEventListener("mousedown", handleClickOutside);
+      window.removeEventListener("click", handleClickOutside);
     };
   }, [keyPressed, recordedKeys, editingShortcutId, bindings, originalBinding]);
 
   // Start recording a new shortcut
   const startRecording = (id: string) => {
+    if (editingShortcutId === id) return; // Already editing this shortcut
+
     // Store the original binding to restore if canceled
     setOriginalBinding(bindings[id]?.current_binding || "");
     setEditingShortcutId(id);
@@ -209,69 +238,56 @@ export const KeyboardShortcuts: React.FC = () => {
     shortcutRefs.current.set(id, ref);
   };
 
+  // If still loading, show loading state
+  if (isLoading) {
+    return (
+      <SettingContainer
+        title="Handy Shortcuts"
+        description="Configure keyboard shortcuts to trigger speech-to-text recording"
+        descriptionMode={descriptionMode}
+        grouped={grouped}
+      >
+        <div className="text-sm text-mid-gray">Loading shortcuts...</div>
+      </SettingContainer>
+    );
+  }
+
+  // If no bindings are loaded, show empty state
+  if (Object.keys(bindings).length === 0) {
+    return (
+      <SettingContainer
+        title="Handy Shortcuts"
+        description="Configure keyboard shortcuts to trigger speech-to-text recording"
+        descriptionMode={descriptionMode}
+        grouped={grouped}
+      >
+        <div className="text-sm text-mid-gray">No shortcuts configured</div>
+      </SettingContainer>
+    );
+  }
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between p-4 rounded-lg border border-mid-gray/20 ">
-        <div className="max-w-2/3">
-          <h3 className="text-sm font-medium ">Push To Talk</h3>
-          <p className="text-sm">Hold to record, release to stop</p>
-        </div>
-        <label className="inline-flex items-center cursor-pointer">
-          <input
-            type="checkbox"
-            value=""
-            className="sr-only peer"
-            checked={pttEnabled}
-            onChange={(e) => {
-              console.log("change ptt setting", e.target.checked);
-              const newValue = e.target.checked;
-              setPttEnabled(newValue);
+    <SettingContainer
+      title="Handy Shortcut"
+      description="Set the keyboard shortcut to start and stop speech-to-text recording"
+      descriptionMode={descriptionMode}
+      grouped={grouped}
+    >
+      {(() => {
+        const primaryBinding = Object.values(bindings)[0];
+        const primaryId = Object.keys(bindings)[0];
 
-              invoke("change_ptt_setting", {
-                enabled: newValue,
-              });
-            }}
-          />
-          <div className="relative w-11 h-6 bg-mid-gray/20 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-logo-primary rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-logo-primary"></div>
-        </label>
-      </div>
-      <div className="flex items-center justify-between p-4 rounded-lg border border-mid-gray/20 ">
-        <div className="max-w-2/3">
-          <h3 className="text-sm font-medium ">Audio Feedback</h3>
-          <p className="text-sm">Play sound when recording starts and stops</p>
-        </div>
-        <label className="inline-flex items-center cursor-pointer">
-          <input
-            type="checkbox"
-            value=""
-            className="sr-only peer"
-            checked={audioFeedbackEnabled}
-            onChange={(e) => {
-              console.log("change audio feedback setting", e.target.checked);
-              const newValue = e.target.checked;
-              setAudioFeedbackEnabled(newValue);
+        if (!primaryBinding) {
+          return (
+            <div className="text-sm text-mid-gray">No shortcuts configured</div>
+          );
+        }
 
-              invoke("change_audio_feedback_setting", {
-                enabled: newValue,
-              });
-            }}
-          />
-          <div className="relative w-11 h-6 bg-mid-gray/20 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-logo-primary rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-logo-primary"></div>
-        </label>
-      </div>
-      {Object.entries(bindings).map(([id, binding]) => (
-        <div
-          key={id}
-          className="flex items-center justify-between p-4 rounded-lg border border-mid-gray/20 "
-        >
-          <div>
-            <h3 className="text-sm font-medium ">{binding.name}</h3>
-            <p className="text-sm">{binding.description}</p>
-          </div>
+        return (
           <div className="flex items-center space-x-1">
-            {editingShortcutId === id ? (
+            {editingShortcutId === primaryId ? (
               <div
-                ref={(ref) => setShortcutRef(id, ref)}
+                ref={(ref) => setShortcutRef(primaryId, ref)}
                 className="px-2 py-1 text-sm font-semibold border border-logo-primary bg-logo-primary/30 rounded min-w-[120px] text-center"
               >
                 {formatCurrentKeys()}
@@ -279,15 +295,16 @@ export const KeyboardShortcuts: React.FC = () => {
             ) : (
               <div
                 className="px-2 py-1 text-sm font-semibold bg-mid-gray/10 border border-mid-gray/80 hover:bg-logo-primary/10 rounded cursor-pointer hover:border-logo-primary"
-                onClick={() => startRecording(id)}
+                onClick={() => startRecording(primaryId)}
               >
-                {formatKeyCombination(binding.current_binding)}
+                {formatKeyCombination(primaryBinding.current_binding)}
               </div>
             )}
             <button
               className="px-2 py-1 hover:bg-logo-primary/30 active:bg-logo-primary/50 active:scale-95 rounded fill-text hover:cursor-pointer hover:border-logo-primary border border-transparent transition-all duration-150"
-              onClick={() => {
-                invoke("reset_binding", { id }).then((b) => {
+              onClick={async () => {
+                try {
+                  const b = await invoke("reset_binding", { id: primaryId });
                   console.log("reset");
                   const newBinding = BindingResponseSchema.parse(b);
 
@@ -299,14 +316,16 @@ export const KeyboardShortcuts: React.FC = () => {
                   const binding = newBinding.binding!;
 
                   setBindings({ ...bindings, [binding.id]: binding });
-                });
+                } catch (error) {
+                  console.error("Failed to reset binding:", error);
+                }
               }}
             >
               <ResetIcon className="" />
             </button>
           </div>
-        </div>
-      ))}
-    </div>
+        );
+      })()}
+    </SettingContainer>
   );
 };

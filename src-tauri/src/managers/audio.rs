@@ -1,5 +1,5 @@
+use crate::audio_toolkit::{list_input_devices, vad::SmoothedVad, AudioRecorder, SileroVad};
 use crate::settings::get_settings;
-use crate::audio_toolkit::{vad::SmoothedVad, AudioRecorder, SileroVad};
 use log::{debug, info};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
@@ -100,8 +100,26 @@ impl AudioRecordingManager {
             *recorder_opt = Some(create_audio_recorder(vad_path.to_str().unwrap())?);
         }
 
+        // Get the selected device from settings
+        let settings = get_settings(&self.app_handle);
+        let selected_device = if let Some(device_name) = settings.selected_microphone {
+            // Find the device by name
+            match list_input_devices() {
+                Ok(devices) => devices
+                    .into_iter()
+                    .find(|d| d.name == device_name)
+                    .map(|d| d.device),
+                Err(e) => {
+                    debug!("Failed to list devices, using default: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         if let Some(rec) = recorder_opt.as_mut() {
-            rec.open(None)
+            rec.open(selected_device)
                 .map_err(|e| anyhow::anyhow!("Failed to open recorder: {}", e))?;
         }
 
@@ -185,6 +203,15 @@ impl AudioRecordingManager {
         } else {
             false
         }
+    }
+
+    pub fn update_selected_device(&self) -> Result<(), anyhow::Error> {
+        // If currently open, restart the microphone stream to use the new device
+        if *self.is_open.lock().unwrap() {
+            self.stop_microphone_stream();
+            self.start_microphone_stream()?;
+        }
+        Ok(())
     }
 
     pub fn stop_recording(&self, binding_id: &str) -> Option<Vec<f32>> {

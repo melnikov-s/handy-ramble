@@ -188,7 +188,13 @@ pub fn run() {
             commands::models::has_any_models_or_downloads,
             commands::models::get_recommended_first_model,
             commands::audio::update_microphone_mode,
-            commands::audio::get_microphone_mode
+            commands::audio::get_microphone_mode,
+            commands::audio::get_available_microphones,
+            commands::audio::set_selected_microphone,
+            commands::audio::get_selected_microphone,
+            commands::audio::get_available_output_devices,
+            commands::audio::set_selected_output_device,
+            commands::audio::get_selected_output_device
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
