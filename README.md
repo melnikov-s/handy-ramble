@@ -4,7 +4,7 @@
 
 Handy is a cross-platform desktop application built with Tauri (Rust + React/TypeScript) that provides simple, privacy-focused speech transcription. Press a shortcut, speak, and have your words appear in any text field—all without sending your voice to the cloud.
 
-Looking for a Superwhisper alternative. Handy is here for you. Looking for Superwhisper on Windows? Handy is here for you.
+Looking for a open-source Superwhisper alternative? Looking for Superwhisper on Windows? Handy is here for you.
 
 ## Why Handy?
 
