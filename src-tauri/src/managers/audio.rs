@@ -24,9 +24,9 @@ pub enum MicrophoneMode {
 /* ──────────────────────────────────────────────────────────────── */
 
 fn create_audio_recorder(vad_path: &str) -> Result<AudioRecorder, anyhow::Error> {
-    let silero = SileroVad::new(vad_path, 0.5)
+    let silero = SileroVad::new(vad_path, 0.3)
         .map_err(|e| anyhow::anyhow!("Failed to create SileroVad: {}", e))?;
-    let smoothed_vad = SmoothedVad::new(Box::new(silero), 15, 15);
+    let smoothed_vad = SmoothedVad::new(Box::new(silero), 15, 15, 2);
     let recorder = AudioRecorder::new()
         .map_err(|e| anyhow::anyhow!("Failed to create AudioRecorder: {}", e))?
         .with_vad(Box::new(smoothed_vad));
@@ -246,7 +246,8 @@ impl AudioRecordingManager {
 
                 // Pad if very short
                 let s_len = samples.len();
-                if s_len < WHISPER_SAMPLE_RATE && s_len > 1000 {
+                // println!("Got {} samples", { s_len });
+                if s_len < WHISPER_SAMPLE_RATE && s_len > 0 {
                     let mut padded = samples;
                     padded.resize(WHISPER_SAMPLE_RATE * 5 / 4, 0.0);
                     Some(padded)
