@@ -185,7 +185,7 @@ impl TranscriptionManager {
         params.set_print_timestamps(false);
         params.set_suppress_blank(true);
         params.set_suppress_non_speech_tokens(true);
-        
+
         // Enable translation to English if requested
         if settings.translate_to_english {
             params.set_translate(true);
@@ -207,7 +207,11 @@ impl TranscriptionManager {
         }
 
         let et = std::time::Instant::now();
-        let translation_note = if settings.translate_to_english { " (translated)" } else { "" };
+        let translation_note = if settings.translate_to_english {
+            " (translated)"
+        } else {
+            ""
+        };
         println!("\ntook {}ms{}", (et - st).as_millis(), translation_note);
 
         Ok(result.trim().to_string())
