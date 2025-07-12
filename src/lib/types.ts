@@ -27,6 +27,7 @@ export const SettingsSchema = z.object({
   always_on_microphone: z.boolean(),
   selected_microphone: z.string().nullable().optional(),
   selected_output_device: z.string().nullable().optional(),
+  translate_to_english: z.boolean(),
 });
 
 export const BindingResponseSchema = z.object({

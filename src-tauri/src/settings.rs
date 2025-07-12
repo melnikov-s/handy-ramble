@@ -26,6 +26,8 @@ pub struct AppSettings {
     pub selected_microphone: Option<String>,
     #[serde(default)]
     pub selected_output_device: Option<String>,
+    #[serde(default = "default_translate_to_english")]
+    pub translate_to_english: bool,
 }
 
 fn default_model() -> String {
@@ -40,6 +42,11 @@ fn default_always_on_microphone() -> bool {
     false
 }
 
+fn default_translate_to_english() -> bool {
+    // Default to false - users need to opt-in to translation
+    false
+}
+
 pub const SETTINGS_STORE_PATH: &str = "settings_store.json";
 
 pub fn get_default_settings() -> AppSettings {
@@ -47,12 +54,12 @@ pub fn get_default_settings() -> AppSettings {
     #[cfg(target_os = "windows")]
     let default_shortcut = "ctrl+space";
     #[cfg(target_os = "macos")]
-    let default_shortcut = "alt+space";  // Alt key on macOS (Option key)
+    let default_shortcut = "alt+space"; // Alt key on macOS (Option key)
     #[cfg(target_os = "linux")]
     let default_shortcut = "ctrl+space";
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-    let default_shortcut = "alt+space";  // Fallback for other platforms
-    
+    let default_shortcut = "alt+space"; // Fallback for other platforms
+
     let mut bindings = HashMap::new();
     bindings.insert(
         "transcribe".to_string(),
@@ -83,6 +90,7 @@ pub fn get_default_settings() -> AppSettings {
         always_on_microphone: false,
         selected_microphone: None,
         selected_output_device: None,
+        translate_to_english: false,
     }
 }
 
@@ -130,7 +138,8 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
         .expect("Failed to initialize store");
 
     if let Some(settings_value) = store.get("settings") {
-        serde_json::from_value::<AppSettings>(settings_value).unwrap_or_else(|_| get_default_settings())
+        serde_json::from_value::<AppSettings>(settings_value)
+            .unwrap_or_else(|_| get_default_settings())
     } else {
         get_default_settings()
     }
