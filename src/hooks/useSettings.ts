@@ -189,6 +189,11 @@ export const useSettings = (): UseSettingsReturn => {
               deviceName: outputDeviceName,
             });
             break;
+          case "translate_to_english":
+            await invoke("change_translate_to_english_setting", {
+              enabled: value,
+            });
+            break;
           case "bindings":
             // Handle bindings separately - they use their own invoke methods
             break;
@@ -231,6 +236,7 @@ export const useSettings = (): UseSettingsReturn => {
         push_to_talk: false,
         selected_microphone: "Default",
         selected_output_device: "Default",
+        translate_to_english: false,
       };
 
       const defaultValue = defaults[key];

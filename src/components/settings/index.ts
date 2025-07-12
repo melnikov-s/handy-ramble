@@ -5,3 +5,4 @@ export { AlwaysOnMicrophone } from "./AlwaysOnMicrophone";
 export { PushToTalk } from "./PushToTalk";
 export { AudioFeedback } from "./AudioFeedback";
 export { HandyShortcut } from "./HandyShortcut";
+export { TranslateToEnglish } from "./TranslateToEnglish";
