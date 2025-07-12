@@ -1,14 +1,10 @@
 import React, { useEffect, useState, useRef } from "react";
-import {
-  BindingResponseSchema,
-  SettingsSchema,
-  ShortcutBindingsMap,
-} from "../../lib/types";
-import { invoke } from "@tauri-apps/api/core";
+import { BindingResponseSchema, ShortcutBindingsMap } from "../../lib/types";
 import { type } from "@tauri-apps/plugin-os";
 import { getKeyName } from "../../lib/utils/keyboard";
 import ResetIcon from "../icons/ResetIcon";
 import { SettingContainer } from "../ui/SettingContainer";
+import { useSettings } from "../../hooks/useSettings";
 
 interface HandyShortcutProps {
   descriptionMode?: "inline" | "tooltip";
@@ -19,7 +15,8 @@ export const HandyShortcut: React.FC<HandyShortcutProps> = ({
   descriptionMode = "tooltip",
   grouped = false,
 }) => {
-  const [bindings, setBindings] = React.useState<ShortcutBindingsMap>({});
+  const { getSetting, updateBinding, resetBinding, isUpdating, isLoading } =
+    useSettings();
   const [keyPressed, setKeyPressed] = useState<string[]>([]);
   const [recordedKeys, setRecordedKeys] = useState<string[]>([]);
   const [editingShortcutId, setEditingShortcutId] = useState<string | null>(
@@ -27,8 +24,9 @@ export const HandyShortcut: React.FC<HandyShortcutProps> = ({
   );
   const [originalBinding, setOriginalBinding] = useState<string>("");
   const [isMacOS, setIsMacOS] = useState<boolean>(false);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
   const shortcutRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
+
+  const bindings = getSetting("bindings") || {};
 
   // Check if running on macOS
   useEffect(() => {
@@ -77,28 +75,6 @@ export const HandyShortcut: React.FC<HandyShortcutProps> = ({
   };
 
   useEffect(() => {
-    loadSettings();
-  }, []);
-
-  const loadSettings = async () => {
-    try {
-      setIsLoading(true);
-      const { load } = await import("@tauri-apps/plugin-store");
-      const store = await load("settings_store.json", { autoSave: false });
-      const settings = await store.get("settings");
-
-      if (settings) {
-        const parsedSettings = SettingsSchema.parse(settings);
-        setBindings(parsedSettings.bindings);
-      }
-    } catch (error) {
-      console.error("Failed to load settings:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
     // Only add event listeners when we're in editing mode
     if (editingShortcutId === null) return;
 
@@ -140,31 +116,10 @@ export const HandyShortcut: React.FC<HandyShortcutProps> = ({
         const newShortcut = recordedKeys.join("+");
 
         if (editingShortcutId && bindings[editingShortcutId]) {
-          const updatedBinding = {
-            ...bindings[editingShortcutId],
-            current_binding: newShortcut,
-          };
-
-          setBindings((prev) => ({
-            ...prev,
-            [editingShortcutId]: updatedBinding,
-          }));
-
           try {
-            await invoke("change_binding", {
-              id: editingShortcutId,
-              binding: newShortcut,
-            });
+            await updateBinding(editingShortcutId, newShortcut);
           } catch (error) {
             console.error("Failed to change binding:", error);
-            // Restore original binding on error
-            setBindings((prev) => ({
-              ...prev,
-              [editingShortcutId]: {
-                ...prev[editingShortcutId],
-                current_binding: originalBinding,
-              },
-            }));
           }
 
           // Exit editing mode and reset states
@@ -180,22 +135,11 @@ export const HandyShortcut: React.FC<HandyShortcutProps> = ({
     const handleClickOutside = (e: MouseEvent) => {
       const activeElement = shortcutRefs.current.get(editingShortcutId);
       if (activeElement && !activeElement.contains(e.target as Node)) {
-        // Cancel shortcut recording and restore original value
-        if (editingShortcutId && bindings[editingShortcutId]) {
-          setBindings((prev) => ({
-            ...prev,
-            [editingShortcutId]: {
-              ...prev[editingShortcutId],
-              current_binding: originalBinding,
-            },
-          }));
-
-          // Reset states
-          setEditingShortcutId(null);
-          setKeyPressed([]);
-          setRecordedKeys([]);
-          setOriginalBinding("");
-        }
+        // Cancel shortcut recording - the hook will handle rollback
+        setEditingShortcutId(null);
+        setKeyPressed([]);
+        setRecordedKeys([]);
+        setOriginalBinding("");
       }
     };
 
@@ -208,7 +152,14 @@ export const HandyShortcut: React.FC<HandyShortcutProps> = ({
       window.removeEventListener("keyup", handleKeyUp);
       window.removeEventListener("click", handleClickOutside);
     };
-  }, [keyPressed, recordedKeys, editingShortcutId, bindings, originalBinding]);
+  }, [
+    keyPressed,
+    recordedKeys,
+    editingShortcutId,
+    bindings,
+    originalBinding,
+    updateBinding,
+  ]);
 
   // Start recording a new shortcut
   const startRecording = (id: string) => {
@@ -302,24 +253,8 @@ export const HandyShortcut: React.FC<HandyShortcutProps> = ({
             )}
             <button
               className="px-2 py-1 hover:bg-logo-primary/30 active:bg-logo-primary/50 active:scale-95 rounded fill-text hover:cursor-pointer hover:border-logo-primary border border-transparent transition-all duration-150"
-              onClick={async () => {
-                try {
-                  const b = await invoke("reset_binding", { id: primaryId });
-                  console.log("reset");
-                  const newBinding = BindingResponseSchema.parse(b);
-
-                  if (!newBinding.success) {
-                    console.error("Error resetting binding:", newBinding.error);
-                    return;
-                  }
-
-                  const binding = newBinding.binding!;
-
-                  setBindings({ ...bindings, [binding.id]: binding });
-                } catch (error) {
-                  console.error("Failed to reset binding:", error);
-                }
-              }}
+              onClick={() => resetBinding(primaryId)}
+              disabled={isUpdating(`binding_${primaryId}`)}
             >
               <ResetIcon className="" />
             </button>

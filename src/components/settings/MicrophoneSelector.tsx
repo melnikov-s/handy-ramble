@@ -1,9 +1,26 @@
-import React, { useState, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { AudioDevice } from "../../lib/types";
+import React from "react";
 import { Dropdown } from "../ui/Dropdown";
 import { SettingContainer } from "../ui/SettingContainer";
 import ResetIcon from "../icons/ResetIcon";
+import { useSettings } from "../../hooks/useSettings";
+
+// Simple refresh icon component
+const RefreshIcon: React.FC<{ className?: string }> = ({ className = "" }) => (
+  <svg
+    className={`w-4 h-4 ${className}`}
+    fill="none"
+    stroke="currentColor"
+    viewBox="0 0 24 24"
+    xmlns="http://www.w3.org/2000/svg"
+  >
+    <path
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={2}
+      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+    />
+  </svg>
+);
 
 interface MicrophoneSelectorProps {
   descriptionMode?: "inline" | "tooltip";
@@ -14,73 +31,28 @@ export const MicrophoneSelector: React.FC<MicrophoneSelectorProps> = ({
   descriptionMode = "tooltip",
   grouped = false,
 }) => {
-  const [audioDevices, setAudioDevices] = useState<AudioDevice[]>([]);
-  const [selectedMicrophone, setSelectedMicrophone] =
-    useState<string>("default");
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [isUpdating, setIsUpdating] = useState<boolean>(false);
+  const {
+    getSetting,
+    updateSetting,
+    resetSetting,
+    isUpdating,
+    isLoading,
+    audioDevices,
+    refreshAudioDevices,
+  } = useSettings();
 
-  useEffect(() => {
-    loadAudioDevices();
-    loadSettings();
-  }, []);
-
-  const loadAudioDevices = async () => {
-    try {
-      const devices: AudioDevice[] = await invoke("get_available_microphones");
-      setAudioDevices(devices);
-    } catch (error) {
-      console.error("Failed to load audio devices:", error);
-      setAudioDevices([]);
-    }
-  };
-
-  const loadSettings = async () => {
-    try {
-      setIsLoading(true);
-      const selectedMic: string = await invoke("get_selected_microphone");
-      setSelectedMicrophone(selectedMic);
-    } catch (error) {
-      console.error("Failed to load microphone settings:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const selectedMicrophone = getSetting("selected_microphone") || "Default";
 
   const handleMicrophoneSelect = async (deviceName: string) => {
-    if (isUpdating) return;
-
-    try {
-      setIsUpdating(true);
-      await invoke("set_selected_microphone", { deviceName });
-      setSelectedMicrophone(deviceName);
-      console.log(
-        `Microphone changed to: ${audioDevices.find((d) => d.name === deviceName)?.name}`,
-      );
-    } catch (error) {
-      console.error("Failed to set microphone:", error);
-      // Revert selection if update failed
-      loadSettings();
-    } finally {
-      setIsUpdating(false);
-    }
+    await updateSetting("selected_microphone", deviceName);
+    console.log(
+      `Microphone changed to: ${audioDevices.find((d) => d.name === deviceName)?.name}`,
+    );
   };
 
   const handleReset = async () => {
-    if (isUpdating) return;
-
-    try {
-      setIsUpdating(true);
-      await invoke("set_selected_microphone", { deviceName: "default" });
-      setSelectedMicrophone("default");
-      console.log("Microphone reset to default");
-    } catch (error) {
-      console.error("Failed to reset microphone:", error);
-      // Revert selection if reset failed
-      loadSettings();
-    } finally {
-      setIsUpdating(false);
-    }
+    await resetSetting("selected_microphone");
+    console.log("Microphone reset to default");
   };
 
   return (
@@ -96,17 +68,18 @@ export const MicrophoneSelector: React.FC<MicrophoneSelectorProps> = ({
           selectedDevice={selectedMicrophone}
           onSelect={handleMicrophoneSelect}
           placeholder={isLoading ? "Loading..." : "Select microphone..."}
-          disabled={isUpdating || isLoading}
+          disabled={isUpdating("selected_microphone") || isLoading}
+          refreshDevices={refreshAudioDevices}
         />
         <button
           className="px-2 py-1 hover:bg-logo-primary/30 active:bg-logo-primary/50 active:scale-95 rounded fill-text hover:cursor-pointer hover:border-logo-primary border border-transparent transition-all duration-150"
           onClick={handleReset}
-          disabled={isUpdating || isLoading}
+          disabled={isUpdating("selected_microphone") || isLoading}
         >
           <ResetIcon className="" />
         </button>
       </div>
-      {isUpdating && (
+      {isUpdating("selected_microphone") && (
         <div className="absolute inset-0 bg-mid-gray/10 rounded flex items-center justify-center">
           <div className="w-4 h-4 border-2 border-logo-primary border-t-transparent rounded-full animate-spin"></div>
         </div>

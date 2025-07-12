@@ -7,6 +7,7 @@ interface DropdownProps {
   onSelect: (deviceName: string) => void;
   placeholder?: string;
   disabled?: boolean;
+  refreshDevices?: () => void;
 }
 
 export const Dropdown: React.FC<DropdownProps> = ({
@@ -15,6 +16,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
   onSelect,
   placeholder = "Select a microphone...",
   disabled = false,
+  refreshDevices,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -36,14 +38,35 @@ export const Dropdown: React.FC<DropdownProps> = ({
     };
   }, []);
 
-  // Find the selected device name
+  // Find the selected device name with proper default handling
   const selectedDeviceName = selectedDevice
-    ? devices.find((d) => d.name === selectedDevice)?.name || "Unknown Device"
+    ? (() => {
+        // First try exact match
+        let device = devices.find((d) => d.name === selectedDevice);
+
+        // If no exact match and selected is "default" or "Default", try both variants
+        if (!device && selectedDevice.toLowerCase() === "default") {
+          device = devices.find((d) => d.name.toLowerCase() === "default");
+        }
+
+        return device?.name || "Unknown Device";
+      })()
     : null;
 
   const handleSelect = (deviceName: string) => {
     onSelect(deviceName);
     setIsOpen(false);
+  };
+
+  const handleToggle = () => {
+    if (disabled) return;
+
+    // Refresh devices when opening the dropdown
+    if (!isOpen && refreshDevices) {
+      refreshDevices();
+    }
+
+    setIsOpen(!isOpen);
   };
 
   return (
@@ -55,7 +78,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
             ? "opacity-50 cursor-not-allowed"
             : "hover:bg-logo-primary/10 cursor-pointer hover:border-logo-primary"
         }`}
-        onClick={() => !disabled && setIsOpen(!isOpen)}
+        onClick={handleToggle}
         disabled={disabled}
       >
         <span className="truncate">{selectedDeviceName || placeholder}</span>

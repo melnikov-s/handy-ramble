@@ -1,9 +1,8 @@
-import React, { useState, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { AudioDevice } from "../../lib/types";
+import React from "react";
 import { Dropdown } from "../ui/Dropdown";
 import { SettingContainer } from "../ui/SettingContainer";
 import ResetIcon from "../icons/ResetIcon";
+import { useSettings } from "../../hooks/useSettings";
 
 interface OutputDeviceSelectorProps {
   descriptionMode?: "inline" | "tooltip";
@@ -14,75 +13,29 @@ export const OutputDeviceSelector: React.FC<OutputDeviceSelectorProps> = ({
   descriptionMode = "tooltip",
   grouped = false,
 }) => {
-  const [outputDevices, setOutputDevices] = useState<AudioDevice[]>([]);
-  const [selectedOutputDevice, setSelectedOutputDevice] =
-    useState<string>("default");
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [isUpdating, setIsUpdating] = useState<boolean>(false);
+  const {
+    getSetting,
+    updateSetting,
+    resetSetting,
+    isUpdating,
+    isLoading,
+    outputDevices,
+    refreshOutputDevices,
+  } = useSettings();
 
-  useEffect(() => {
-    loadOutputDevices();
-    loadSettings();
-  }, []);
-
-  const loadOutputDevices = async () => {
-    try {
-      const devices: AudioDevice[] = await invoke(
-        "get_available_output_devices",
-      );
-      setOutputDevices(devices);
-    } catch (error) {
-      console.error("Failed to load output devices:", error);
-      setOutputDevices([]);
-    }
-  };
-
-  const loadSettings = async () => {
-    try {
-      setIsLoading(true);
-      const selectedDevice: string = await invoke("get_selected_output_device");
-      setSelectedOutputDevice(selectedDevice);
-    } catch (error) {
-      console.error("Failed to load output device settings:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const selectedOutputDevice =
+    getSetting("selected_output_device") || "Default";
 
   const handleOutputDeviceSelect = async (deviceName: string) => {
-    if (isUpdating) return;
-
-    try {
-      setIsUpdating(true);
-      await invoke("set_selected_output_device", { deviceName });
-      setSelectedOutputDevice(deviceName);
-      console.log(
-        `Output device changed to: ${outputDevices.find((d) => d.name === deviceName)?.name}`,
-      );
-    } catch (error) {
-      console.error("Failed to set output device:", error);
-      // Revert selection if update failed
-      loadSettings();
-    } finally {
-      setIsUpdating(false);
-    }
+    await updateSetting("selected_output_device", deviceName);
+    console.log(
+      `Output device changed to: ${outputDevices.find((d) => d.name === deviceName)?.name}`,
+    );
   };
 
   const handleReset = async () => {
-    if (isUpdating) return;
-
-    try {
-      setIsUpdating(true);
-      await invoke("set_selected_output_device", { deviceName: "default" });
-      setSelectedOutputDevice("default");
-      console.log("Output device reset to default");
-    } catch (error) {
-      console.error("Failed to reset output device:", error);
-      // Revert selection if reset failed
-      loadSettings();
-    } finally {
-      setIsUpdating(false);
-    }
+    await resetSetting("selected_output_device");
+    console.log("Output device reset to default");
   };
 
   return (
@@ -98,17 +51,18 @@ export const OutputDeviceSelector: React.FC<OutputDeviceSelectorProps> = ({
           selectedDevice={selectedOutputDevice}
           onSelect={handleOutputDeviceSelect}
           placeholder={isLoading ? "Loading..." : "Select output device..."}
-          disabled={isUpdating || isLoading}
+          disabled={isUpdating("selected_output_device") || isLoading}
+          refreshDevices={refreshOutputDevices}
         />
         <button
           className="px-2 py-1 hover:bg-logo-primary/30 active:bg-logo-primary/50 active:scale-95 rounded fill-text hover:cursor-pointer hover:border-logo-primary border border-transparent transition-all duration-150"
           onClick={handleReset}
-          disabled={isUpdating || isLoading}
+          disabled={isUpdating("selected_output_device") || isLoading}
         >
           <ResetIcon className="" />
         </button>
       </div>
-      {isUpdating && (
+      {isUpdating("selected_output_device") && (
         <div className="absolute inset-0 bg-mid-gray/10 rounded flex items-center justify-center">
           <div className="w-4 h-4 border-2 border-logo-primary border-t-transparent rounded-full animate-spin"></div>
         </div>
