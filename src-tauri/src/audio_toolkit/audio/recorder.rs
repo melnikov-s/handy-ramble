@@ -79,6 +79,10 @@ impl AudioRecorder {
             );
 
             let stream = match config.sample_format() {
+                cpal::SampleFormat::U8 => {
+                    AudioRecorder::build_stream::<u8>(&thread_device, &config, sample_tx, channels)
+                        .unwrap()
+                }
                 cpal::SampleFormat::I8 => {
                     AudioRecorder::build_stream::<i8>(&thread_device, &config, sample_tx, channels)
                         .unwrap()
