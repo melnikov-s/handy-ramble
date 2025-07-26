@@ -61,6 +61,8 @@ bun install
 
 # Run in development mode
 bun run tauri dev
+# if it fails with cmake error on MacOS, try
+CMAKE_POLICY_VERSION_MINIMUM=3.5 bun run tauri dev
 
 # Build for production
 bun run tauri build
