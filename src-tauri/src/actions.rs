@@ -77,7 +77,7 @@ impl ShortcutAction for TranscribeAction {
         let rm = Arc::clone(&app.state::<Arc<AudioRecordingManager>>());
         let tm = Arc::clone(&app.state::<Arc<TranscriptionManager>>());
 
-        change_tray_icon(app, TrayIconState::Idle);
+        change_tray_icon(app, TrayIconState::Transcribing);
 
         // Play audio feedback for recording stop
         play_recording_stop_sound(app);
@@ -112,23 +112,31 @@ impl ShortcutAction for TranscribeAction {
                             let ah_clone = ah.clone();
                             let paste_time = Instant::now();
                             ah.run_on_main_thread(move || {
-                                match utils::paste(transcription_clone, ah_clone) {
+                                match utils::paste(transcription_clone, ah_clone.clone()) {
                                     Ok(()) => debug!(
                                         "Text pasted successfully in {:?}",
                                         paste_time.elapsed()
                                     ),
                                     Err(e) => eprintln!("Failed to paste transcription: {}", e),
                                 }
+                                change_tray_icon(&ah_clone, TrayIconState::Idle);
                             })
                             .unwrap_or_else(|e| {
                                 eprintln!("Failed to run paste on main thread: {:?}", e);
+                                change_tray_icon(&ah, TrayIconState::Idle);
                             });
+                        } else {
+                            change_tray_icon(&ah, TrayIconState::Idle);
                         }
                     }
-                    Err(err) => debug!("Global Shortcut Transcription error: {}", err),
+                    Err(err) => {
+                        debug!("Global Shortcut Transcription error: {}", err);
+                        change_tray_icon(&ah, TrayIconState::Idle);
+                    },
                 }
             } else {
                 debug!("No samples retrieved from recording stop");
+                change_tray_icon(&ah, TrayIconState::Idle);
             }
         });
 
