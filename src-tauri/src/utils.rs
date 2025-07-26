@@ -73,6 +73,7 @@ pub fn paste(text: String, app_handle: AppHandle) -> Result<(), String> {
 pub enum TrayIconState {
     Idle,
     Recording,
+    Transcribing,
 }
 
 pub fn change_tray_icon(app: &AppHandle, icon: TrayIconState) {
@@ -81,6 +82,7 @@ pub fn change_tray_icon(app: &AppHandle, icon: TrayIconState) {
     let icon_path = match icon {
         TrayIconState::Idle => "resources/tray_idle.png",
         TrayIconState::Recording => "resources/tray_recording.png",
+        TrayIconState::Transcribing => "resources/tray_transcribing.png",
     };
 
     let _ = tray.set_icon(Some(
