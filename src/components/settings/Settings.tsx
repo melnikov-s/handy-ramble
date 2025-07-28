@@ -15,13 +15,13 @@ export const Settings: React.FC = () => {
       <SettingsGroup>
         <HandyShortcut descriptionMode="tooltip" grouped={true} />
         <MicrophoneSelector descriptionMode="tooltip" grouped={true} />
+        <LanguageSelector descriptionMode="tooltip" grouped={true} />
       </SettingsGroup>
 
       <SettingsGroup title="Advanced">
         <PushToTalk descriptionMode="tooltip" grouped={true} />
         <AudioFeedback descriptionMode="tooltip" grouped={true} />
         <OutputDeviceSelector descriptionMode="tooltip" grouped={true} />
-        <LanguageSelector descriptionMode="tooltip" grouped={true} />
         <TranslateToEnglish descriptionMode="tooltip" grouped={true} />
         <AlwaysOnMicrophone descriptionMode="tooltip" grouped={true} />
       </SettingsGroup>

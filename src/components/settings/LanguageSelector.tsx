@@ -9,45 +9,45 @@ interface LanguageSelectorProps {
 }
 
 const LANGUAGES = [
-  { code: "auto", name: "Auto-detect" },
-  { code: "ar", name: "Arabic" },
-  { code: "bg", name: "Bulgarian" },
-  { code: "zh", name: "Chinese" },
-  { code: "hr", name: "Croatian" },
-  { code: "cs", name: "Czech" },
-  { code: "da", name: "Danish" },
-  { code: "nl", name: "Dutch" },
+  { code: "auto", name: "Auto" },
   { code: "en", name: "English" },
-  { code: "et", name: "Estonian" },
-  { code: "fi", name: "Finnish" },
-  { code: "fr", name: "French" },
-  { code: "de", name: "German" },
-  { code: "el", name: "Greek" },
-  { code: "he", name: "Hebrew" },
+  { code: "zh", name: "Chinese" },
   { code: "hi", name: "Hindi" },
+  { code: "es", name: "Spanish" },
+  { code: "fr", name: "French" },
+  { code: "ar", name: "Arabic" },
+  { code: "pt", name: "Portuguese" },
+  { code: "ru", name: "Russian" },
+  { code: "ja", name: "Japanese" },
+  { code: "de", name: "German" },
+  { code: "ko", name: "Korean" },
+  { code: "it", name: "Italian" },
+  { code: "tr", name: "Turkish" },
+  { code: "vi", name: "Vietnamese" },
+  { code: "pl", name: "Polish" },
+  { code: "nl", name: "Dutch" },
+  { code: "uk", name: "Ukrainian" },
+  { code: "fa", name: "Persian" },
+  { code: "th", name: "Thai" },
+  { code: "ro", name: "Romanian" },
+  { code: "el", name: "Greek" },
+  { code: "cs", name: "Czech" },
+  { code: "sv", name: "Swedish" },
   { code: "hu", name: "Hungarian" },
+  { code: "he", name: "Hebrew" },
+  { code: "da", name: "Danish" },
+  { code: "fi", name: "Finnish" },
+  { code: "no", name: "Norwegian" },
+  { code: "sk", name: "Slovak" },
+  { code: "bg", name: "Bulgarian" },
+  { code: "hr", name: "Croatian" },
+  { code: "lt", name: "Lithuanian" },
+  { code: "sl", name: "Slovenian" },
+  { code: "lv", name: "Latvian" },
+  { code: "et", name: "Estonian" },
+  { code: "sr", name: "Serbian" },
   { code: "is", name: "Icelandic" },
   { code: "id", name: "Indonesian" },
-  { code: "it", name: "Italian" },
-  { code: "ja", name: "Japanese" },
-  { code: "ko", name: "Korean" },
-  { code: "lv", name: "Latvian" },
-  { code: "lt", name: "Lithuanian" },
-  { code: "no", name: "Norwegian" },
-  { code: "fa", name: "Persian" },
-  { code: "pl", name: "Polish" },
-  { code: "pt", name: "Portuguese" },
-  { code: "ro", name: "Romanian" },
-  { code: "ru", name: "Russian" },
-  { code: "sr", name: "Serbian" },
-  { code: "sk", name: "Slovak" },
-  { code: "sl", name: "Slovenian" },
-  { code: "es", name: "Spanish" },
-  { code: "sv", name: "Swedish" },
-  { code: "th", name: "Thai" },
-  { code: "tr", name: "Turkish" },
-  { code: "uk", name: "Ukrainian" },
-  { code: "vi", name: "Vietnamese" },
 ];
 
 export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
@@ -85,11 +85,12 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
     }
   }, [isOpen]);
 
-  const filteredLanguages = LANGUAGES.filter(language =>
-    language.name.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredLanguages = LANGUAGES.filter((language) =>
+    language.name.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
-  const selectedLanguageName = LANGUAGES.find(lang => lang.code === selectedLanguage)?.name || "Auto-detect";
+  const selectedLanguageName =
+    LANGUAGES.find((lang) => lang.code === selectedLanguage)?.name || "Auto";
 
   const handleLanguageSelect = async (languageCode: string) => {
     await updateSetting("selected_language", languageCode);
@@ -123,7 +124,7 @@ export const LanguageSelector: React.FC<LanguageSelectorProps> = ({
   return (
     <SettingContainer
       title="Language"
-      description="Select the language for speech recognition. Auto-detect will automatically determine the language, while selecting a specific language can improve accuracy for that language."
+      description="Select the language for speech recognition. Auto will automatically determine the language, while selecting a specific language can improve accuracy for that language."
       descriptionMode={descriptionMode}
       grouped={grouped}
     >
