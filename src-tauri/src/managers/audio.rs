@@ -268,7 +268,6 @@ impl AudioRecordingManager {
     fn show_overlay(&self) {
         if let Some(overlay_window) = self.app_handle.get_webview_window("recording_overlay") {
             let _ = overlay_window.show();
-            let _ = overlay_window.set_focus();
         } else {
             // Get screen dimensions for positioning
             if let Ok(monitors) = self.app_handle.primary_monitor() {
@@ -280,22 +279,27 @@ impl AudioRecordingManager {
 
                     // Position at bottom center, 30px from bottom
                     let x = (screen_width - 150) / 2;
-                    let y = screen_height - 50 - 30;
+                    let y = screen_height - 30 - 30;
 
-                    match WebviewWindowBuilder::new(&self.app_handle, "recording_overlay")
-                        .title("Recording")
-                        .position(x as f64, y as f64)
-                        .resizable(false)
-                        .maximizable(false)
-                        .minimizable(false)
-                        .closable(false)
-                        .decorations(false)
-                        .always_on_top(true)
-                        .skip_taskbar(true)
-                        .transparent(true)
-                        .build()
+                    match WebviewWindowBuilder::new(
+                        &self.app_handle,
+                        "recording_overlay",
+                        tauri::WebviewUrl::App("src/overlay/index.html".into()),
+                    )
+                    .title("Recording")
+                    .position(x as f64, y as f64)
+                    .resizable(false)
+                    .maximizable(false)
+                    .minimizable(false)
+                    .closable(false)
+                    .decorations(false)
+                    .always_on_top(true)
+                    .skip_taskbar(true)
+                    .transparent(true)
+                    .focused(false)
+                    .build()
                     {
-                        Ok(window) => {
+                        Ok(_window) => {
                             debug!("Recording overlay window created successfully");
                         }
                         Err(e) => {
