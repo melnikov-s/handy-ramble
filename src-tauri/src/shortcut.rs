@@ -119,6 +119,14 @@ pub fn change_translate_to_english_setting(app: AppHandle, enabled: bool) -> Res
     Ok(())
 }
 
+#[tauri::command]
+pub fn change_selected_language_setting(app: AppHandle, language: String) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.selected_language = language;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
 fn _register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<(), String> {
     // Parse shortcut and return error if it fails
     let shortcut = match binding.current_binding.parse::<Shortcut>() {

@@ -194,6 +194,11 @@ export const useSettings = (): UseSettingsReturn => {
               enabled: value,
             });
             break;
+          case "selected_language":
+            await invoke("change_selected_language_setting", {
+              language: value,
+            });
+            break;
           case "bindings":
             // Handle bindings separately - they use their own invoke methods
             break;
@@ -237,6 +242,7 @@ export const useSettings = (): UseSettingsReturn => {
         selected_microphone: "Default",
         selected_output_device: "Default",
         translate_to_english: false,
+        selected_language: "auto",
       };
 
       const defaultValue = defaults[key];

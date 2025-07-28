@@ -6,6 +6,7 @@ import { AudioFeedback } from "./AudioFeedback";
 import { OutputDeviceSelector } from "./OutputDeviceSelector";
 import { HandyShortcut } from "./HandyShortcut";
 import { TranslateToEnglish } from "./TranslateToEnglish";
+import { LanguageSelector } from "./LanguageSelector";
 import { SettingsGroup } from "../ui/SettingsGroup";
 
 export const Settings: React.FC = () => {
@@ -14,6 +15,7 @@ export const Settings: React.FC = () => {
       <SettingsGroup>
         <HandyShortcut descriptionMode="tooltip" grouped={true} />
         <MicrophoneSelector descriptionMode="tooltip" grouped={true} />
+        <LanguageSelector descriptionMode="tooltip" grouped={true} />
       </SettingsGroup>
 
       <SettingsGroup title="Advanced">

@@ -180,6 +180,7 @@ pub fn run() {
             shortcut::change_ptt_setting,
             shortcut::change_audio_feedback_setting,
             shortcut::change_translate_to_english_setting,
+            shortcut::change_selected_language_setting,
             trigger_update_check,
             commands::models::get_available_models,
             commands::models::get_model_info,
