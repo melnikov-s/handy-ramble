@@ -28,6 +28,8 @@ pub struct AppSettings {
     pub selected_output_device: Option<String>,
     #[serde(default = "default_translate_to_english")]
     pub translate_to_english: bool,
+    #[serde(default = "default_selected_language")]
+    pub selected_language: String,
 }
 
 fn default_model() -> String {
@@ -45,6 +47,11 @@ fn default_always_on_microphone() -> bool {
 fn default_translate_to_english() -> bool {
     // Default to false - users need to opt-in to translation
     false
+}
+
+fn default_selected_language() -> String {
+    // Default to auto-detection for backward compatibility
+    "auto".to_string()
 }
 
 pub const SETTINGS_STORE_PATH: &str = "settings_store.json";
@@ -91,6 +98,7 @@ pub fn get_default_settings() -> AppSettings {
         selected_microphone: None,
         selected_output_device: None,
         translate_to_english: false,
+        selected_language: "auto".to_string(),
     }
 }
 
