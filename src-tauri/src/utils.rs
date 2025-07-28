@@ -93,6 +93,7 @@ pub fn change_tray_icon(app: &AppHandle, icon: TrayIconState) {
         )
         .expect("failed to set icon"),
     ));
+    let _ = tray.set_icon_as_template(true);
 }
 
 /// Plays an audio resource from the resources directory.

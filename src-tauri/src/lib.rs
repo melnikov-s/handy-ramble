@@ -95,6 +95,7 @@ pub fn run() {
                 )?)?)
                 .menu(&menu)
                 .show_menu_on_left_click(true)
+                .icon_as_template(true)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "settings" => {
                         if let Some(settings_window) = app.get_webview_window("main") {
