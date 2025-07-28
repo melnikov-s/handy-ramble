@@ -92,7 +92,7 @@ pub fn run() {
                 .icon(Image::from_path(app.path().resolve(
                     "resources/tray_idle.png",
                     tauri::path::BaseDirectory::Resource,
-                )?)?.as_template(true))
+                )?)?)
                 .menu(&menu)
                 .show_menu_on_left_click(true)
                 .on_menu_event(|app, event| match event.id.as_ref() {
@@ -128,6 +128,7 @@ pub fn run() {
                     _ => {}
                 })
                 .build(app)?;
+            let _ = tray.set_icon_as_template(true);
             app.manage(tray);
 
             // Get the autostart manager

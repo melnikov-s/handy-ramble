@@ -91,9 +91,9 @@ pub fn change_tray_icon(app: &AppHandle, icon: TrayIconState) {
                 .resolve(icon_path, tauri::path::BaseDirectory::Resource)
                 .expect("failed to resolve"),
         )
-        .expect("failed to set icon")
-        .as_template(true),
+        .expect("failed to set icon"),
     ));
+    let _ = tray.set_icon_as_template(true);
 }
 
 /// Plays an audio resource from the resources directory.
