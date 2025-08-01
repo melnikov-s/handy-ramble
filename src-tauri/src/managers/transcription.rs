@@ -178,7 +178,8 @@ impl TranscriptionManager {
 
         // Initialize parameters
         let mut params = FullParams::new(SamplingStrategy::default());
-        params.set_language(Some("auto"));
+        let language = Some(settings.selected_language.as_str());
+        params.set_language(language);
         params.set_print_special(false);
         params.set_print_progress(false);
         params.set_print_realtime(false);

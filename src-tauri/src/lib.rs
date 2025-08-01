@@ -26,6 +26,28 @@ struct ShortcutToggleStates {
 
 type ManagedToggleState = Mutex<ShortcutToggleStates>;
 
+fn show_main_window(app: &AppHandle) {
+    if let Some(main_window) = app.get_webview_window("main") {
+        // First, ensure the window is visible
+        if let Err(e) = main_window.show() {
+            eprintln!("Failed to show window: {}", e);
+        }
+        // Then, bring it to the front and give it focus
+        if let Err(e) = main_window.set_focus() {
+            eprintln!("Failed to focus window: {}", e);
+        }
+        // Optional: On macOS, ensure the app becomes active if it was an accessory
+        #[cfg(target_os = "macos")]
+        {
+            if let Err(e) = app.set_activation_policy(tauri::ActivationPolicy::Regular) {
+                eprintln!("Failed to set activation policy to Regular: {}", e);
+            }
+        }
+    } else {
+        eprintln!("Main window not found");
+    }
+}
+
 #[tauri::command]
 fn trigger_update_check(app: AppHandle) -> Result<(), String> {
     app.emit("check-for-updates", ())
@@ -58,31 +80,13 @@ pub fn run() {
                     tauri::path::BaseDirectory::Resource,
                 )?)?)
                 .show_menu_on_left_click(true)
+                .icon_as_template(true)
                 .on_menu_event(|app, event| match event.id.as_ref() {
                     "settings" => {
-                        if let Some(settings_window) = app.get_webview_window("main") {
-                            // First, ensure the window is visible
-                            if let Err(e) = settings_window.show() {
-                                eprintln!("Failed to show window: {}", e);
-                            }
-                            // Then, bring it to the front and give it focus
-                            if let Err(e) = settings_window.set_focus() {
-                                eprintln!("Failed to focus window: {}", e);
-                            }
-                            // Optional: On macOS, ensure the app becomes active if it was an accessory
-                            #[cfg(target_os = "macos")]
-                            {
-                                if let Err(e) =
-                                    app.set_activation_policy(tauri::ActivationPolicy::Regular)
-                                {
-                                    eprintln!("Failed to set activation policy to Regular: {}", e);
-                                }
-                            }
-                        } else {
-                            eprintln!("Main window not found");
-                        }
+                        show_main_window(app);
                     }
                     "check_updates" => {
+                        show_main_window(app);
                         let _ = app.emit("check-for-updates", ());
                     }
                     "cancel" => {
@@ -148,6 +152,7 @@ pub fn run() {
             shortcut::change_ptt_setting,
             shortcut::change_audio_feedback_setting,
             shortcut::change_translate_to_english_setting,
+            shortcut::change_selected_language_setting,
             trigger_update_check,
             commands::cancel_operation,
             commands::models::get_available_models,

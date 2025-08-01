@@ -209,6 +209,7 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState) {
 
     let tray = app.state::<TrayIcon>();
     let _ = tray.set_menu(Some(menu));
+    let _ = tray.set_icon_as_template(true);
 }
 
 /// Plays an audio resource from the resources directory.
