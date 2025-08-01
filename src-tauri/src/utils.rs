@@ -11,6 +11,7 @@ use std::fs::File;
 use std::io::BufReader;
 use std::thread;
 use tauri::image::Image;
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIcon;
 use tauri::AppHandle;
 use tauri::Manager;
@@ -70,6 +71,7 @@ pub fn paste(text: String, app_handle: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(Clone, Debug, PartialEq)]
 pub enum TrayIconState {
     Idle,
     Recording,
@@ -93,6 +95,120 @@ pub fn change_tray_icon(app: &AppHandle, icon: TrayIconState) {
         )
         .expect("failed to set icon"),
     ));
+
+    // Update menu based on state
+    update_tray_menu(app, &icon);
+}
+
+/// Centralized cancellation function that can be called from anywhere in the app.
+/// Handles cancelling both recording and transcription operations and updates UI state.
+pub fn cancel_current_operation(app: &AppHandle) {
+    use crate::actions::ACTION_MAP;
+    use crate::managers::audio::AudioRecordingManager;
+    use crate::ManagedToggleState;
+    use std::sync::Arc;
+
+    println!("Initiating operation cancellation...");
+
+    // First, reset all shortcut toggle states and call stop actions
+    // This is critical for non-push-to-talk mode where shortcuts toggle on/off
+    let toggle_state_manager = app.state::<ManagedToggleState>();
+    if let Ok(mut states) = toggle_state_manager.lock() {
+        // For each currently active toggle, call its stop action and reset state
+        let active_bindings: Vec<String> = states
+            .active_toggles
+            .iter()
+            .filter(|(_, &is_active)| is_active)
+            .map(|(binding_id, _)| binding_id.clone())
+            .collect();
+
+        for binding_id in active_bindings {
+            println!("Stopping active action for binding: {}", binding_id);
+
+            // Call the action's stop method to ensure proper cleanup
+            if let Some(action) = ACTION_MAP.get(&binding_id) {
+                action.stop(app, &binding_id, "cancelled");
+            }
+
+            // Reset the toggle state
+            if let Some(is_active) = states.active_toggles.get_mut(&binding_id) {
+                *is_active = false;
+            }
+        }
+    } else {
+        eprintln!("Warning: Failed to lock toggle state manager during cancellation");
+    }
+
+    // Cancel any ongoing recording
+    let audio_manager = app.state::<Arc<AudioRecordingManager>>();
+    audio_manager.cancel_recording();
+
+    // Update tray icon and menu to idle state
+    change_tray_icon(app, TrayIconState::Idle);
+
+    println!("Operation cancellation completed - returned to idle state");
+}
+
+pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState) {
+    // Platform-specific accelerators
+    #[cfg(target_os = "macos")]
+    let (settings_accelerator, quit_accelerator) = (Some("Cmd+,"), Some("Cmd+Q"));
+    #[cfg(not(target_os = "macos"))]
+    let (settings_accelerator, quit_accelerator) = (Some("Ctrl+,"), Some("Ctrl+Q"));
+
+    // Create common menu items
+    let version_label = format!("Handy v{}", env!("CARGO_PKG_VERSION"));
+    let version_i = MenuItem::with_id(app, "version", &version_label, false, None::<&str>)
+        .expect("failed to create version item");
+    let settings_i = MenuItem::with_id(app, "settings", "Settings...", true, settings_accelerator)
+        .expect("failed to create settings item");
+    let check_updates_i = MenuItem::with_id(
+        app,
+        "check_updates",
+        "Check for Updates...",
+        true,
+        None::<&str>,
+    )
+    .expect("failed to create check updates item");
+    let quit_i = MenuItem::with_id(app, "quit", "Quit", true, quit_accelerator)
+        .expect("failed to create quit item");
+    let separator = || PredefinedMenuItem::separator(app).expect("failed to create separator");
+
+    let menu = match state {
+        TrayIconState::Recording | TrayIconState::Transcribing => {
+            let cancel_i = MenuItem::with_id(app, "cancel", "Cancel", true, None::<&str>)
+                .expect("failed to create cancel item");
+            Menu::with_items(
+                app,
+                &[
+                    &version_i,
+                    &separator(),
+                    &cancel_i,
+                    &separator(),
+                    &settings_i,
+                    &check_updates_i,
+                    &separator(),
+                    &quit_i,
+                ],
+            )
+            .expect("failed to create menu")
+        }
+        TrayIconState::Idle => Menu::with_items(
+            app,
+            &[
+                &version_i,
+                &separator(),
+                &settings_i,
+                &check_updates_i,
+                &separator(),
+                &quit_i,
+            ],
+        )
+        .expect("failed to create menu"),
+    };
+
+    let tray = app.state::<TrayIcon>();
+    let _ = tray.set_menu(Some(menu));
     let _ = tray.set_icon_as_template(true);
 }
 
