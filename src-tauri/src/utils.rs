@@ -21,11 +21,11 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 fn send_paste() -> Result<(), String> {
     // Platform-specific key definitions
     #[cfg(target_os = "macos")]
-    let (modifier_key, v_key_code) = (Key::Meta, 9);
+    let (modifier_key, v_key_code) = (Key::Meta, Key::Other(9));
     #[cfg(target_os = "windows")]
-    let (modifier_key, v_key_code) = (Key::Control, 0x56); // VK_V
+    let (modifier_key, v_key_code) = (Key::Control, Key::Other(0x56)); // VK_V
     #[cfg(target_os = "linux")]
-    let (modifier_key, v_key_code) = (Key::Control, 47);
+    let (modifier_key, v_key_code) = (Key::Control, Key::Unicode('v'));
 
     let mut enigo = Enigo::new(&Settings::default())
         .map_err(|e| format!("Failed to initialize Enigo: {}", e))?;
@@ -35,12 +35,12 @@ fn send_paste() -> Result<(), String> {
         .key(modifier_key, enigo::Direction::Press)
         .map_err(|e| format!("Failed to press modifier key: {}", e))?;
     enigo
-        .key(Key::Other(v_key_code), enigo::Direction::Press)
+        .key(v_key_code, enigo::Direction::Press)
         .map_err(|e| format!("Failed to press V key: {}", e))?;
 
     // Release V + modifier (reverse order)
     enigo
-        .key(Key::Other(v_key_code), enigo::Direction::Release)
+        .key(v_key_code, enigo::Direction::Release)
         .map_err(|e| format!("Failed to release V key: {}", e))?;
     enigo
         .key(modifier_key, enigo::Direction::Release)
