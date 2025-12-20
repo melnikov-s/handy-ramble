@@ -38,13 +38,21 @@ export const getKeyName = (
     }
 
     // Handle modifier keys - OS-specific naming
-    const getModifierName = (baseModifier: string): string => {
+    // On macOS, we distinguish left/right Option keys for standalone modifier bindings
+    const getModifierName = (
+      baseModifier: string,
+      side?: "left" | "right",
+    ): string => {
       switch (baseModifier) {
         case "shift":
           return "shift";
         case "ctrl":
           return osType === "macos" ? "ctrl" : "ctrl";
         case "alt":
+          // On macOS, distinguish left/right Option for standalone modifier binding support
+          if (osType === "macos" && side) {
+            return side === "left" ? "left_option" : "right_option";
+          }
           return osType === "macos" ? "option" : "alt";
         case "meta":
           // Windows key on Windows/Linux, Command key on Mac
@@ -60,8 +68,8 @@ export const getKeyName = (
       ShiftRight: getModifierName("shift"),
       ControlLeft: getModifierName("ctrl"),
       ControlRight: getModifierName("ctrl"),
-      AltLeft: getModifierName("alt"),
-      AltRight: getModifierName("alt"),
+      AltLeft: getModifierName("alt", "left"),
+      AltRight: getModifierName("alt", "right"),
       MetaLeft: getModifierName("meta"),
       MetaRight: getModifierName("meta"),
       OSLeft: getModifierName("meta"),
@@ -169,9 +177,15 @@ export const formatKeyCombination = (
 
 /**
  * Normalize modifier keys to handle left/right variants
+ * Note: left_option and right_option are preserved for macOS standalone modifier bindings
  */
 export const normalizeKey = (key: string): string => {
-  // Handle left/right variants of modifier keys
+  // Preserve side-specific option keys for macOS standalone modifier binding support
+  if (key === "left_option" || key === "right_option") {
+    return key;
+  }
+
+  // Handle left/right variants of other modifier keys (space-separated format)
   if (key.startsWith("left ") || key.startsWith("right ")) {
     const parts = key.split(" ");
     if (parts.length === 2) {

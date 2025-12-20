@@ -16,6 +16,9 @@ use crate::settings::{
 use crate::tray;
 use crate::ManagedToggleState;
 
+#[cfg(target_os = "macos")]
+use crate::macos_modifier_key;
+
 pub fn init_shortcuts(app: &AppHandle) {
     let default_bindings = settings::get_default_settings().bindings;
     let user_settings = settings::load_or_create_app_settings(app);
@@ -734,7 +737,16 @@ pub fn change_app_language_setting(app: AppHandle, language: String) -> Result<(
 /// Determine whether a shortcut string contains at least one non-modifier key.
 /// We allow single non-modifier keys (e.g. "f5" or "space") but disallow
 /// modifier-only combos (e.g. "ctrl" or "ctrl+shift").
+///
+/// On macOS, we also allow special raw modifier bindings like "right_option" and "left_option"
+/// which are handled by a separate low-level event tap.
 fn validate_shortcut_string(raw: &str) -> Result<(), String> {
+    // On macOS, allow raw modifier bindings (handled separately from global shortcuts)
+    #[cfg(target_os = "macos")]
+    if macos_modifier_key::is_raw_modifier_binding(raw) {
+        return Ok(());
+    }
+
     let modifiers = [
         "ctrl", "control", "shift", "alt", "option", "meta", "command", "cmd", "super", "win",
         "windows",
@@ -754,7 +766,17 @@ fn validate_shortcut_string(raw: &str) -> Result<(), String> {
 #[tauri::command]
 #[specta::specta]
 pub fn suspend_binding(app: AppHandle, id: String) -> Result<(), String> {
+    // Also suspend raw bindings on macOS
+    #[cfg(target_os = "macos")]
+    macos_modifier_key::suspend_raw_binding(&id);
+
     if let Some(b) = settings::get_bindings(&app).get(&id).cloned() {
+        // Skip unregistering if it's a raw modifier binding (already suspended above)
+        #[cfg(target_os = "macos")]
+        if macos_modifier_key::is_raw_modifier_binding(&b.current_binding) {
+            return Ok(());
+        }
+
         if let Err(e) = unregister_shortcut(&app, b) {
             error!("suspend_binding error for id '{}': {}", id, e);
             return Err(e);
@@ -767,6 +789,10 @@ pub fn suspend_binding(app: AppHandle, id: String) -> Result<(), String> {
 #[tauri::command]
 #[specta::specta]
 pub fn resume_binding(app: AppHandle, id: String) -> Result<(), String> {
+    // Also resume raw bindings on macOS
+    #[cfg(target_os = "macos")]
+    macos_modifier_key::resume_raw_binding(&id);
+
     if let Some(b) = settings::get_bindings(&app).get(&id).cloned() {
         if let Err(e) = register_shortcut(&app, b) {
             error!("resume_binding error for id '{}': {}", id, e);
@@ -825,6 +851,12 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
             binding.current_binding, e
         );
         return Err(e);
+    }
+
+    // On macOS, handle raw modifier bindings through the dedicated listener
+    #[cfg(target_os = "macos")]
+    if macos_modifier_key::is_raw_modifier_binding(&binding.current_binding) {
+        return macos_modifier_key::register_raw_binding(&binding.id, &binding.current_binding);
     }
 
     // Parse shortcut and return error if it fails
@@ -917,6 +949,12 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
 }
 
 pub fn unregister_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<(), String> {
+    // On macOS, handle raw modifier bindings through the dedicated listener
+    #[cfg(target_os = "macos")]
+    if macos_modifier_key::is_raw_modifier_binding(&binding.current_binding) {
+        return macos_modifier_key::unregister_raw_binding(&binding.current_binding);
+    }
+
     let shortcut = match binding.current_binding.parse::<Shortcut>() {
         Ok(s) => s,
         Err(e) => {
