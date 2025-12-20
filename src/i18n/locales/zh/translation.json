@@ -54,7 +54,7 @@
     }
   },
   "modelSelector": {
-    "welcome": "欢迎使用 Handy！",
+    "welcome": "欢迎使用 Handy Ramble！",
     "downloadPrompt": "请下载以下模型以开始转录。",
     "availableModels": "可用模型",
     "downloadModels": "下载模型",
@@ -146,7 +146,7 @@
       },
       "autostart": {
         "label": "开机启动",
-        "description": "登录计算机时自动启动 Handy。"
+        "description": "登录计算机时自动启动 Handy Ramble。"
       },
       "overlay": {
         "title": "悬浮窗位置",
@@ -283,7 +283,7 @@
       },
       "updateChecks": {
         "label": "检查更新",
-        "description": "自动检查 Handy 的新版本"
+        "description": "自动检查 Handy Ramble 的新版本"
       },
       "soundTheme": {
         "label": "声音主题",
@@ -351,7 +351,7 @@
       },
       "supportDevelopment": {
         "title": "支持开发",
-        "description": "帮助我们继续开发 Handy",
+        "description": "帮助我们继续开发 Handy Ramble",
         "button": "捐赠"
       },
       "acknowledgments": {
@@ -411,7 +411,7 @@
   },
   "appLanguage": {
     "title": "应用语言",
-    "description": "更改 Handy 界面的语言"
+    "description": "更改 Handy Ramble 界面的语言"
   },
   "overlay": {
     "transcribing": "正在转录..."

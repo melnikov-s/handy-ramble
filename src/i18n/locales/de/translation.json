@@ -54,7 +54,7 @@
     }
   },
   "modelSelector": {
-    "welcome": "Willkommen bei Handy!",
+    "welcome": "Willkommen bei Handy Ramble!",
     "downloadPrompt": "Lade ein Modell herunter, um mit der Transkription zu beginnen.",
     "availableModels": "Verfügbare Modelle",
     "downloadModels": "Modelle herunterladen",
@@ -283,7 +283,7 @@
       },
       "updateChecks": {
         "label": "Nach Updates suchen",
-        "description": "Automatisch nach neuen Versionen von Handy suchen"
+        "description": "Automatisch nach neuen Versionen von Handy Ramble suchen"
       },
       "soundTheme": {
         "label": "Sound-Thema",
@@ -338,11 +338,11 @@
       "title": "Info",
       "version": {
         "title": "Version",
-        "description": "Aktuelle Version von Handy"
+        "description": "Aktuelle Version von Handy Ramble"
       },
       "appDataDirectory": {
         "title": "App-Datenverzeichnis",
-        "description": "Speicherort der Handy-Daten"
+        "description": "Speicherort der Handy Ramble-Daten"
       },
       "sourceCode": {
         "title": "Quellcode",
@@ -351,7 +351,7 @@
       },
       "supportDevelopment": {
         "title": "Entwicklung unterstützen",
-        "description": "Hilf uns, Handy weiterzuentwickeln",
+        "description": "Hilf uns, Handy Ramble weiterzuentwickeln",
         "button": "Spenden"
       },
       "acknowledgments": {
@@ -411,7 +411,7 @@
   },
   "appLanguage": {
     "title": "Anwendungssprache",
-    "description": "Sprache der Handy-Oberfläche ändern"
+    "description": "Sprache der Handy Ramble-Oberfläche ändern"
   },
   "overlay": {
     "transcribing": "Transkribiere..."
