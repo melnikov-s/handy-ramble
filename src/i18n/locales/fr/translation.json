@@ -1,5 +1,5 @@
 {
-  "_comment": "French translation for Handy. Contribute at: https://github.com/cjpais/Handy",
+  "_comment": "French translation for Handy Ramble. Contribute at: https://github.com/cjpais/Handy",
   "tray": {
     "settings": "Paramètres...",
     "checkUpdates": "Rechercher des mises à jour...",
@@ -55,7 +55,7 @@
     }
   },
   "modelSelector": {
-    "welcome": "Bienvenue sur Handy !",
+    "welcome": "Bienvenue sur Handy Ramble !",
     "downloadPrompt": "Téléchargez un modèle ci-dessous pour commencer la transcription.",
     "availableModels": "Modèles Disponibles",
     "downloadModels": "Télécharger des Modèles",
@@ -81,7 +81,7 @@
     "general": {
       "title": "Général",
       "shortcut": {
-        "title": "Raccourcis Handy",
+        "title": "Raccourcis Handy Ramble",
         "description": "Configurer les raccourcis clavier pour déclencher l'enregistrement de la reconnaissance vocale",
         "loading": "Chargement des raccourcis...",
         "none": "Aucun raccourci configuré",
@@ -147,7 +147,7 @@
       },
       "autostart": {
         "label": "Lancer au démarrage",
-        "description": "Démarrer automatiquement Handy lorsque vous vous connectez à votre ordinateur."
+        "description": "Démarrer automatiquement Handy Ramble lorsque vous vous connectez à votre ordinateur."
       },
       "overlay": {
         "title": "Position de la fenêtre d'enregistrement",
@@ -284,7 +284,7 @@
       },
       "updateChecks": {
         "label": "Vérifier les mises à jour",
-        "description": "Vérifier automatiquement les nouvelles versions de Handy"
+        "description": "Vérifier automatiquement les nouvelles versions de Handy Ramble"
       },
       "soundTheme": {
         "label": "Thème sonore",
@@ -338,11 +338,11 @@
       "title": "À propos",
       "version": {
         "title": "Version",
-        "description": "Version actuelle de Handy"
+        "description": "Version actuelle de Handy Ramble"
       },
       "appDataDirectory": {
         "title": "Emplacement des données de l'application",
-        "description": "Emplacement où Handy stocke ses données"
+        "description": "Emplacement où Handy Ramble stocke ses données"
       },
       "sourceCode": {
         "title": "Code source",
@@ -351,7 +351,7 @@
       },
       "supportDevelopment": {
         "title": "Soutenir le développement",
-        "description": "Aidez-nous à continuer à construire Handy",
+        "description": "Aidez-nous à continuer à construire Handy Ramble",
         "button": "Faire un don"
       },
       "acknowledgments": {
@@ -411,7 +411,7 @@
   },
   "appLanguage": {
     "title": "Langue de l'application",
-    "description": "Changer la langue de l'interface de Handy"
+    "description": "Changer la langue de l'interface de Handy Ramble"
   },
   "overlay": {
     "transcribing": "Transcription..."

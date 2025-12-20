@@ -54,7 +54,7 @@
     }
   },
   "modelSelector": {
-    "welcome": "Welcome to Handy!",
+    "welcome": "Welcome to Handy Ramble!",
     "downloadPrompt": "Download a model below to get started with transcription.",
     "availableModels": "Available Models",
     "downloadModels": "Download Models",
@@ -146,7 +146,7 @@
       },
       "autostart": {
         "label": "Launch on Startup",
-        "description": "Automatically start Handy when you log in to your computer."
+        "description": "Automatically start Handy Ramble when you log in to your computer."
       },
       "overlay": {
         "title": "Overlay Position",
@@ -283,7 +283,7 @@
       },
       "updateChecks": {
         "label": "Check for Updates",
-        "description": "Automatically check for new versions of Handy"
+        "description": "Automatically check for new versions of Handy Ramble"
       },
       "soundTheme": {
         "label": "Sound Theme",
@@ -338,11 +338,11 @@
       "title": "About",
       "version": {
         "title": "Version",
-        "description": "Current version of Handy"
+        "description": "Current version of Handy Ramble"
       },
       "appDataDirectory": {
         "title": "App Data Directory",
-        "description": "Location where Handy stores its data"
+        "description": "Location where Handy Ramble stores its data"
       },
       "sourceCode": {
         "title": "Source Code",
@@ -351,7 +351,7 @@
       },
       "supportDevelopment": {
         "title": "Support Development",
-        "description": "Help us continue building Handy",
+        "description": "Help us continue building Handy Ramble",
         "button": "Donate"
       },
       "acknowledgments": {
@@ -411,7 +411,7 @@
   },
   "appLanguage": {
     "title": "Application Language",
-    "description": "Change the language of the Handy interface"
+    "description": "Change the language of the Handy Ramble interface"
   },
   "overlay": {
     "transcribing": "Transcribing..."
