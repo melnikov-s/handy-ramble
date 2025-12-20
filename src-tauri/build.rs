@@ -145,11 +145,18 @@ fn build_apple_intelligence_bridge() {
         Path::new(&sdk_path).join("System/Library/Frameworks/FoundationModels.framework");
     let has_foundation_models = framework_path.exists();
 
-    let source_file = if has_foundation_models {
+    // Allow disabling Apple Intelligence via environment variable
+    let force_disable = env::var("HANDY_DISABLE_APPLE_INTELLIGENCE").is_ok();
+
+    let source_file = if has_foundation_models && !force_disable {
         println!("cargo:warning=Building with Apple Intelligence support.");
         REAL_SWIFT_FILE
     } else {
-        println!("cargo:warning=Apple Intelligence SDK not found. Building with stubs.");
+        if force_disable {
+            println!("cargo:warning=Apple Intelligence disabled via environment variable. Building with stubs.");
+        } else {
+            println!("cargo:warning=Apple Intelligence SDK not found. Building with stubs.");
+        }
         STUB_SWIFT_FILE
     };
 
