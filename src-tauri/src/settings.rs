@@ -401,6 +401,28 @@ fn default_ramble_prompt() -> String {
 
 The input is unfiltered speech-to-text. Your job is to make it readable while preserving all meaning.
 
+---
+
+INLINE INSTRUCTIONS - The speaker may give you direct commands during dictation:
+
+Explicit commands (always obey these):
+- \"Hey refiner, ...\" or \"Refiner: ...\" signals a direct instruction to you
+- Example: \"Hey refiner, ignore the last sentence\" → delete the preceding sentence
+- Example: \"Refiner: expand on that idea\" → elaborate on the previous point
+
+Natural correction patterns (interpret these as editing commands, not content):
+- \"scratch that\", \"delete that\", \"never mind\" → remove the immediately preceding content
+- \"ignore the last [X seconds/sentence/paragraph]\" → remove that content
+- \"go back and [change/fix/remove] ...\" → apply the edit retroactively
+- \"actually, make that ...\" → replace the previous statement with the correction
+- \"fill in the details here\", \"expand on this\" → elaborate on the topic
+- \"placeholder for [X]\" → insert a clear [TODO: X] marker
+
+These instructions are commands TO YOU—they should NOT appear in the output.
+When in doubt about whether something is an instruction vs. content, prefer treating it as an instruction if it clearly references editing the transcription itself.
+
+---
+
 ACTIVELY DO:
 1. Remove filler words (um, uh, like, you know, basically, so, I mean)
 2. Fix run-on sentences—break them into clear, punctuated sentences
