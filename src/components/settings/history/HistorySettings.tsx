@@ -190,7 +190,6 @@ export const HistorySettings: React.FC = () => {
                 key={entry.id}
                 entry={entry}
                 onToggleSaved={() => toggleSaved(entry.id)}
-                onCopyText={() => copyToClipboard(entry.transcription_text)}
                 getAudioUrl={getAudioUrl}
                 deleteAudio={deleteAudioEntry}
               />
@@ -205,7 +204,6 @@ export const HistorySettings: React.FC = () => {
 interface HistoryEntryProps {
   entry: HistoryEntry;
   onToggleSaved: () => void;
-  onCopyText: () => void;
   getAudioUrl: (fileName: string) => Promise<string | null>;
   deleteAudio: (id: number) => Promise<void>;
 }
@@ -213,13 +211,13 @@ interface HistoryEntryProps {
 const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
   entry,
   onToggleSaved,
-  onCopyText,
   getAudioUrl,
   deleteAudio,
 }) => {
   const { t, i18n } = useTranslation();
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [showCopied, setShowCopied] = useState(false);
+  const [showCopiedOriginal, setShowCopiedOriginal] = useState(false);
+  const [showCopiedRefined, setShowCopiedRefined] = useState(false);
 
   useEffect(() => {
     const loadAudio = async () => {
@@ -229,10 +227,32 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
     loadAudio();
   }, [entry.file_name, getAudioUrl]);
 
-  const handleCopyText = () => {
-    onCopyText();
-    setShowCopied(true);
-    setTimeout(() => setShowCopied(false), 2000);
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (error) {
+      console.error("Failed to copy to clipboard:", error);
+      return false;
+    }
+  };
+
+  const handleCopyOriginal = async () => {
+    const success = await copyToClipboard(entry.transcription_text);
+    if (success) {
+      setShowCopiedOriginal(true);
+      setTimeout(() => setShowCopiedOriginal(false), 2000);
+    }
+  };
+
+  const handleCopyRefined = async () => {
+    if (entry.post_processed_text) {
+      const success = await copyToClipboard(entry.post_processed_text);
+      if (success) {
+        setShowCopiedRefined(true);
+        setTimeout(() => setShowCopiedRefined(false), 2000);
+      }
+    }
   };
 
   const handleDeleteEntry = async () => {
@@ -240,31 +260,22 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
       await deleteAudio(entry.id);
     } catch (error) {
       console.error("Failed to delete entry:", error);
-      alert("Failed to delete entry. Please try again.");
+      alert(t("settings.history.deleteError"));
     }
   };
 
   const formattedDate = formatDateTime(String(entry.timestamp), i18n.language);
+  const hasRefinedText = !!entry.post_processed_text;
 
   return (
     <div className="px-4 py-2 pb-5 flex flex-col gap-3">
+      {/* Header with date and action buttons */}
       <div className="flex justify-between items-center">
         <p className="text-sm font-medium">{formattedDate}</p>
         <div className="flex items-center gap-1">
           <button
-            onClick={handleCopyText}
-            className="text-text/50 hover:text-logo-primary  hover:border-logo-primary transition-colors cursor-pointer"
-            title={t("settings.history.copyToClipboard")}
-          >
-            {showCopied ? (
-              <Check width={16} height={16} />
-            ) : (
-              <Copy width={16} height={16} />
-            )}
-          </button>
-          <button
             onClick={onToggleSaved}
-            className={`p-2 rounded  transition-colors cursor-pointer ${
+            className={`p-2 rounded transition-colors cursor-pointer ${
               entry.saved
                 ? "text-logo-primary hover:text-logo-primary/80"
                 : "text-text/50 hover:text-logo-primary"
@@ -290,9 +301,75 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
           </button>
         </div>
       </div>
-      <p className="italic text-text/90 text-sm pb-2">
-        {entry.transcription_text}
-      </p>
+
+      {/* Text content */}
+      {hasRefinedText ? (
+        // Two-section layout: Original + Refined
+        <div className="flex flex-col gap-3">
+          {/* Refined text - primary/prominent */}
+          <div className="border-l-2 border-logo-primary/60 pl-3">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-medium text-logo-primary/80 uppercase tracking-wide">
+                {t("settings.history.refined")}
+              </span>
+              <button
+                onClick={handleCopyRefined}
+                className="text-text/50 hover:text-logo-primary transition-colors cursor-pointer p-1"
+                title={t("settings.history.copyRefined")}
+              >
+                {showCopiedRefined ? (
+                  <Check width={14} height={14} />
+                ) : (
+                  <Copy width={14} height={14} />
+                )}
+              </button>
+            </div>
+            <p className="text-text/90 text-sm">{entry.post_processed_text}</p>
+          </div>
+
+          {/* Original text - secondary/muted */}
+          <div className="border-l-2 border-mid-gray/40 pl-3">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-medium text-mid-gray uppercase tracking-wide">
+                {t("settings.history.original")}
+              </span>
+              <button
+                onClick={handleCopyOriginal}
+                className="text-text/50 hover:text-logo-primary transition-colors cursor-pointer p-1"
+                title={t("settings.history.copyOriginal")}
+              >
+                {showCopiedOriginal ? (
+                  <Check width={14} height={14} />
+                ) : (
+                  <Copy width={14} height={14} />
+                )}
+              </button>
+            </div>
+            <p className="italic text-text/60 text-sm">
+              {entry.transcription_text}
+            </p>
+          </div>
+        </div>
+      ) : (
+        // Single-section layout: Original only (with copy button)
+        <div className="flex items-start justify-between gap-2">
+          <p className="italic text-text/90 text-sm flex-1">
+            {entry.transcription_text}
+          </p>
+          <button
+            onClick={handleCopyOriginal}
+            className="text-text/50 hover:text-logo-primary transition-colors cursor-pointer p-1 flex-shrink-0"
+            title={t("settings.history.copyToClipboard")}
+          >
+            {showCopiedOriginal ? (
+              <Check width={14} height={14} />
+            ) : (
+              <Copy width={14} height={14} />
+            )}
+          </button>
+        </div>
+      )}
+
       {audioUrl && <AudioPlayer src={audioUrl} className="w-full" />}
     </div>
   );
