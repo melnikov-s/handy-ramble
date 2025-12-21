@@ -53,8 +53,19 @@ pub fn setup_signal_handler(app_handle: AppHandle, mut signals: Signals) {
                         // Now call the action without holding the lock
                         if should_start {
                             debug!("SIGUSR2: Starting transcription (was inactive)");
-                            action.start(&app_handle_for_signal, binding_id, shortcut_string);
-                            info!("SIGUSR2: Transcription started");
+                            let started =
+                                action.start(&app_handle_for_signal, binding_id, shortcut_string);
+                            if started {
+                                info!("SIGUSR2: Transcription started");
+                            } else {
+                                // Reset toggle state if start failed
+                                debug!("SIGUSR2: action.start() returned false, resetting toggle state");
+                                let toggle_state_manager =
+                                    app_handle_for_signal.state::<ManagedToggleState>();
+                                if let Ok(mut states) = toggle_state_manager.lock() {
+                                    states.active_toggles.insert(binding_id.to_string(), false);
+                                };
+                            }
                         } else {
                             debug!("SIGUSR2: Stopping transcription (was active)");
                             action.stop(&app_handle_for_signal, binding_id, shortcut_string);

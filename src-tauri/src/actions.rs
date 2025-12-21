@@ -27,7 +27,8 @@ use tauri::Manager;
 
 // Shortcut Action Trait
 pub trait ShortcutAction: Send + Sync {
-    fn start(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str);
+    /// Start the action. Returns true if the action started successfully, false otherwise.
+    fn start(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str) -> bool;
     fn stop(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str);
 }
 
@@ -291,15 +292,18 @@ async fn maybe_convert_chinese_variant(
 }
 
 impl ShortcutAction for TranscribeAction {
-    fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
+    fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) -> bool {
         let start_time = Instant::now();
-        debug!("TranscribeAction::start called for binding: {}", binding_id);
+        debug!(
+            "[ACTION] TranscribeAction::start called for binding: {}",
+            binding_id
+        );
 
         // Check if we're resuming from a paused state
         if is_operation_paused(app, binding_id) {
             debug!("Resuming paused transcription for binding: {}", binding_id);
             resume_current_operation(app);
-            return;
+            return true;
         }
 
         // Load model in the background
@@ -331,7 +335,10 @@ impl ShortcutAction for TranscribeAction {
             });
 
             recording_started = rm.try_start_recording(&binding_id);
-            debug!("Recording started: {}", recording_started);
+            debug!(
+                "[ACTION] try_start_recording returned: {}",
+                recording_started
+            );
         } else {
             // On-demand mode: Start recording first, then play audio feedback, then apply mute
             // This allows the microphone to be activated before playing the sound
@@ -362,9 +369,11 @@ impl ShortcutAction for TranscribeAction {
         }
 
         debug!(
-            "TranscribeAction::start completed in {:?}",
-            start_time.elapsed()
+            "TranscribeAction::start completed in {:?}, returning {}",
+            start_time.elapsed(),
+            recording_started
         );
+        recording_started
     }
 
     fn stop(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
@@ -646,7 +655,7 @@ async fn process_ramble_to_coherent(
 }
 
 impl ShortcutAction for RambleToCoherentAction {
-    fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
+    fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) -> bool {
         let start_time = Instant::now();
         debug!(
             "RambleToCoherentAction::start called for binding: {}",
@@ -660,7 +669,7 @@ impl ShortcutAction for RambleToCoherentAction {
                 binding_id
             );
             resume_current_operation(app);
-            return;
+            return true;
         }
 
         // Load model in the background
@@ -707,6 +716,7 @@ impl ShortcutAction for RambleToCoherentAction {
             "RambleToCoherentAction::start completed in {:?}",
             start_time.elapsed()
         );
+        recording_started
     }
 
     fn stop(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
@@ -832,8 +842,9 @@ impl ShortcutAction for RambleToCoherentAction {
 struct CancelAction;
 
 impl ShortcutAction for CancelAction {
-    fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+    fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) -> bool {
         utils::cancel_current_operation(app);
+        true
     }
 
     fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
@@ -845,13 +856,14 @@ impl ShortcutAction for CancelAction {
 struct TestAction;
 
 impl ShortcutAction for TestAction {
-    fn start(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str) {
+    fn start(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str) -> bool {
         log::info!(
             "Shortcut ID '{}': Started - {} (App: {})",
             binding_id,
             shortcut_str,
             app.package_info().name
         );
+        true
     }
 
     fn stop(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str) {
