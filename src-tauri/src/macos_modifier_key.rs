@@ -24,6 +24,10 @@ pub const RAW_BINDING_RIGHT_OPTION: &str = "right_option";
 pub const RAW_BINDING_LEFT_OPTION: &str = "left_option";
 pub const RAW_BINDING_SHIFT_RIGHT_OPTION: &str = "shift+right_option";
 pub const RAW_BINDING_SHIFT_LEFT_OPTION: &str = "shift+left_option";
+pub const RAW_BINDING_RIGHT_COMMAND: &str = "right_command";
+pub const RAW_BINDING_LEFT_COMMAND: &str = "left_command";
+pub const RAW_BINDING_SHIFT_RIGHT_COMMAND: &str = "shift+right_command";
+pub const RAW_BINDING_SHIFT_LEFT_COMMAND: &str = "shift+left_command";
 
 /// Check if a binding string is a raw modifier binding (macOS-only)
 pub fn is_raw_modifier_binding(binding: &str) -> bool {
@@ -33,6 +37,10 @@ pub fn is_raw_modifier_binding(binding: &str) -> bool {
             | RAW_BINDING_LEFT_OPTION
             | RAW_BINDING_SHIFT_RIGHT_OPTION
             | RAW_BINDING_SHIFT_LEFT_OPTION
+            | RAW_BINDING_RIGHT_COMMAND
+            | RAW_BINDING_LEFT_COMMAND
+            | RAW_BINDING_SHIFT_RIGHT_COMMAND
+            | RAW_BINDING_SHIFT_LEFT_COMMAND
     )
 }
 
@@ -47,6 +55,7 @@ pub enum ModifierKeyState {
 #[derive(Debug, Clone)]
 struct RawBinding {
     binding_id: String,
+    #[allow(dead_code)]
     binding_string: String,
 }
 
@@ -58,6 +67,8 @@ struct ModifierListenerState {
     suspended: std::collections::HashSet<String>,
     /// Track current pressed state for each binding
     pressed_state: HashMap<String, bool>,
+    /// Track when each binding was pressed (for tap vs hold detection)
+    press_timestamps: HashMap<String, std::time::Instant>,
     /// App handle for triggering actions
     app_handle: Option<AppHandle>,
     /// Track if Shift is currently held (to allow Shift+Option shortcuts to work)
@@ -70,6 +81,7 @@ impl ModifierListenerState {
             bindings: HashMap::new(),
             suspended: std::collections::HashSet::new(),
             pressed_state: HashMap::new(),
+            press_timestamps: HashMap::new(),
             app_handle: None,
             shift_pressed: false,
         }
@@ -180,11 +192,13 @@ fn rdev_callback(event: Event) {
     match event.event_type {
         // Track Shift key state
         EventType::KeyPress(Key::ShiftLeft) | EventType::KeyPress(Key::ShiftRight) => {
+            debug!("[KEY] Shift pressed");
             if let Ok(mut guard) = get_listener_state().lock() {
                 guard.shift_pressed = true;
             }
         }
         EventType::KeyRelease(Key::ShiftLeft) | EventType::KeyRelease(Key::ShiftRight) => {
+            debug!("[KEY] Shift released");
             if let Ok(mut guard) = get_listener_state().lock() {
                 guard.shift_pressed = false;
             }
@@ -195,6 +209,7 @@ fn rdev_callback(event: Event) {
                 .lock()
                 .map(|g| g.shift_pressed)
                 .unwrap_or(false);
+            debug!("[KEY] Left Option PRESSED (shift_held={})", shift_held);
             if shift_held {
                 // Shift+Left Option combination
                 handle_modifier_event(RAW_BINDING_SHIFT_LEFT_OPTION, ModifierKeyState::Pressed);
@@ -204,15 +219,12 @@ fn rdev_callback(event: Event) {
             }
         }
         EventType::KeyRelease(Key::Alt) => {
-            let shift_held = get_listener_state()
-                .lock()
-                .map(|g| g.shift_pressed)
-                .unwrap_or(false);
-            if shift_held {
-                handle_modifier_event(RAW_BINDING_SHIFT_LEFT_OPTION, ModifierKeyState::Released);
-            } else {
-                handle_modifier_event(RAW_BINDING_LEFT_OPTION, ModifierKeyState::Released);
-            }
+            debug!("[KEY] Left Option RELEASED - sending release for both variants");
+            // Handle release for BOTH shift and non-shift variants to ensure pressed_state
+            // is properly cleared regardless of whether Shift was pressed/released between
+            // the Option key press and release events
+            handle_modifier_event(RAW_BINDING_LEFT_OPTION, ModifierKeyState::Released);
+            handle_modifier_event(RAW_BINDING_SHIFT_LEFT_OPTION, ModifierKeyState::Released);
         }
         // Right Alt/Option key (rdev reports as Key::AltGr on macOS)
         EventType::KeyPress(Key::AltGr) => {
@@ -220,6 +232,7 @@ fn rdev_callback(event: Event) {
                 .lock()
                 .map(|g| g.shift_pressed)
                 .unwrap_or(false);
+            debug!("[KEY] Right Option PRESSED (shift_held={})", shift_held);
             if shift_held {
                 // Shift+Right Option combination
                 handle_modifier_event(RAW_BINDING_SHIFT_RIGHT_OPTION, ModifierKeyState::Pressed);
@@ -229,24 +242,62 @@ fn rdev_callback(event: Event) {
             }
         }
         EventType::KeyRelease(Key::AltGr) => {
+            debug!("[KEY] Right Option RELEASED - sending release for both variants");
+            // Handle release for BOTH shift and non-shift variants to ensure pressed_state
+            // is properly cleared regardless of whether Shift was pressed/released between
+            // the Option key press and release events
+            handle_modifier_event(RAW_BINDING_RIGHT_OPTION, ModifierKeyState::Released);
+            handle_modifier_event(RAW_BINDING_SHIFT_RIGHT_OPTION, ModifierKeyState::Released);
+        }
+        // Left Command key
+        EventType::KeyPress(Key::MetaLeft) => {
             let shift_held = get_listener_state()
                 .lock()
                 .map(|g| g.shift_pressed)
                 .unwrap_or(false);
+            debug!("[KEY] Left Command PRESSED (shift_held={})", shift_held);
             if shift_held {
-                handle_modifier_event(RAW_BINDING_SHIFT_RIGHT_OPTION, ModifierKeyState::Released);
+                handle_modifier_event(RAW_BINDING_SHIFT_LEFT_COMMAND, ModifierKeyState::Pressed);
             } else {
-                handle_modifier_event(RAW_BINDING_RIGHT_OPTION, ModifierKeyState::Released);
+                handle_modifier_event(RAW_BINDING_LEFT_COMMAND, ModifierKeyState::Pressed);
             }
+        }
+        EventType::KeyRelease(Key::MetaLeft) => {
+            debug!("[KEY] Left Command RELEASED - sending release for both variants");
+            handle_modifier_event(RAW_BINDING_LEFT_COMMAND, ModifierKeyState::Released);
+            handle_modifier_event(RAW_BINDING_SHIFT_LEFT_COMMAND, ModifierKeyState::Released);
+        }
+        // Right Command key
+        EventType::KeyPress(Key::MetaRight) => {
+            let shift_held = get_listener_state()
+                .lock()
+                .map(|g| g.shift_pressed)
+                .unwrap_or(false);
+            debug!("[KEY] Right Command PRESSED (shift_held={})", shift_held);
+            if shift_held {
+                handle_modifier_event(RAW_BINDING_SHIFT_RIGHT_COMMAND, ModifierKeyState::Pressed);
+            } else {
+                handle_modifier_event(RAW_BINDING_RIGHT_COMMAND, ModifierKeyState::Pressed);
+            }
+        }
+        EventType::KeyRelease(Key::MetaRight) => {
+            debug!("[KEY] Right Command RELEASED - sending release for both variants");
+            handle_modifier_event(RAW_BINDING_RIGHT_COMMAND, ModifierKeyState::Released);
+            handle_modifier_event(RAW_BINDING_SHIFT_RIGHT_COMMAND, ModifierKeyState::Released);
         }
         _ => {}
     }
 }
 
-/// Handle a modifier key event
+/// Handle a modifier key event with smart tap/hold detection
 fn handle_modifier_event(binding_string: &str, key_state: ModifierKeyState) {
+    debug!(
+        "[HANDLER] handle_modifier_event called: binding='{}' key_state={:?}",
+        binding_string, key_state
+    );
+
     let state = get_listener_state();
-    let (app_handle, binding_id, should_process) = {
+    let (app_handle, binding_id, should_process, press_time) = {
         let mut guard = match state.lock() {
             Ok(g) => g,
             Err(e) => {
@@ -257,13 +308,19 @@ fn handle_modifier_event(binding_string: &str, key_state: ModifierKeyState) {
 
         let binding = match guard.bindings.get(binding_string) {
             Some(b) => b.clone(),
-            None => return, // Not registered
+            None => {
+                debug!(
+                    "[HANDLER] Binding '{}' not registered, skipping",
+                    binding_string
+                );
+                return; // Not registered
+            }
         };
 
         // Check if suspended
         if guard.suspended.contains(&binding.binding_id) {
             debug!(
-                "Ignoring {} event for suspended binding {}",
+                "[HANDLER] Ignoring {} event for suspended binding {}",
                 binding_string, binding.binding_id
             );
             return;
@@ -273,15 +330,46 @@ fn handle_modifier_event(binding_string: &str, key_state: ModifierKeyState) {
         let was_pressed = *guard.pressed_state.get(binding_string).unwrap_or(&false);
         let is_now_pressed = key_state == ModifierKeyState::Pressed;
 
+        debug!(
+            "[HANDLER] pressed_state check: binding='{}' was_pressed={} is_now_pressed={}",
+            binding_string, was_pressed, is_now_pressed
+        );
+
         if was_pressed == is_now_pressed {
+            debug!(
+                "[HANDLER] No state change for '{}', filtering out duplicate event",
+                binding_string
+            );
             return; // No state change
         }
 
         guard
             .pressed_state
             .insert(binding_string.to_string(), is_now_pressed);
+        debug!(
+            "[HANDLER] Updated pressed_state['{}'] = {}",
+            binding_string, is_now_pressed
+        );
 
-        (guard.app_handle.clone(), binding.binding_id.clone(), true)
+        // Track press timestamp for tap vs hold detection
+        let press_time = if is_now_pressed {
+            // Starting press - record timestamp
+            let now = std::time::Instant::now();
+            guard
+                .press_timestamps
+                .insert(binding_string.to_string(), now);
+            None
+        } else {
+            // Releasing - get the press timestamp
+            guard.press_timestamps.remove(binding_string)
+        };
+
+        (
+            guard.app_handle.clone(),
+            binding.binding_id.clone(),
+            true,
+            press_time,
+        )
     };
 
     if !should_process {
@@ -296,38 +384,21 @@ fn handle_modifier_event(binding_string: &str, key_state: ModifierKeyState) {
         }
     };
 
-    // Trigger the action using the same mechanism as regular shortcuts
+    // Trigger the action using smart tap/hold detection
     use crate::actions::ACTION_MAP;
-    use crate::settings::get_settings;
     use crate::ManagedToggleState;
     use tauri::Manager;
 
-    let settings = get_settings(&app);
-
     if let Some(action) = ACTION_MAP.get(&binding_id) {
-        if settings.push_to_talk {
-            // Push-to-talk mode: start on press, stop on release
-            match key_state {
-                ModifierKeyState::Pressed => {
-                    debug!(
-                        "Raw binding {} pressed (push-to-talk start)",
-                        binding_string
-                    );
-                    action.start(&app, &binding_id, binding_string);
-                }
-                ModifierKeyState::Released => {
-                    debug!(
-                        "Raw binding {} released (push-to-talk stop)",
-                        binding_string
-                    );
-                    action.stop(&app, &binding_id, binding_string);
-                }
-            }
-        } else {
-            // Toggle mode: toggle on press only
-            if key_state == ModifierKeyState::Pressed {
+        match key_state {
+            ModifierKeyState::Pressed => {
+                debug!(
+                    "[TOGGLE] Processing PRESSED event for binding_id='{}'",
+                    binding_id
+                );
+                // Always start on press
                 let toggle_state_manager = app.state::<ManagedToggleState>();
-                let should_start = {
+                {
                     let mut states = toggle_state_manager
                         .lock()
                         .expect("Failed to lock toggle state manager");
@@ -335,17 +406,80 @@ fn handle_modifier_event(binding_string: &str, key_state: ModifierKeyState) {
                         .active_toggles
                         .entry(binding_id.clone())
                         .or_insert(false);
-                    let start = !*is_active;
-                    *is_active = start;
-                    start
-                };
 
-                if should_start {
-                    debug!("Raw binding {} toggle start", binding_string);
-                    action.start(&app, &binding_id, binding_string);
-                } else {
-                    debug!("Raw binding {} toggle stop", binding_string);
+                    debug!(
+                        "[TOGGLE] Current active_toggles['{}'] = {}",
+                        binding_id, *is_active
+                    );
+
+                    if *is_active {
+                        // Already recording - this is a toggle-off tap
+                        *is_active = false;
+                        debug!(
+                            "[TOGGLE] Raw binding {} toggle stop (tap while active) - setting active_toggles['{}'] = false",
+                            binding_string, binding_id
+                        );
+                        drop(states); // Release lock before action
+                        action.stop(&app, &binding_id, binding_string);
+                        return;
+                    }
+
+                    // Start recording
+                    *is_active = true;
+                    debug!(
+                        "[TOGGLE] Setting active_toggles['{}'] = true (starting recording)",
+                        binding_id
+                    );
+                }
+                debug!(
+                    "[TOGGLE] Raw binding {} start recording - calling action.start()",
+                    binding_string
+                );
+                action.start(&app, &binding_id, binding_string);
+            }
+            ModifierKeyState::Released => {
+                debug!(
+                    "[TOGGLE] Processing RELEASED event for binding_id='{}'",
+                    binding_id
+                );
+                // Check how long the key was held
+                let hold_duration_ms = press_time.map(|t| t.elapsed().as_millis()).unwrap_or(0);
+
+                // Get threshold from settings
+                use crate::settings::get_settings;
+                let settings = get_settings(&app);
+                let threshold = settings.hold_threshold_ms as u128;
+
+                debug!(
+                    "[TOGGLE] hold_duration={}ms threshold={}ms",
+                    hold_duration_ms, threshold
+                );
+
+                if hold_duration_ms >= threshold {
+                    // Long hold - PTT behavior, stop immediately
+                    let toggle_state_manager = app.state::<ManagedToggleState>();
+                    {
+                        let mut states = toggle_state_manager
+                            .lock()
+                            .expect("Failed to lock toggle state manager");
+                        debug!(
+                            "[TOGGLE] PTT mode: setting active_toggles['{}'] = false",
+                            binding_id
+                        );
+                        states.active_toggles.insert(binding_id.clone(), false);
+                    }
+                    debug!(
+                        "[TOGGLE] Raw binding {} released after {}ms (PTT stop) - calling action.stop()",
+                        binding_string, hold_duration_ms
+                    );
                     action.stop(&app, &binding_id, binding_string);
+                } else {
+                    // Quick tap - toggle mode, keep recording
+                    debug!(
+                        "[TOGGLE] Raw binding {} released after {}ms (toggle mode, staying active - NOT calling stop)",
+                        binding_string, hold_duration_ms
+                    );
+                    // Recording continues, user will tap again to stop
                 }
             }
         }

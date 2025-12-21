@@ -302,6 +302,9 @@ pub struct AppSettings {
     pub ramble_model: String,
     #[serde(default = "default_ramble_prompt")]
     pub ramble_prompt: String,
+    /// Threshold in milliseconds for tap vs hold detection (smart PTT)
+    #[serde(default = "default_hold_threshold_ms")]
+    pub hold_threshold_ms: u64,
 }
 
 fn default_model() -> String {
@@ -394,7 +397,48 @@ fn default_ramble_model() -> String {
 }
 
 fn default_ramble_prompt() -> String {
-    "You are transforming raw speech into clean, coherent text.\n\nThe input is unfiltered speech-to-text that contains:\n- Filler words (um, uh, like, you know, basically, so, I mean)\n- Thinking out loud and self-corrections\n- Backtracking (no wait, actually, I mean)\n- Repeated ideas phrased multiple ways\n- Run-on sentences and stream of consciousness\n\nYour task:\n1. Extract the core intent and requirements\n2. Remove ALL filler words and verbal tics\n3. When the speaker changes their mind, keep ONLY the final decision\n4. Consolidate repeated ideas into single clear statements\n5. Structure as clear, actionable points if appropriate\n6. Preserve technical terms and specific details exactly\n7. Keep the same language as input\n\nReturn ONLY the cleaned, structured text. No preamble or explanation.\n\nInput transcript:\n${output}".to_string()
+    "You are transforming rambling speech into clean, well-structured text.
+
+The input is unfiltered speech-to-text. Your job is to make it readable while preserving all meaning.
+
+ACTIVELY DO:
+1. Remove filler words (um, uh, like, you know, basically, so, I mean)
+2. Fix run-on sentences—break them into clear, punctuated sentences
+3. Remove verbal repetition and redundancy
+4. Restructure for clarity and readability
+5. When the speaker corrects themselves, keep only the final version
+
+CODE DICTATION - Convert spoken code to actual syntax:
+- \"camel case foo bar\" → fooBar
+- \"pascal case foo bar\" → FooBar
+- \"snake case foo bar\" → foo_bar
+- \"open paren\", \"close bracket\" → (, ]
+- Natural descriptions like \"if A greater than B\" → if (a > b)
+
+FORMATTING - Use markdown for readability:
+- Break up large paragraphs into shorter ones
+- Use bullet points for lists of items or requirements
+- Use numbered lists for sequential steps or instructions
+- Use line breaks between distinct topics or ideas
+- Use code blocks or backticks for code/technical terms when appropriate
+The output should be easy to scan and reference later.
+
+PRESERVE THE MEANING OF (but rewrite for clarity):
+- Instructions and directives (first do X, start by checking Y)
+- Context and reasoning (why something matters)
+- Specific examples given
+- Sequence of steps or operations
+
+The output should be noticeably cleaner and more readable than the input while conveying the same information.
+
+Return ONLY the cleaned, formatted text. No preamble.
+
+Input transcript:
+${output}".to_string()
+}
+
+fn default_hold_threshold_ms() -> u64 {
+    500 // 500ms feels more natural - fast enough for PTT, slow enough for accidental taps
 }
 
 fn default_post_process_providers() -> Vec<PostProcessProvider> {
@@ -627,6 +671,7 @@ pub fn get_default_settings() -> AppSettings {
         ramble_provider_id: default_ramble_provider_id(),
         ramble_model: default_ramble_model(),
         ramble_prompt: default_ramble_prompt(),
+        hold_threshold_ms: default_hold_threshold_ms(),
     }
 }
 

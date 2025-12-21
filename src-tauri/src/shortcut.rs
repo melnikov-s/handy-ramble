@@ -1,7 +1,9 @@
-use log::{error, warn};
+use log::{debug, error, warn};
 use serde::Serialize;
 use specta::Type;
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_autostart::ManagerExt;
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
@@ -18,6 +20,13 @@ use crate::ManagedToggleState;
 
 #[cfg(target_os = "macos")]
 use crate::macos_modifier_key;
+
+/// Global state for tracking press timestamps (for smart PTT detection)
+static PRESS_TIMESTAMPS: OnceLock<Mutex<HashMap<String, Instant>>> = OnceLock::new();
+
+fn get_press_timestamps() -> &'static Mutex<HashMap<String, Instant>> {
+    PRESS_TIMESTAMPS.get_or_init(|| Mutex::new(HashMap::new()))
+}
 
 pub fn init_shortcuts(app: &AppHandle) {
     let default_bindings = settings::get_default_settings().bindings;
@@ -790,6 +799,15 @@ pub fn reset_ramble_prompt_to_default(app: AppHandle) -> Result<String, String> 
     Ok(default_prompt)
 }
 
+#[tauri::command]
+#[specta::specta]
+pub fn change_hold_threshold_setting(app: AppHandle, threshold_ms: u64) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.hold_threshold_ms = threshold_ms;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
 /// Determine whether a shortcut string contains at least one non-modifier key.
 /// We allow single non-modifier keys (e.g. "f5" or "space") but disallow
 /// modifier-only combos (e.g. "ctrl" or "ctrl+shift").
@@ -942,48 +960,119 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
         .on_shortcut(shortcut, move |ah, scut, event| {
             if scut == &shortcut {
                 let shortcut_string = scut.into_string();
-                let settings = get_settings(ah);
+                debug!(
+                    "[KEY] Shortcut event received: shortcut='{}' binding_id='{}' state={:?}",
+                    shortcut_string, binding_id_for_closure, event.state
+                );
 
                 if let Some(action) = ACTION_MAP.get(&binding_id_for_closure) {
                     if binding_id_for_closure == "cancel" {
                         let audio_manager = ah.state::<Arc<AudioRecordingManager>>();
                         if audio_manager.is_recording() && event.state == ShortcutState::Pressed {
+                            debug!("[KEY] Cancel shortcut activated while recording");
                             action.start(ah, &binding_id_for_closure, &shortcut_string);
                         }
                         return;
-                    } else if settings.push_to_talk {
-                        if event.state == ShortcutState::Pressed {
-                            action.start(ah, &binding_id_for_closure, &shortcut_string);
-                        } else if event.state == ShortcutState::Released {
-                            action.stop(ah, &binding_id_for_closure, &shortcut_string);
-                        }
-                    } else {
-                        // Toggle mode: toggle on press only
-                        if event.state == ShortcutState::Pressed {
-                            // Determine action and update state while holding the lock,
-                            // but RELEASE the lock before calling the action to avoid deadlocks.
-                            // (Actions may need to acquire the lock themselves, e.g., cancel_current_operation)
-                            let should_start: bool;
+                    }
+                    
+                    // Smart tap/hold detection for all other bindings
+                    match event.state {
+                        ShortcutState::Pressed => {
+                            debug!(
+                                "[TOGGLE] Processing PRESSED event for binding_id='{}'",
+                                binding_id_for_closure
+                            );
+                            // Record press timestamp
+                            if let Ok(mut timestamps) = get_press_timestamps().lock() {
+                                timestamps.insert(binding_id_for_closure.clone(), Instant::now());
+                            }
+                            
+                            // Check if already recording (toggle-off tap)
+                            let toggle_state_manager = ah.state::<ManagedToggleState>();
                             {
-                                let toggle_state_manager = ah.state::<ManagedToggleState>();
                                 let mut states = toggle_state_manager
                                     .lock()
                                     .expect("Failed to lock toggle state manager");
-
-                                let is_currently_active = states
+                                let is_active = states
                                     .active_toggles
                                     .entry(binding_id_for_closure.clone())
                                     .or_insert(false);
-
-                                should_start = !*is_currently_active;
-                                *is_currently_active = should_start;
-                            } // Lock released here
-
-                            // Now call the action without holding the lock
-                            if should_start {
-                                action.start(ah, &binding_id_for_closure, &shortcut_string);
+                                
+                                debug!(
+                                    "[TOGGLE] Current active_toggles['{}'] = {}",
+                                    binding_id_for_closure, *is_active
+                                );
+                                
+                                if *is_active {
+                                    // Already recording - this is a toggle-off tap
+                                    *is_active = false;
+                                    debug!(
+                                        "[TOGGLE] Shortcut {} toggle stop (tap while active) - setting active_toggles['{}'] = false",
+                                        shortcut_string, binding_id_for_closure
+                                    );
+                                    drop(states);
+                                    action.stop(ah, &binding_id_for_closure, &shortcut_string);
+                                    return;
+                                }
+                                
+                                // Start recording
+                                *is_active = true;
+                                debug!(
+                                    "[TOGGLE] Setting active_toggles['{}'] = true (starting recording)",
+                                    binding_id_for_closure
+                                );
+                            }
+                            debug!("[TOGGLE] Shortcut {} start recording - calling action.start()", shortcut_string);
+                            action.start(ah, &binding_id_for_closure, &shortcut_string);
+                        }
+                        ShortcutState::Released => {
+                            debug!(
+                                "[TOGGLE] Processing RELEASED event for binding_id='{}'",
+                                binding_id_for_closure
+                            );
+                            // Get press timestamp and calculate hold duration
+                            let hold_duration_ms = if let Ok(mut timestamps) = get_press_timestamps().lock() {
+                                timestamps.remove(&binding_id_for_closure)
+                                    .map(|t| t.elapsed().as_millis())
+                                    .unwrap_or(0)
                             } else {
+                                0
+                            };
+                            
+                            // Get threshold from settings
+                            let settings = get_settings(ah);
+                            let threshold = settings.hold_threshold_ms as u128;
+                            
+                            debug!(
+                                "[TOGGLE] hold_duration={}ms threshold={}ms",
+                                hold_duration_ms, threshold
+                            );
+                            
+                            if hold_duration_ms >= threshold {
+                                // Long hold - PTT behavior, stop immediately
+                                let toggle_state_manager = ah.state::<ManagedToggleState>();
+                                {
+                                    let mut states = toggle_state_manager
+                                        .lock()
+                                        .expect("Failed to lock toggle state manager");
+                                    debug!(
+                                        "[TOGGLE] PTT mode: setting active_toggles['{}'] = false",
+                                        binding_id_for_closure
+                                    );
+                                    states.active_toggles.insert(binding_id_for_closure.clone(), false);
+                                }
+                                debug!(
+                                    "[TOGGLE] Shortcut {} released after {}ms (PTT stop) - calling action.stop()",
+                                    shortcut_string, hold_duration_ms
+                                );
                                 action.stop(ah, &binding_id_for_closure, &shortcut_string);
+                            } else {
+                                // Quick tap - toggle mode, keep recording
+                                debug!(
+                                    "[TOGGLE] Shortcut {} released after {}ms (toggle mode, staying active - NOT calling stop)",
+                                    shortcut_string, hold_duration_ms
+                                );
+                                // Recording continues, user will tap again to stop
                             }
                         }
                     }
