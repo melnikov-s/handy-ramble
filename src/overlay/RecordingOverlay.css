@@ -59,7 +59,7 @@
 
 .bar {
   width: 4px;
-  background: #ffe5ee;
+  background: #93c5fd;
   max-height: 14px;
   border-radius: 1px;
   transition: height 80ms linear;
@@ -73,7 +73,7 @@
 
 /* Paused state bars - reduced height and opacity */
 .paused-bar {
-  background: #ffe5ee88;
+  background: #93c5fd88;
   height: 3px !important;
   opacity: 0.5;
 }
@@ -121,9 +121,9 @@
   font-weight: 500;
 }
 
-/* Dictating label - warm pink */
+/* Dictating label - navy */
 .dictating-label {
-  color: #faa2ca;
+  color: #1e40af;
 }
 
 /* Refining label - cyan with glow */
@@ -133,9 +133,9 @@
   animation: refining-label-pulse 1.2s infinite ease-in-out;
 }
 
-/* Paused label - dimmed pink */
+/* Paused label - dimmed navy */
 .paused-label {
-  color: #faa2ca99;
+  color: #1e40af99;
 }
 
 /* Paused refining label - dimmed cyan */
@@ -224,7 +224,7 @@
 
 .pause-button:hover,
 .cancel-button:hover {
-  background: #faa2ca33;
+  background: #1e40af33;
   transform: scale(1.05);
 }
 

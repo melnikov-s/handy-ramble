@@ -55,7 +55,7 @@
     }
   },
   "modelSelector": {
-    "welcome": "Welcome to Handy Ramble!",
+    "welcome": "Welcome to Ramble!",
     "downloadPrompt": "Download a model below to get started with transcription.",
     "availableModels": "Available Models",
     "downloadModels": "Download Models",
@@ -81,7 +81,7 @@
     "general": {
       "title": "General",
       "shortcut": {
-        "title": "Handy Shortcuts",
+        "title": "Ramble Shortcuts",
         "description": "Configure keyboard shortcuts to trigger speech-to-text recording",
         "loading": "Loading shortcuts...",
         "none": "No shortcuts configured",
@@ -147,7 +147,7 @@
       },
       "autostart": {
         "label": "Launch on Startup",
-        "description": "Automatically start Handy Ramble when you log in to your computer."
+        "description": "Automatically start Ramble when you log in to your computer."
       },
       "overlay": {
         "title": "Overlay Position",
@@ -284,7 +284,7 @@
       },
       "updateChecks": {
         "label": "Check for Updates",
-        "description": "Automatically check for new versions of Handy Ramble"
+        "description": "Automatically check for new versions of Ramble"
       },
       "soundTheme": {
         "label": "Sound Theme",
@@ -339,11 +339,11 @@
       "title": "About",
       "version": {
         "title": "Version",
-        "description": "Current version of Handy Ramble"
+        "description": "Current version of Ramble"
       },
       "appDataDirectory": {
         "title": "App Data Directory",
-        "description": "Location where Handy Ramble stores its data"
+        "description": "Location where Ramble stores its data"
       },
       "sourceCode": {
         "title": "Source Code",
@@ -352,7 +352,7 @@
       },
       "supportDevelopment": {
         "title": "Support Development",
-        "description": "Help us continue building Handy Ramble",
+        "description": "Help us continue building Ramble",
         "button": "Donate"
       },
       "acknowledgments": {
@@ -360,7 +360,7 @@
         "whisper": {
           "title": "Whisper.cpp",
           "description": "High-performance inference of OpenAI's Whisper automatic speech recognition model",
-          "details": "Handy uses Whisper.cpp for fast, local speech-to-text processing. Thanks to the amazing work by Georgi Gerganov and contributors."
+          "details": "Ramble uses Whisper.cpp for fast, local speech-to-text processing. Thanks to the amazing work by Georgi Gerganov and contributors."
         }
       }
     }
@@ -403,7 +403,7 @@
   },
   "accessibility": {
     "permissionsRequired": "Accessibility Permissions Required",
-    "permissionsDescription": "Handy needs accessibility permissions to type transcribed text.",
+    "permissionsDescription": "Ramble needs accessibility permissions to type transcribed text.",
     "openSettings": "Open System Settings",
     "dismiss": "Dismiss"
   },
@@ -412,7 +412,7 @@
   },
   "appLanguage": {
     "title": "Application Language",
-    "description": "Change the language of the Handy Ramble interface"
+    "description": "Change the language of the Ramble interface"
   },
   "overlay": {
     "transcribing": "Transcribing...",

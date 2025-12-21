@@ -11,7 +11,7 @@ import { ResetButton } from "../ui/ResetButton";
 import { ProviderSelect } from "./PostProcessingSettingsApi/ProviderSelect";
 import { ApiKeyField } from "./PostProcessingSettingsApi/ApiKeyField";
 import { ModelSelect } from "./PostProcessingSettingsApi/ModelSelect";
-import { HandyShortcut } from "./HandyShortcut";
+import { RambleShortcut } from "./RambleShortcut";
 import { useSettings } from "../../hooks/useSettings";
 
 export const RambleSettings: React.FC = () => {
@@ -172,7 +172,7 @@ export const RambleSettings: React.FC = () => {
           grouped={true}
         />
 
-        <HandyShortcut
+        <RambleShortcut
           shortcutId="ramble_to_coherent"
           descriptionMode="tooltip"
           grouped={true}

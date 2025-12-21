@@ -12,5 +12,5 @@ fn main() {
         }
     }
 
-    handy_ramble_lib::run()
+    ramble_lib::run()
 }
