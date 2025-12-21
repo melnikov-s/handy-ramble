@@ -104,6 +104,7 @@ const WHISPER_SAMPLE_RATE: usize = 16000;
 pub enum RecordingState {
     Idle,
     Recording { binding_id: String },
+    Paused { binding_id: String },
 }
 
 #[derive(Clone, Debug)]
@@ -148,7 +149,10 @@ pub struct AudioRecordingManager {
     recorder: Arc<Mutex<Option<AudioRecorder>>>,
     is_open: Arc<Mutex<bool>>,
     is_recording: Arc<Mutex<bool>>,
+    is_paused: Arc<Mutex<bool>>,
     did_mute: Arc<Mutex<bool>>,
+    /// Buffer to store samples recorded before pause
+    paused_samples: Arc<Mutex<Vec<f32>>>,
 }
 
 impl AudioRecordingManager {
@@ -170,7 +174,9 @@ impl AudioRecordingManager {
             recorder: Arc::new(Mutex::new(None)),
             is_open: Arc::new(Mutex::new(false)),
             is_recording: Arc::new(Mutex::new(false)),
+            is_paused: Arc::new(Mutex::new(false)),
             did_mute: Arc::new(Mutex::new(false)),
+            paused_samples: Arc::new(Mutex::new(Vec::new())),
         };
 
         // Always-on?  Open immediately.
@@ -336,6 +342,9 @@ impl AudioRecordingManager {
         let mut state = self.state.lock().unwrap();
 
         if let RecordingState::Idle = *state {
+            // Clear any leftover paused samples from previous session
+            self.paused_samples.lock().unwrap().clear();
+
             // Ensure microphone is open in on-demand mode
             if matches!(*self.mode.lock().unwrap(), MicrophoneMode::OnDemand) {
                 if let Err(e) = self.start_microphone_stream() {
@@ -380,7 +389,8 @@ impl AudioRecordingManager {
                 *state = RecordingState::Idle;
                 drop(state);
 
-                let samples = if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
+                // Get current samples from recorder
+                let current_samples = if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
                     match rec.stop() {
                         Ok(buf) => buf,
                         Err(e) => {
@@ -391,6 +401,21 @@ impl AudioRecordingManager {
                 } else {
                     error!("Recorder not available");
                     Vec::new()
+                };
+
+                // Prepend any samples from before pause
+                let mut paused = self.paused_samples.lock().unwrap();
+                let samples = if paused.is_empty() {
+                    current_samples
+                } else {
+                    debug!(
+                        "Prepending {} paused samples to {} current samples",
+                        paused.len(),
+                        current_samples.len()
+                    );
+                    let mut combined = std::mem::take(&mut *paused);
+                    combined.extend(current_samples);
+                    combined
                 };
 
                 *self.is_recording.lock().unwrap() = false;
@@ -421,24 +446,108 @@ impl AudioRecordingManager {
         )
     }
 
+    /// Check if recording is currently paused
+    pub fn is_paused(&self) -> bool {
+        matches!(*self.state.lock().unwrap(), RecordingState::Paused { .. })
+    }
+
+    /// Pause any ongoing recording, preserving samples recorded so far
+    /// Returns the binding_id if pausing was successful
+    pub fn pause_recording(&self) -> Option<String> {
+        let mut state = self.state.lock().unwrap();
+
+        if let RecordingState::Recording { binding_id } = state.clone() {
+            // Stop capturing and save samples to the buffer
+            if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
+                match rec.stop() {
+                    Ok(samples) => {
+                        // Append to paused samples buffer
+                        let mut paused = self.paused_samples.lock().unwrap();
+                        debug!(
+                            "Pausing: saving {} samples (had {} previously)",
+                            samples.len(),
+                            paused.len()
+                        );
+                        paused.extend(samples);
+                    }
+                    Err(e) => {
+                        error!("Failed to stop recorder during pause: {e}");
+                    }
+                }
+            }
+
+            *self.is_recording.lock().unwrap() = false;
+            *self.is_paused.lock().unwrap() = true;
+            *state = RecordingState::Paused {
+                binding_id: binding_id.clone(),
+            };
+            debug!("Recording paused for binding {binding_id}");
+            Some(binding_id)
+        } else {
+            None
+        }
+    }
+
+    /// Resume a paused recording
+    /// Returns the binding_id if resuming was successful
+    pub fn resume_recording(&self) -> Option<String> {
+        let mut state = self.state.lock().unwrap();
+
+        if let RecordingState::Paused { binding_id } = state.clone() {
+            // Start recording again
+            if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
+                if rec.start().is_ok() {
+                    *self.is_recording.lock().unwrap() = true;
+                    *self.is_paused.lock().unwrap() = false;
+                    *state = RecordingState::Recording {
+                        binding_id: binding_id.clone(),
+                    };
+                    debug!("Recording resumed for binding {binding_id}");
+                    return Some(binding_id);
+                }
+            }
+            error!("Failed to resume recording");
+            None
+        } else {
+            None
+        }
+    }
+
+    /// Get the binding_id if currently paused
+    pub fn get_paused_binding_id(&self) -> Option<String> {
+        let state = self.state.lock().unwrap();
+        if let RecordingState::Paused { binding_id } = &*state {
+            Some(binding_id.clone())
+        } else {
+            None
+        }
+    }
+
     /// Cancel any ongoing recording without returning audio samples
     pub fn cancel_recording(&self) {
         let mut state = self.state.lock().unwrap();
 
-        if let RecordingState::Recording { .. } = *state {
-            *state = RecordingState::Idle;
-            drop(state);
+        match *state {
+            RecordingState::Recording { .. } | RecordingState::Paused { .. } => {
+                *state = RecordingState::Idle;
+                drop(state);
 
-            if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
-                let _ = rec.stop(); // Discard the result
+                if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
+                    let _ = rec.stop(); // Discard the result
+                }
+
+                // Clear the paused samples buffer
+                self.paused_samples.lock().unwrap().clear();
+
+                *self.is_recording.lock().unwrap() = false;
+                *self.is_paused.lock().unwrap() = false;
+
+                // In on-demand mode turn the mic off again
+                if matches!(*self.mode.lock().unwrap(), MicrophoneMode::OnDemand) {
+                    self.stop_microphone_stream();
+                }
             }
-
-            *self.is_recording.lock().unwrap() = false;
-
-            // In on-demand mode turn the mic off again
-            if matches!(*self.mode.lock().unwrap(), MicrophoneMode::OnDemand) {
-                self.stop_microphone_stream();
-            }
+            _ => {}
         }
     }
 }

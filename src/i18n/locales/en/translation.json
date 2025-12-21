@@ -416,6 +416,12 @@
   },
   "overlay": {
     "transcribing": "Transcribing...",
-    "makingCoherent": "Making Coherent..."
+    "makingCoherent": "Making Coherent...",
+    "dictating": "Dictating",
+    "refining": "Refining",
+    "paused": "Paused",
+    "pause": "Pause",
+    "resume": "Resume",
+    "dismissError": "Dismiss"
   }
 }

@@ -39,6 +39,68 @@ pub fn cancel_current_operation(app: &AppHandle) {
     info!("Operation cancellation completed - returned to idle state");
 }
 
+/// Pause the current recording operation without discarding audio.
+/// Returns the binding_id if pausing was successful.
+pub fn pause_current_operation(app: &AppHandle) -> Option<String> {
+    info!("Initiating operation pause...");
+
+    let audio_manager = app.state::<Arc<AudioRecordingManager>>();
+
+    if let Some(binding_id) = audio_manager.pause_recording() {
+        // Determine if this is a ramble binding by checking the binding_id
+        let is_ramble = binding_id == "ramble_to_coherent";
+
+        // Show the paused overlay
+        if is_ramble {
+            show_paused_overlay(app, true);
+        } else {
+            show_paused_overlay(app, false);
+        }
+
+        info!("Operation paused for binding {}", binding_id);
+        Some(binding_id)
+    } else {
+        warn!("No active recording to pause");
+        None
+    }
+}
+
+/// Resume a paused recording operation.
+/// Returns the binding_id if resuming was successful.
+pub fn resume_current_operation(app: &AppHandle) -> Option<String> {
+    info!("Initiating operation resume...");
+
+    let audio_manager = app.state::<Arc<AudioRecordingManager>>();
+
+    if let Some(binding_id) = audio_manager.resume_recording() {
+        // Determine if this is a ramble binding
+        let is_ramble = binding_id == "ramble_to_coherent";
+
+        // Show the appropriate recording overlay
+        if is_ramble {
+            show_ramble_recording_overlay(app);
+        } else {
+            show_recording_overlay(app);
+        }
+
+        info!("Operation resumed for binding {}", binding_id);
+        Some(binding_id)
+    } else {
+        warn!("No paused recording to resume");
+        None
+    }
+}
+
+/// Check if there is a paused recording for the given binding_id
+pub fn is_operation_paused(app: &AppHandle, binding_id: &str) -> bool {
+    let audio_manager = app.state::<Arc<AudioRecordingManager>>();
+    if let Some(paused_binding) = audio_manager.get_paused_binding_id() {
+        paused_binding == binding_id
+    } else {
+        false
+    }
+}
+
 /// Check if using the Wayland display server protocol
 #[cfg(target_os = "linux")]
 pub fn is_wayland() -> bool {

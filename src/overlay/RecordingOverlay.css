@@ -1,6 +1,6 @@
 .recording-overlay {
   height: 36px;
-  width: 172px;
+  width: 200px;
   display: grid;
   grid-template-columns: auto 1fr auto;
   align-items: center;
@@ -20,6 +20,15 @@
   border: 1px solid #00d4aa44;
 }
 
+/* Paused state - slightly dimmed */
+.recording-overlay.paused-state {
+  background: #000000aa;
+}
+
+.recording-overlay.refining-mode.paused-state {
+  background: linear-gradient(135deg, #001515aa 0%, #001f1faa 100%);
+}
+
 .overlay-left {
   display: flex;
   align-items: center;
@@ -35,6 +44,7 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  gap: 2px;
 }
 
 .bars-container {
@@ -59,6 +69,19 @@
 /* Refining mode bars - cyan color */
 .refining-bar {
   background: #00e5cc;
+}
+
+/* Paused state bars - reduced height and opacity */
+.paused-bar {
+  background: #ffe5ee88;
+  height: 3px !important;
+  opacity: 0.5;
+}
+
+.refining-paused-bar {
+  background: #00e5cc66;
+  height: 3px !important;
+  opacity: 0.5;
 }
 
 .recording-overlay.fade-in {
@@ -108,6 +131,17 @@
   color: #00e5cc;
   text-shadow: 0 0 6px #00e5cc66;
   animation: refining-label-pulse 1.2s infinite ease-in-out;
+}
+
+/* Paused label - dimmed pink */
+.paused-label {
+  color: #faa2ca99;
+}
+
+/* Paused refining label - dimmed cyan */
+.refining-paused-label {
+  color: #00e5cc99;
+  text-shadow: 0 0 4px #00e5cc33;
 }
 
 /* Refining dots indicator */
@@ -172,6 +206,7 @@
   }
 }
 
+.pause-button,
 .cancel-button {
   width: 24px;
   height: 24px;
@@ -187,13 +222,20 @@
   flex-shrink: 0;
 }
 
+.pause-button:hover,
 .cancel-button:hover {
   background: #faa2ca33;
   transform: scale(1.05);
 }
 
+.pause-button:active,
 .cancel-button:active {
   transform: scale(0.95);
+}
+
+/* Refining mode pause button hover */
+.pause-button.refining-pause:hover {
+  background: #00e5cc33;
 }
 
 /* Refining mode cancel button hover */
@@ -213,3 +255,4 @@
   font-family:
     -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
+
