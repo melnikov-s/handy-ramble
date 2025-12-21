@@ -38,7 +38,7 @@ export const getKeyName = (
     }
 
     // Handle modifier keys - OS-specific naming
-    // On macOS, we distinguish left/right Option keys for standalone modifier bindings
+    // On macOS, we distinguish left/right Option and Command keys for standalone modifier bindings
     const getModifierName = (
       baseModifier: string,
       side?: "left" | "right",
@@ -56,6 +56,10 @@ export const getKeyName = (
           return osType === "macos" ? "option" : "alt";
         case "meta":
           // Windows key on Windows/Linux, Command key on Mac
+          // On macOS, distinguish left/right Command for standalone modifier binding support
+          if (osType === "macos" && side) {
+            return side === "left" ? "left_command" : "right_command";
+          }
           if (osType === "macos") return "command";
           return "super";
         default:
@@ -70,8 +74,8 @@ export const getKeyName = (
       ControlRight: getModifierName("ctrl"),
       AltLeft: getModifierName("alt", "left"),
       AltRight: getModifierName("alt", "right"),
-      MetaLeft: getModifierName("meta"),
-      MetaRight: getModifierName("meta"),
+      MetaLeft: getModifierName("meta", "left"),
+      MetaRight: getModifierName("meta", "right"),
       OSLeft: getModifierName("meta"),
       OSRight: getModifierName("meta"),
       CapsLock: "caps lock",
@@ -180,8 +184,13 @@ export const formatKeyCombination = (
  * Note: left_option and right_option are preserved for macOS standalone modifier bindings
  */
 export const normalizeKey = (key: string): string => {
-  // Preserve side-specific option keys for macOS standalone modifier binding support
-  if (key === "left_option" || key === "right_option") {
+  // Preserve side-specific option and command keys for macOS standalone modifier binding support
+  if (
+    key === "left_option" ||
+    key === "right_option" ||
+    key === "left_command" ||
+    key === "right_command"
+  ) {
     return key;
   }
 
