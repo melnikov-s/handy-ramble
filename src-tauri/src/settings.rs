@@ -293,6 +293,15 @@ pub struct AppSettings {
     pub append_trailing_space: bool,
     #[serde(default = "default_app_language")]
     pub app_language: String,
+    // Ramble to Coherent settings (separate from post-processing)
+    #[serde(default = "default_ramble_enabled")]
+    pub ramble_enabled: bool,
+    #[serde(default = "default_ramble_provider_id")]
+    pub ramble_provider_id: String,
+    #[serde(default)]
+    pub ramble_model: String,
+    #[serde(default = "default_ramble_prompt")]
+    pub ramble_prompt: String,
 }
 
 fn default_model() -> String {
@@ -372,6 +381,22 @@ fn default_post_process_provider_id() -> String {
     "openai".to_string()
 }
 
+fn default_ramble_enabled() -> bool {
+    false
+}
+
+fn default_ramble_provider_id() -> String {
+    "gemini".to_string()
+}
+
+fn default_ramble_model() -> String {
+    "gemini-2.5-flash-lite".to_string()
+}
+
+fn default_ramble_prompt() -> String {
+    "You are transforming raw speech into clean, coherent text.\n\nThe input is unfiltered speech-to-text that contains:\n- Filler words (um, uh, like, you know, basically, so, I mean)\n- Thinking out loud and self-corrections\n- Backtracking (no wait, actually, I mean)\n- Repeated ideas phrased multiple ways\n- Run-on sentences and stream of consciousness\n\nYour task:\n1. Extract the core intent and requirements\n2. Remove ALL filler words and verbal tics\n3. When the speaker changes their mind, keep ONLY the final decision\n4. Consolidate repeated ideas into single clear statements\n5. Structure as clear, actionable points if appropriate\n6. Preserve technical terms and specific details exactly\n7. Keep the same language as input\n\nReturn ONLY the cleaned, structured text. No preamble or explanation.\n\nInput transcript:\n${output}".to_string()
+}
+
 fn default_post_process_providers() -> Vec<PostProcessProvider> {
     let mut providers = vec![
         PostProcessProvider {
@@ -392,6 +417,13 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             id: "anthropic".to_string(),
             label: "Anthropic".to_string(),
             base_url: "https://api.anthropic.com/v1".to_string(),
+            allow_base_url_edit: false,
+            models_endpoint: Some("/models".to_string()),
+        },
+        PostProcessProvider {
+            id: "gemini".to_string(),
+            label: "Google Gemini".to_string(),
+            base_url: "https://generativelanguage.googleapis.com/v1beta/openai".to_string(),
             allow_base_url_edit: false,
             models_endpoint: Some("/models".to_string()),
         },
@@ -447,11 +479,18 @@ fn default_post_process_models() -> HashMap<String, String> {
 }
 
 fn default_post_process_prompts() -> Vec<LLMPrompt> {
-    vec![LLMPrompt {
-        id: "default_improve_transcriptions".to_string(),
-        name: "Improve Transcriptions".to_string(),
-        prompt: "Clean this transcript:\n1. Fix spelling, capitalization, and punctuation errors\n2. Convert number words to digits (twenty-five → 25, ten percent → 10%, five dollars → $5)\n3. Replace spoken punctuation with symbols (period → ., comma → ,, question mark → ?)\n4. Remove filler words (um, uh, like as filler)\n5. Keep the language in the original version (if it was french, keep it in french for example)\n\nPreserve exact meaning and word order. Do not paraphrase or reorder content.\n\nReturn only the cleaned transcript.\n\nTranscript:\n${output}".to_string(),
-    }]
+    vec![
+        LLMPrompt {
+            id: "default_improve_transcriptions".to_string(),
+            name: "Improve Transcriptions".to_string(),
+            prompt: "Clean this transcript:\n1. Fix spelling, capitalization, and punctuation errors\n2. Convert number words to digits (twenty-five → 25, ten percent → 10%, five dollars → $5)\n3. Replace spoken punctuation with symbols (period → ., comma → ,, question mark → ?)\n4. Remove filler words (um, uh, like as filler)\n5. Keep the language in the original version (if it was french, keep it in french for example)\n\nPreserve exact meaning and word order. Do not paraphrase or reorder content.\n\nReturn only the cleaned transcript.\n\nTranscript:\n${output}".to_string(),
+        },
+        LLMPrompt {
+            id: "ramble_to_coherent".to_string(),
+            name: "Ramble to Coherent".to_string(),
+            prompt: "You are transforming raw speech into clean, coherent text.\n\nThe input is unfiltered speech-to-text that contains:\n- Filler words (um, uh, like, you know, basically, so, I mean)\n- Thinking out loud and self-corrections\n- Backtracking (no wait, actually, I mean)\n- Repeated ideas phrased multiple ways\n- Run-on sentences and stream of consciousness\n\nYour task:\n1. Extract the core intent and requirements\n2. Remove ALL filler words and verbal tics\n3. When the speaker changes their mind, keep ONLY the final decision\n4. Consolidate repeated ideas into single clear statements\n5. Structure as clear, actionable points if appropriate\n6. Preserve technical terms and specific details exactly\n7. Keep the same language as input\n\nReturn ONLY the cleaned, structured text. No preamble or explanation.\n\nInput transcript:\n${output}".to_string(),
+        },
+    ]
 }
 
 fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
@@ -527,6 +566,27 @@ pub fn get_default_settings() -> AppSettings {
         },
     );
 
+    // Ramble to Coherent keybinding
+    #[cfg(target_os = "windows")]
+    let ramble_shortcut = "ctrl+shift+space";
+    #[cfg(target_os = "macos")]
+    let ramble_shortcut = "option+shift+space";
+    #[cfg(target_os = "linux")]
+    let ramble_shortcut = "ctrl+shift+space";
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    let ramble_shortcut = "alt+shift+space";
+
+    bindings.insert(
+        "ramble_to_coherent".to_string(),
+        ShortcutBinding {
+            id: "ramble_to_coherent".to_string(),
+            name: "Ramble to Coherent".to_string(),
+            description: "Transcribes and cleans up rambling speech using AI.".to_string(),
+            default_binding: ramble_shortcut.to_string(),
+            current_binding: ramble_shortcut.to_string(),
+        },
+    );
+
     AppSettings {
         bindings,
         push_to_talk: true,
@@ -563,6 +623,10 @@ pub fn get_default_settings() -> AppSettings {
         mute_while_recording: false,
         append_trailing_space: false,
         app_language: default_app_language(),
+        ramble_enabled: default_ramble_enabled(),
+        ramble_provider_id: default_ramble_provider_id(),
+        ramble_model: default_ramble_model(),
+        ramble_prompt: default_ramble_prompt(),
     }
 }
 

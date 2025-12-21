@@ -7,7 +7,10 @@ use crate::managers::transcription::TranscriptionManager;
 use crate::settings::{get_settings, AppSettings, APPLE_INTELLIGENCE_PROVIDER_ID};
 use crate::shortcut;
 use crate::tray::{change_tray_icon, TrayIconState};
-use crate::utils::{self, show_recording_overlay, show_transcribing_overlay};
+use crate::utils::{
+    self, show_error_overlay, show_making_coherent_overlay, show_recording_overlay,
+    show_transcribing_overlay,
+};
 use async_openai::types::{
     ChatCompletionRequestMessage, ChatCompletionRequestUserMessageArgs,
     CreateChatCompletionRequestArgs,
@@ -454,6 +457,295 @@ impl ShortcutAction for TranscribeAction {
     }
 }
 
+// Ramble to Coherent Action
+struct RambleToCoherentAction;
+
+/// Process transcription through LLM using ramble-specific settings
+/// Returns Ok(Some(processed)) on success, Ok(None) if disabled/skipped, Err(msg) on error
+async fn process_ramble_to_coherent(
+    settings: &AppSettings,
+    transcription: &str,
+) -> Result<Option<String>, String> {
+    if !settings.ramble_enabled {
+        debug!("Ramble to Coherent is disabled");
+        return Ok(None);
+    }
+
+    let provider_id = &settings.ramble_provider_id;
+    let provider = match settings
+        .post_process_providers
+        .iter()
+        .find(|p| &p.id == provider_id)
+        .cloned()
+    {
+        Some(provider) => provider,
+        None => {
+            return Err(format!("Provider '{}' not found", provider_id));
+        }
+    };
+
+    let model = &settings.ramble_model;
+    if model.trim().is_empty() {
+        return Err("No model configured".to_string());
+    }
+
+    let prompt = &settings.ramble_prompt;
+    if prompt.trim().is_empty() {
+        return Err("Prompt is empty".to_string());
+    }
+
+    debug!(
+        "Starting Ramble to Coherent with provider '{}' (model: {})",
+        provider.id, model
+    );
+
+    // Replace ${output} variable in the prompt with the actual text
+    let processed_prompt = prompt.replace("${output}", transcription);
+
+    // Get API key from post_process_api_keys (reuses same keys)
+    let api_key = settings
+        .post_process_api_keys
+        .get(provider_id)
+        .cloned()
+        .unwrap_or_default();
+
+    if api_key.is_empty() {
+        return Err("API key not configured".to_string());
+    }
+
+    // Create OpenAI-compatible client
+    let client = match crate::llm_client::create_client(&provider, api_key) {
+        Ok(client) => client,
+        Err(e) => {
+            return Err(format!("Failed to create client: {}", e));
+        }
+    };
+
+    // Build the chat completion request
+    let message = match ChatCompletionRequestUserMessageArgs::default()
+        .content(processed_prompt)
+        .build()
+    {
+        Ok(msg) => ChatCompletionRequestMessage::User(msg),
+        Err(e) => {
+            return Err(format!("Request error: {}", e));
+        }
+    };
+
+    let request = match CreateChatCompletionRequestArgs::default()
+        .model(model)
+        .messages(vec![message])
+        .build()
+    {
+        Ok(req) => req,
+        Err(e) => {
+            return Err(format!("Request error: {}", e));
+        }
+    };
+
+    // Send the request
+    match client.chat().create(request).await {
+        Ok(response) => {
+            if let Some(choice) = response.choices.first() {
+                if let Some(content) = &choice.message.content {
+                    debug!(
+                        "Ramble to Coherent succeeded. Output length: {} chars",
+                        content.len()
+                    );
+                    return Ok(Some(content.clone()));
+                }
+            }
+            Err("No response from AI".to_string())
+        }
+        Err(e) => {
+            let error_str = e.to_string();
+            // Extract useful error message from API errors
+            if error_str.contains("401") || error_str.contains("Unauthorized") {
+                Err("Invalid API key".to_string())
+            } else if error_str.contains("429") {
+                Err("Rate limited - try again".to_string())
+            } else if error_str.contains("model") {
+                Err(format!("Invalid model: {}", model))
+            } else {
+                Err(format!("API error: {}", error_str))
+            }
+        }
+    }
+}
+
+impl ShortcutAction for RambleToCoherentAction {
+    fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
+        let start_time = Instant::now();
+        debug!(
+            "RambleToCoherentAction::start called for binding: {}",
+            binding_id
+        );
+
+        // Load model in the background
+        let tm = app.state::<Arc<TranscriptionManager>>();
+        tm.initiate_model_load();
+
+        let binding_id = binding_id.to_string();
+        change_tray_icon(app, TrayIconState::Recording);
+        show_recording_overlay(app);
+
+        let rm = app.state::<Arc<AudioRecordingManager>>();
+
+        // Get the microphone mode to determine audio feedback timing
+        let settings = get_settings(app);
+        let is_always_on = settings.always_on_microphone;
+
+        let mut recording_started = false;
+        if is_always_on {
+            let rm_clone = Arc::clone(&rm);
+            let app_clone = app.clone();
+            std::thread::spawn(move || {
+                play_feedback_sound_blocking(&app_clone, SoundType::Start);
+                rm_clone.apply_mute();
+            });
+            recording_started = rm.try_start_recording(&binding_id);
+        } else {
+            if rm.try_start_recording(&binding_id) {
+                recording_started = true;
+                let app_clone = app.clone();
+                let rm_clone = Arc::clone(&rm);
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    play_feedback_sound_blocking(&app_clone, SoundType::Start);
+                    rm_clone.apply_mute();
+                });
+            }
+        }
+
+        if recording_started {
+            shortcut::register_cancel_shortcut(app);
+        }
+
+        debug!(
+            "RambleToCoherentAction::start completed in {:?}",
+            start_time.elapsed()
+        );
+    }
+
+    fn stop(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
+        shortcut::unregister_cancel_shortcut(app);
+
+        let stop_time = Instant::now();
+        debug!(
+            "RambleToCoherentAction::stop called for binding: {}",
+            binding_id
+        );
+
+        let ah = app.clone();
+        let rm = Arc::clone(&app.state::<Arc<AudioRecordingManager>>());
+        let tm = Arc::clone(&app.state::<Arc<TranscriptionManager>>());
+        let hm = Arc::clone(&app.state::<Arc<HistoryManager>>());
+
+        change_tray_icon(app, TrayIconState::Transcribing);
+        show_transcribing_overlay(app);
+
+        rm.remove_mute();
+        play_feedback_sound(app, SoundType::Stop);
+
+        let binding_id = binding_id.to_string();
+
+        tauri::async_runtime::spawn(async move {
+            debug!(
+                "Starting async ramble transcription task for binding: {}",
+                binding_id
+            );
+
+            if let Some(samples) = rm.stop_recording(&binding_id) {
+                let samples_clone = samples.clone();
+                match tm.transcribe(samples) {
+                    Ok(transcription) => {
+                        debug!("Transcription completed: '{}'", transcription);
+                        if !transcription.is_empty() {
+                            let settings = get_settings(&ah);
+                            let mut final_text = transcription.clone();
+                            let mut post_processed_text: Option<String> = None;
+                            let post_process_prompt: Option<String> =
+                                Some(settings.ramble_prompt.clone());
+
+                            // Show "making coherent" overlay during LLM processing
+                            show_making_coherent_overlay(&ah);
+
+                            // Apply ramble processing
+                            match process_ramble_to_coherent(&settings, &transcription).await {
+                                Ok(Some(processed)) => {
+                                    final_text = processed.clone();
+                                    post_processed_text = Some(processed);
+                                }
+                                Ok(None) => {
+                                    // Ramble processing disabled/skipped, use original
+                                }
+                                Err(error_msg) => {
+                                    // Show error overlay and return without pasting
+                                    error!("Ramble to Coherent failed: {}", error_msg);
+                                    utils::show_error_overlay(&ah, &error_msg);
+                                    // Don't paste anything, let user dismiss error
+                                    change_tray_icon(&ah, TrayIconState::Idle);
+                                    return;
+                                }
+                            }
+
+                            // Save to history
+                            let hm_clone = Arc::clone(&hm);
+                            let transcription_for_history = transcription.clone();
+                            tauri::async_runtime::spawn(async move {
+                                if let Err(e) = hm_clone
+                                    .save_transcription(
+                                        samples_clone,
+                                        transcription_for_history,
+                                        post_processed_text,
+                                        post_process_prompt,
+                                    )
+                                    .await
+                                {
+                                    error!("Failed to save transcription to history: {}", e);
+                                }
+                            });
+
+                            // Paste the final text
+                            let ah_clone = ah.clone();
+                            ah.run_on_main_thread(move || {
+                                match utils::paste(final_text, ah_clone.clone()) {
+                                    Ok(()) => debug!("Text pasted successfully"),
+                                    Err(e) => error!("Failed to paste transcription: {}", e),
+                                }
+                                utils::hide_recording_overlay(&ah_clone);
+                                change_tray_icon(&ah_clone, TrayIconState::Idle);
+                            })
+                            .unwrap_or_else(|e| {
+                                error!("Failed to run paste on main thread: {:?}", e);
+                                utils::hide_recording_overlay(&ah);
+                                change_tray_icon(&ah, TrayIconState::Idle);
+                            });
+                        } else {
+                            utils::hide_recording_overlay(&ah);
+                            change_tray_icon(&ah, TrayIconState::Idle);
+                        }
+                    }
+                    Err(err) => {
+                        debug!("Ramble transcription error: {}", err);
+                        utils::hide_recording_overlay(&ah);
+                        change_tray_icon(&ah, TrayIconState::Idle);
+                    }
+                }
+            } else {
+                debug!("No samples retrieved from recording stop");
+                utils::hide_recording_overlay(&ah);
+                change_tray_icon(&ah, TrayIconState::Idle);
+            }
+        });
+
+        debug!(
+            "RambleToCoherentAction::stop completed in {:?}",
+            stop_time.elapsed()
+        );
+    }
+}
+
 // Cancel Action
 struct CancelAction;
 
@@ -473,7 +765,7 @@ struct TestAction;
 impl ShortcutAction for TestAction {
     fn start(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str) {
         log::info!(
-            "Shortcut ID '{}': Started - {} (App: {})", // Changed "Pressed" to "Started" for consistency
+            "Shortcut ID '{}': Started - {} (App: {})",
             binding_id,
             shortcut_str,
             app.package_info().name
@@ -482,7 +774,7 @@ impl ShortcutAction for TestAction {
 
     fn stop(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str) {
         log::info!(
-            "Shortcut ID '{}': Stopped - {} (App: {})", // Changed "Released" to "Stopped" for consistency
+            "Shortcut ID '{}': Stopped - {} (App: {})",
             binding_id,
             shortcut_str,
             app.package_info().name
@@ -496,6 +788,10 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
     map.insert(
         "transcribe".to_string(),
         Arc::new(TranscribeAction) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "ramble_to_coherent".to_string(),
+        Arc::new(RambleToCoherentAction) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "cancel".to_string(),

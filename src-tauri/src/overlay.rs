@@ -252,6 +252,59 @@ pub fn show_transcribing_overlay(app_handle: &AppHandle) {
     }
 }
 
+/// Shows the "making coherent" overlay window (for Ramble to Coherent LLM processing)
+pub fn show_making_coherent_overlay(app_handle: &AppHandle) {
+    // Check if overlay should be shown based on position setting
+    let settings = settings::get_settings(app_handle);
+    if settings.overlay_position == OverlayPosition::None {
+        return;
+    }
+
+    update_overlay_position(app_handle);
+
+    if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
+        let _ = overlay_window.show();
+
+        // On Windows, aggressively re-assert "topmost" in the native Z-order after showing
+        #[cfg(target_os = "windows")]
+        force_overlay_topmost(&overlay_window);
+
+        // Emit event to switch to making_coherent state
+        let _ = overlay_window.emit("show-overlay", "making_coherent");
+    }
+}
+
+/// Shows an error overlay with a message that the user must dismiss
+pub fn show_error_overlay(app_handle: &AppHandle, error_message: &str) {
+    // Check if overlay should be shown based on position setting
+    let settings = settings::get_settings(app_handle);
+    if settings.overlay_position == OverlayPosition::None {
+        return;
+    }
+
+    update_overlay_position(app_handle);
+
+    if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
+        let _ = overlay_window.show();
+
+        // On Windows, aggressively re-assert "topmost" in the native Z-order after showing
+        #[cfg(target_os = "windows")]
+        force_overlay_topmost(&overlay_window);
+
+        // Emit event with error state and message
+        #[derive(serde::Serialize, Clone)]
+        struct ErrorPayload {
+            state: String,
+            message: String,
+        }
+        let payload = ErrorPayload {
+            state: "error".to_string(),
+            message: error_message.to_string(),
+        };
+        let _ = overlay_window.emit("show-overlay-error", payload);
+    }
+}
+
 /// Updates the overlay window position based on current settings
 pub fn update_overlay_position(app_handle: &AppHandle) {
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {

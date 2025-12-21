@@ -734,6 +734,62 @@ pub fn change_app_language_setting(app: AppHandle, language: String) -> Result<(
     Ok(())
 }
 
+// Ramble to Coherent settings commands
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_ramble_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.ramble_enabled = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_ramble_provider_setting(app: AppHandle, provider_id: String) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    // Validate provider exists
+    if !settings
+        .post_process_providers
+        .iter()
+        .any(|p| p.id == provider_id)
+    {
+        return Err(format!("Provider '{}' not found", provider_id));
+    }
+    settings.ramble_provider_id = provider_id;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_ramble_model_setting(app: AppHandle, model: String) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.ramble_model = model;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_ramble_prompt_setting(app: AppHandle, prompt: String) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.ramble_prompt = prompt;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn reset_ramble_prompt_to_default(app: AppHandle) -> Result<String, String> {
+    let mut settings = settings::get_settings(&app);
+    let default_prompt = settings::get_default_settings().ramble_prompt;
+    settings.ramble_prompt = default_prompt.clone();
+    settings::write_settings(&app, settings);
+    Ok(default_prompt)
+}
+
 /// Determine whether a shortcut string contains at least one non-modifier key.
 /// We allow single non-modifier keys (e.g. "f5" or "space") but disallow
 /// modifier-only combos (e.g. "ctrl" or "ctrl+shift").
