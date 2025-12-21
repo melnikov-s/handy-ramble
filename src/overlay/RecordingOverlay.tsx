@@ -11,7 +11,13 @@ import "./RecordingOverlay.css";
 import { commands } from "@/bindings";
 import { syncLanguageFromSettings } from "@/i18n";
 
-type OverlayState = "recording" | "transcribing" | "making_coherent" | "error";
+type OverlayState =
+  | "recording"
+  | "ramble_recording"
+  | "transcribing"
+  | "ramble_transcribing"
+  | "making_coherent"
+  | "error";
 
 interface ErrorPayload {
   state: string;
@@ -89,44 +95,84 @@ const RecordingOverlay: React.FC = () => {
 
   const getIcon = () => {
     if (state === "recording") {
-      return <MicrophoneIcon />;
-    } else if (state === "making_coherent") {
-      return <Sparkles className="w-4 h-4 text-cyan-400" />;
+      return <MicrophoneIcon color="#FAA2CA" />;
+    } else if (state === "ramble_recording" || state === "making_coherent") {
+      return <Sparkles size={16} style={{ color: "#00e5cc" }} />;
+    } else if (state === "ramble_transcribing") {
+      return <TranscriptionIcon color="#00e5cc" />;
     } else if (state === "error") {
-      return <AlertCircle className="w-4 h-4 text-red-500" />;
+      return <AlertCircle size={16} style={{ color: "#ff6b6b" }} />;
     } else {
-      return <TranscriptionIcon />;
+      // transcribing state
+      return <TranscriptionIcon color="#FAA2CA" />;
     }
   };
 
   return (
     <div
-      className={`recording-overlay ${isVisible ? "fade-in" : ""} ${state === "making_coherent" ? "making-coherent-state" : ""} ${state === "error" ? "error-state" : ""}`}
+      className={`recording-overlay ${isVisible ? "fade-in" : ""} ${state === "ramble_recording" || state === "ramble_transcribing" || state === "making_coherent" ? "refining-mode" : ""} ${state === "error" ? "error-state" : ""}`}
     >
       <div className="overlay-left">{getIcon()}</div>
 
       <div className="overlay-middle">
         {state === "recording" && (
-          <div className="bars-container">
-            {levels.map((v, i) => (
-              <div
-                key={i}
-                className="bar"
-                style={{
-                  height: `${Math.min(20, 4 + Math.pow(v, 0.7) * 16)}px`,
-                  transition: "height 60ms ease-out, opacity 120ms ease-out",
-                  opacity: Math.max(0.2, v * 1.7),
-                }}
-              />
-            ))}
+          <div className="stacked-content">
+            <div className="mode-label dictating-label">
+              {t("overlay.dictating", "Dictating")}
+            </div>
+            <div className="bars-container">
+              {levels.map((v, i) => (
+                <div
+                  key={i}
+                  className="bar"
+                  style={{
+                    height: `${Math.min(14, 3 + Math.pow(v, 0.7) * 11)}px`,
+                    transition: "height 60ms ease-out, opacity 120ms ease-out",
+                    opacity: Math.max(0.3, v * 1.5),
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+        {state === "ramble_recording" && (
+          <div className="stacked-content">
+            <div className="mode-label refining-label">
+              {t("overlay.refining", "Refining")}
+            </div>
+            <div className="bars-container refining-bars">
+              {levels.map((v, i) => (
+                <div
+                  key={i}
+                  className="bar refining-bar"
+                  style={{
+                    height: `${Math.min(14, 3 + Math.pow(v, 0.7) * 11)}px`,
+                    transition: "height 60ms ease-out, opacity 120ms ease-out",
+                    opacity: Math.max(0.3, v * 1.5),
+                  }}
+                />
+              ))}
+            </div>
           </div>
         )}
         {state === "transcribing" && (
           <div className="transcribing-text">{t("overlay.transcribing")}</div>
         )}
+        {state === "ramble_transcribing" && (
+          <div className="transcribing-text refining-transcribing">
+            {t("overlay.transcribing")}
+          </div>
+        )}
         {state === "making_coherent" && (
-          <div className="making-coherent-text">
-            {t("overlay.makingCoherent", "Making Coherent...")}
+          <div className="stacked-content">
+            <div className="mode-label refining-label">
+              {t("overlay.refining", "Refining")}
+            </div>
+            <div className="refining-indicator">
+              <div className="refining-dot"></div>
+              <div className="refining-dot"></div>
+              <div className="refining-dot"></div>
+            </div>
           </div>
         )}
         {state === "error" && (
@@ -140,14 +186,16 @@ const RecordingOverlay: React.FC = () => {
       </div>
 
       <div className="overlay-right">
-        {state === "recording" && (
+        {(state === "recording" || state === "ramble_recording") && (
           <div
-            className="cancel-button"
+            className={`cancel-button ${state === "ramble_recording" ? "refining-cancel" : ""}`}
             onClick={() => {
               commands.cancelOperation();
             }}
           >
-            <CancelIcon />
+            <CancelIcon
+              color={state === "ramble_recording" ? "#00e5cc" : "#FAA2CA"}
+            />
           </div>
         )}
         {state === "error" && (

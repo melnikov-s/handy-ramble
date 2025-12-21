@@ -8,8 +8,8 @@ use crate::settings::{get_settings, AppSettings, APPLE_INTELLIGENCE_PROVIDER_ID}
 use crate::shortcut;
 use crate::tray::{change_tray_icon, TrayIconState};
 use crate::utils::{
-    self, show_error_overlay, show_making_coherent_overlay, show_recording_overlay,
-    show_transcribing_overlay,
+    self, show_making_coherent_overlay, show_ramble_recording_overlay,
+    show_ramble_transcribing_overlay, show_recording_overlay, show_transcribing_overlay,
 };
 use async_openai::types::{
     ChatCompletionRequestMessage, ChatCompletionRequestUserMessageArgs,
@@ -587,7 +587,7 @@ impl ShortcutAction for RambleToCoherentAction {
 
         let binding_id = binding_id.to_string();
         change_tray_icon(app, TrayIconState::Recording);
-        show_recording_overlay(app);
+        show_ramble_recording_overlay(app);
 
         let rm = app.state::<Arc<AudioRecordingManager>>();
 
@@ -642,7 +642,7 @@ impl ShortcutAction for RambleToCoherentAction {
         let hm = Arc::clone(&app.state::<Arc<HistoryManager>>());
 
         change_tray_icon(app, TrayIconState::Transcribing);
-        show_transcribing_overlay(app);
+        show_ramble_transcribing_overlay(app);
 
         rm.remove_mute();
         play_feedback_sound(app, SoundType::Stop);

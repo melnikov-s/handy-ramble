@@ -14,8 +14,8 @@
   box-sizing: border-box;
 }
 
-/* Making Coherent state - cyan/teal AI theme */
-.recording-overlay.making-coherent-state {
+/* Refining mode - cyan/teal AI theme (for ramble_recording and making_coherent) */
+.recording-overlay.refining-mode {
   background: linear-gradient(135deg, #001a1acc 0%, #002626cc 100%);
   border: 1px solid #00d4aa44;
 }
@@ -41,19 +41,24 @@
   display: flex;
   align-items: end;
   justify-content: center;
-  gap: 3px;
+  gap: 2px;
   padding-bottom: 0px;
-  height: 24px;
+  height: 14px;
   overflow: hidden;
 }
 
 .bar {
-  width: 6px;
+  width: 4px;
   background: #ffe5ee;
-  max-height: 20px;
-  border-radius: 2px;
+  max-height: 14px;
+  border-radius: 1px;
   transition: height 80ms linear;
-  min-height: 4px;
+  min-height: 3px;
+}
+
+/* Refining mode bars - cyan color */
+.refining-bar {
+  background: #00e5cc;
 }
 
 .recording-overlay.fade-in {
@@ -68,14 +73,68 @@
   animation: transcribing-pulse 1.5s infinite ease-in-out;
 }
 
-/* Making Coherent text - cyan glow effect */
-.making-coherent-text {
+/* Refining mode transcribing text - cyan */
+.transcribing-text.refining-transcribing {
   color: #00e5cc;
-  font-size: 12px;
+  animation: refining-label-pulse 1.2s infinite ease-in-out;
+}
+
+/* Stacked content container - label above indicator */
+.stacked-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+
+/* Mode label - shared base styles */
+.mode-label {
+  font-size: 10px;
   font-family:
     -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  animation: coherent-pulse 1.2s infinite ease-in-out;
-  text-shadow: 0 0 8px #00e5cc66;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 500;
+}
+
+/* Dictating label - warm pink */
+.dictating-label {
+  color: #faa2ca;
+}
+
+/* Refining label - cyan with glow */
+.refining-label {
+  color: #00e5cc;
+  text-shadow: 0 0 6px #00e5cc66;
+  animation: refining-label-pulse 1.2s infinite ease-in-out;
+}
+
+/* Refining dots indicator */
+.refining-indicator {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.refining-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #00e5cc;
+  animation: refining-dot-bounce 1.4s ease-in-out infinite;
+}
+
+.refining-dot:nth-child(1) {
+  animation-delay: 0s;
+}
+
+.refining-dot:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.refining-dot:nth-child(3) {
+  animation-delay: 0.4s;
 }
 
 @keyframes transcribing-pulse {
@@ -88,15 +147,28 @@
   }
 }
 
-@keyframes coherent-pulse {
+@keyframes refining-label-pulse {
   0%,
   100% {
     opacity: 0.7;
-    text-shadow: 0 0 8px #00e5cc44;
+    text-shadow: 0 0 6px #00e5cc44;
   }
   50% {
     opacity: 1;
-    text-shadow: 0 0 12px #00e5cc88;
+    text-shadow: 0 0 10px #00e5cc88;
+  }
+}
+
+@keyframes refining-dot-bounce {
+  0%,
+  80%,
+  100% {
+    transform: scale(0.6);
+    opacity: 0.5;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
   }
 }
 
@@ -122,6 +194,11 @@
 
 .cancel-button:active {
   transform: scale(0.95);
+}
+
+/* Refining mode cancel button hover */
+.cancel-button.refining-cancel:hover {
+  background: #00e5cc33;
 }
 
 /* Error state styling */
