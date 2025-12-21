@@ -10,7 +10,7 @@
 //! - `"left_option"` - Left Option key as standalone trigger
 //!
 //! ## Requirements
-//! - macOS Accessibility permission (already required by Handy for paste functionality)
+//! - macOS Accessibility permission (already required by Ramble for paste functionality)
 
 use log::{debug, error, info, warn};
 use rdev::{listen, Event, EventType, Key};
@@ -337,8 +337,8 @@ fn handle_modifier_event(binding_string: &str, key_state: ModifierKeyState) {
 
         if was_pressed == is_now_pressed {
             debug!(
-                "[HANDLER] No state change for '{}', filtering out duplicate event",
-                binding_string
+                "[HANDLER] FILTERING as duplicate: binding='{}' was_pressed={} is_now_pressed={}",
+                binding_string, was_pressed, is_now_pressed
             );
             return; // No state change
         }
@@ -414,10 +414,9 @@ fn handle_modifier_event(binding_string: &str, key_state: ModifierKeyState) {
 
                     if *is_active {
                         // Already recording - this is a toggle-off tap
-                        *is_active = false;
                         debug!(
-                            "[TOGGLE] Raw binding {} toggle stop (tap while active) - setting active_toggles['{}'] = false",
-                            binding_string, binding_id
+                            "[TOGGLE] Raw binding {} toggle stop (tap while active)",
+                            binding_string
                         );
                         drop(states); // Release lock before action
                         action.stop(&app, &binding_id, binding_string);
@@ -435,7 +434,20 @@ fn handle_modifier_event(binding_string: &str, key_state: ModifierKeyState) {
                     "[TOGGLE] Raw binding {} start recording - calling action.start()",
                     binding_string
                 );
-                action.start(&app, &binding_id, binding_string);
+                let started = action.start(&app, &binding_id, binding_string);
+                debug!("[TOGGLE] action.start() returned: {}", started);
+
+                // If start failed, reset the toggle state
+                if !started {
+                    debug!(
+                        "[TOGGLE] action.start() returned false, resetting active_toggles['{}'] = false",
+                        binding_id
+                    );
+                    let toggle_state_manager = app.state::<ManagedToggleState>();
+                    if let Ok(mut states) = toggle_state_manager.lock() {
+                        states.active_toggles.insert(binding_id.clone(), false);
+                    };
+                }
             }
             ModifierKeyState::Released => {
                 debug!(

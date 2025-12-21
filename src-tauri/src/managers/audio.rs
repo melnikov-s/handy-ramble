@@ -341,6 +341,11 @@ impl AudioRecordingManager {
     pub fn try_start_recording(&self, binding_id: &str) -> bool {
         let mut state = self.state.lock().unwrap();
 
+        debug!(
+            "[AUDIO] try_start_recording called for binding '{}', current state: {:?}",
+            binding_id, *state
+        );
+
         if let RecordingState::Idle = *state {
             // Clear any leftover paused samples from previous session
             self.paused_samples.lock().unwrap().clear();
@@ -359,13 +364,17 @@ impl AudioRecordingManager {
                     *state = RecordingState::Recording {
                         binding_id: binding_id.to_string(),
                     };
-                    debug!("Recording started for binding {binding_id}");
+                    debug!("[AUDIO] Recording started successfully for binding {binding_id}");
                     return true;
                 }
             }
-            error!("Recorder not available");
+            error!("[AUDIO] Recorder not available");
             false
         } else {
+            debug!(
+                "[AUDIO] Cannot start recording - not in Idle state (current: {:?})",
+                *state
+            );
             false
         }
     }

@@ -613,11 +613,11 @@ async fn fetch_models_manual(
     let mut headers = reqwest::header::HeaderMap::new();
     headers.insert(
         "HTTP-Referer",
-        reqwest::header::HeaderValue::from_static("https://github.com/cjpais/Handy"),
+        reqwest::header::HeaderValue::from_static("https://github.com/cjpais/Ramble"),
     );
     headers.insert(
         "X-Title",
-        reqwest::header::HeaderValue::from_static("Handy"),
+        reqwest::header::HeaderValue::from_static("Ramble"),
     );
 
     // Add provider-specific headers
@@ -1007,8 +1007,8 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
                                     // Already recording - this is a toggle-off tap
                                     *is_active = false;
                                     debug!(
-                                        "[TOGGLE] Shortcut {} toggle stop (tap while active) - setting active_toggles['{}'] = false",
-                                        shortcut_string, binding_id_for_closure
+                                        "[TOGGLE] Shortcut {} toggle stop (tap while active)",
+                                        shortcut_string
                                     );
                                     drop(states);
                                     action.stop(ah, &binding_id_for_closure, &shortcut_string);
@@ -1023,7 +1023,20 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
                                 );
                             }
                             debug!("[TOGGLE] Shortcut {} start recording - calling action.start()", shortcut_string);
-                            action.start(ah, &binding_id_for_closure, &shortcut_string);
+                            let started = action.start(ah, &binding_id_for_closure, &shortcut_string);
+                            debug!("[TOGGLE] action.start() returned: {}", started);
+                            
+                            // If start failed, reset the toggle state
+                            if !started {
+                                debug!(
+                                    "[TOGGLE] action.start() returned false, resetting active_toggles['{}'] = false",
+                                    binding_id_for_closure
+                                );
+                                let toggle_state_manager = ah.state::<ManagedToggleState>();
+                                if let Ok(mut states) = toggle_state_manager.lock() {
+                                    states.active_toggles.insert(binding_id_for_closure.clone(), false);
+                                };
+                            }
                         }
                         ShortcutState::Released => {
                             debug!(
