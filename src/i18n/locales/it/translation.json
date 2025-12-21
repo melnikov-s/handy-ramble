@@ -54,7 +54,7 @@
     }
   },
   "modelSelector": {
-    "welcome": "Benvenuto in Handy Ramble!",
+    "welcome": "Benvenuto in Ramble!",
     "downloadPrompt": "Scarica un modello per cominciare a trascrivere.",
     "availableModels": "Modelli Disponibili",
     "downloadModels": "Scarica Modelli",
@@ -80,7 +80,7 @@
     "general": {
       "title": "Generale",
       "shortcut": {
-        "title": "Scorciatoie di Handy Ramble",
+        "title": "Scorciatoie di Ramble",
         "description": "Configura le scorciatoie per attivare la trascrizione vocale",
         "loading": "Caricamento delle scorciatoie...",
         "none": "Nessuna scorciatoia configurata",
@@ -146,7 +146,7 @@
       },
       "autostart": {
         "label": "Avvia all'Accensione",
-        "description": "Avvia Handy Ramble automaticamente quando accedi al computer."
+        "description": "Avvia Ramble automaticamente quando accedi al computer."
       },
       "overlay": {
         "title": "Posizione della Sovrimpressione",
@@ -283,7 +283,7 @@
       },
       "updateChecks": {
         "label": "Controlla aggiornamenti",
-        "description": "Controlla automaticamente la disponibilità di nuove versioni di Handy Ramble"
+        "description": "Controlla automaticamente la disponibilità di nuove versioni di Ramble"
       },
       "soundTheme": {
         "label": "Tema Sonoro",
@@ -338,11 +338,11 @@
       "title": "Informazioni",
       "version": {
         "title": "Versione",
-        "description": "Versione attuale di Handy Ramble"
+        "description": "Versione attuale di Ramble"
       },
       "appDataDirectory": {
         "title": "Cartella Dati App",
-        "description": "Cartella in cui Handy Ramble salva i dati"
+        "description": "Cartella in cui Ramble salva i dati"
       },
       "sourceCode": {
         "title": "Codice Sorgente",
@@ -351,7 +351,7 @@
       },
       "supportDevelopment": {
         "title": "Supporta lo Sviluppo",
-        "description": "Aiutaci a sviluppare Handy Ramble",
+        "description": "Aiutaci a sviluppare Ramble",
         "button": "Dona"
       },
       "acknowledgments": {
@@ -359,7 +359,7 @@
         "whisper": {
           "title": "Whisper.cpp",
           "description": "Inferenza ad alte prestazioni del modello di riconoscimento vocale automatico Whisper di OpenAI",
-          "details": "Handy usa Whisper.cpp per il riconoscimento vocale veloce in locale. Grazie a Georgi Gerganov e collaboratori per il fantastico lavoro."
+          "details": "Ramble usa Whisper.cpp per il riconoscimento vocale veloce in locale. Grazie a Georgi Gerganov e collaboratori per il fantastico lavoro."
         }
       }
     }
@@ -402,7 +402,7 @@
   },
   "accessibility": {
     "permissionsRequired": "Richiesti Permessi di Accessibilità",
-    "permissionsDescription": "Handy ha bisogno dei permessi di accessibilità per digitare il testo trascritto.",
+    "permissionsDescription": "Ramble ha bisogno dei permessi di accessibilità per digitare il testo trascritto.",
     "openSettings": "Apri Impostazioni di Sistema",
     "dismiss": "Ignora"
   },
@@ -411,7 +411,7 @@
   },
   "appLanguage": {
     "title": "Lingua Applicazione",
-    "description": "Cambia la lingua dell'interfaccia di Handy Ramble"
+    "description": "Cambia la lingua dell'interfaccia di Ramble"
   },
   "overlay": {
     "transcribing": "Trascrizione..."
