@@ -17,7 +17,7 @@ use async_openai::types::{
     CreateChatCompletionRequestArgs,
 };
 use ferrous_opencc::{config::BuiltinConfig, OpenCC};
-use log::{debug, error};
+use log::{debug, error, info};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -34,19 +34,50 @@ pub trait ShortcutAction: Send + Sync {
 // Transcribe Action
 struct TranscribeAction;
 
+/// Extract a human-readable error message from LLM API errors
+fn extract_llm_error(error: &dyn std::error::Error, model: &str) -> String {
+    let error_str = error.to_string();
+    let lower_error = error_str.to_lowercase();
+
+    if lower_error.contains("401")
+        || lower_error.contains("unauthorized")
+        || lower_error.contains("invalid_api_key")
+    {
+        "Invalid API key".to_string()
+    } else if lower_error.contains("429")
+        || lower_error.contains("rate limit")
+        || lower_error.contains("too many requests")
+        || lower_error.contains("resource_exhausted")
+    {
+        "Rate limited - try again".to_string()
+    } else if lower_error.contains("model") || lower_error.contains("404") {
+        format!("Invalid model: {}", model)
+    } else if lower_error.contains("500") || lower_error.contains("503") {
+        "AI service unavailable".to_string()
+    } else {
+        format!("API error: {}", error_str)
+    }
+}
+
 async fn maybe_post_process_transcription(
+    app: &AppHandle,
     settings: &AppSettings,
     transcription: &str,
-) -> Option<String> {
-    if !settings.post_process_enabled {
-        return None;
-    }
+) -> Result<Option<String>, String> {
+    // If this is called, we process. The caller (TranscribeAction) should check settings.post_process_enabled.
+    info!(
+        "Starting LLM post-processing for transcription ({} chars)",
+        transcription.len()
+    );
+    utils::log_to_frontend(app, "info", "Starting post-processing...");
 
     let provider = match settings.active_post_process_provider().cloned() {
         Some(provider) => provider,
         None => {
-            debug!("Post-processing enabled but no provider is selected");
-            return None;
+            let msg = "Post-processing enabled but no provider is selected";
+            utils::log_to_frontend(app, "error", msg);
+            debug!("{}", msg);
+            return Err(msg.to_string());
         }
     };
 
@@ -57,18 +88,18 @@ async fn maybe_post_process_transcription(
         .unwrap_or_default();
 
     if model.trim().is_empty() {
-        debug!(
-            "Post-processing skipped because provider '{}' has no model configured",
-            provider.id
-        );
-        return None;
+        let msg = format!("Provider '{}' has no model configured", provider.id);
+        utils::log_to_frontend(app, "error", &msg);
+        debug!("{}", msg);
+        return Err(msg.to_string());
     }
 
     let selected_prompt_id = match &settings.post_process_selected_prompt_id {
         Some(id) => id.clone(),
         None => {
-            debug!("Post-processing skipped because no prompt is selected");
-            return None;
+            let msg = "No post-processing prompt is selected";
+            debug!("{}", msg);
+            return Err(msg.to_string());
         }
     };
 
@@ -79,20 +110,19 @@ async fn maybe_post_process_transcription(
     {
         Some(prompt) => prompt.prompt.clone(),
         None => {
-            debug!(
-                "Post-processing skipped because prompt '{}' was not found",
-                selected_prompt_id
-            );
-            return None;
+            let msg = format!("Prompt '{}' was not found", selected_prompt_id);
+            debug!("{}", msg);
+            return Err(msg.to_string());
         }
     };
 
     if prompt.trim().is_empty() {
-        debug!("Post-processing skipped because the selected prompt is empty");
-        return None;
+        let msg = "The selected post-processing prompt is empty";
+        debug!("{}", msg);
+        return Err(msg.to_string());
     }
 
-    debug!(
+    info!(
         "Starting LLM post-processing with provider '{}' (model: {})",
         provider.id, model
     );
@@ -105,35 +135,40 @@ async fn maybe_post_process_transcription(
         #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
         {
             if !apple_intelligence::check_apple_intelligence_availability() {
-                debug!("Apple Intelligence selected but not currently available on this device");
-                return None;
+                let msg = "Apple Intelligence is not currently available on this device";
+                debug!("{}", msg);
+                return Err(msg.to_string());
             }
 
             let token_limit = model.trim().parse::<i32>().unwrap_or(0);
             return match apple_intelligence::process_text(&processed_prompt, token_limit) {
                 Ok(result) => {
                     if result.trim().is_empty() {
-                        debug!("Apple Intelligence returned an empty response");
-                        None
+                        let msg = "Apple Intelligence returned an empty response";
+                        debug!("{}", msg);
+                        Err(msg.to_string())
                     } else {
-                        debug!(
+                        info!(
                             "Apple Intelligence post-processing succeeded. Output length: {} chars",
                             result.len()
                         );
-                        Some(result)
+                        utils::log_to_frontend(app, "info", "Post-processing complete");
+                        Ok(Some(result))
                     }
                 }
                 Err(err) => {
-                    error!("Apple Intelligence post-processing failed: {}", err);
-                    None
+                    let msg = format!("Apple Intelligence post-processing failed: {}", err);
+                    error!("{}", msg);
+                    Err(msg)
                 }
             };
         }
 
         #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
         {
-            debug!("Apple Intelligence provider selected on unsupported platform");
-            return None;
+            let msg = "Apple Intelligence provider selected on unsupported platform";
+            debug!("{}", msg);
+            return Err(msg.to_string());
         }
     }
 
@@ -147,8 +182,10 @@ async fn maybe_post_process_transcription(
     let client = match crate::llm_client::create_client(&provider, api_key) {
         Ok(client) => client,
         Err(e) => {
-            error!("Failed to create LLM client: {}", e);
-            return None;
+            let msg = format!("Failed to create LLM client: {}", e);
+            utils::log_to_frontend(app, "error", &msg);
+            error!("{}", msg);
+            return Err(msg);
         }
     };
 
@@ -159,8 +196,9 @@ async fn maybe_post_process_transcription(
     {
         Ok(msg) => ChatCompletionRequestMessage::User(msg),
         Err(e) => {
-            error!("Failed to build chat message: {}", e);
-            return None;
+            let msg = format!("Failed to build chat message: {}", e);
+            error!("{}", msg);
+            return Err(msg);
         }
     };
 
@@ -171,8 +209,9 @@ async fn maybe_post_process_transcription(
     {
         Ok(req) => req,
         Err(e) => {
-            error!("Failed to build chat completion request: {}", e);
-            return None;
+            let msg = format!("Failed to build chat completion request: {}", e);
+            error!("{}", msg);
+            return Err(msg);
         }
     };
 
@@ -181,24 +220,28 @@ async fn maybe_post_process_transcription(
         Ok(response) => {
             if let Some(choice) = response.choices.first() {
                 if let Some(content) = &choice.message.content {
-                    debug!(
+                    info!(
                         "LLM post-processing succeeded for provider '{}'. Output length: {} chars",
                         provider.id,
                         content.len()
                     );
-                    return Some(content.clone());
+                    utils::log_to_frontend(app, "info", "Post-processing complete");
+                    return Ok(Some(content.clone()));
                 }
             }
-            error!("LLM API response has no content");
-            None
+            let msg = "LLM API response has no content".to_string();
+            error!("{}", msg);
+            Err(msg)
         }
         Err(e) => {
-            error!(
-                "LLM post-processing failed for provider '{}': {}. Falling back to original transcription.",
-                provider.id,
-                e
+            let error_msg = extract_llm_error(&e, &model);
+            let msg = format!(
+                "LLM post-processing failed for provider '{}': {}",
+                provider.id, error_msg
             );
-            None
+            utils::log_to_frontend(app, "error", &msg);
+            error!("{}", msg);
+            Err(error_msg)
         }
     }
 }
@@ -385,20 +428,40 @@ impl ShortcutAction for TranscribeAction {
                                 post_processed_text = Some(converted_text);
                             }
                             // Then apply regular post-processing if enabled
-                            else if let Some(processed_text) =
-                                maybe_post_process_transcription(&settings, &transcription).await
-                            {
-                                final_text = processed_text.clone();
-                                post_processed_text = Some(processed_text);
+                            else if settings.post_process_enabled {
+                                match maybe_post_process_transcription(
+                                    &ah,
+                                    &settings,
+                                    &transcription,
+                                )
+                                .await
+                                {
+                                    Ok(Some(processed_text)) => {
+                                        final_text = processed_text.clone();
+                                        post_processed_text = Some(processed_text);
 
-                                // Get the prompt that was used
-                                if let Some(prompt_id) = &settings.post_process_selected_prompt_id {
-                                    if let Some(prompt) = settings
-                                        .post_process_prompts
-                                        .iter()
-                                        .find(|p| &p.id == prompt_id)
-                                    {
-                                        post_process_prompt = Some(prompt.prompt.clone());
+                                        // Get the prompt that was used
+                                        if let Some(prompt_id) =
+                                            &settings.post_process_selected_prompt_id
+                                        {
+                                            if let Some(prompt) = settings
+                                                .post_process_prompts
+                                                .iter()
+                                                .find(|p| &p.id == prompt_id)
+                                            {
+                                                post_process_prompt = Some(prompt.prompt.clone());
+                                            }
+                                        }
+                                    }
+                                    Ok(None) => {
+                                        // Post-processing disabled, use original
+                                    }
+                                    Err(error_msg) => {
+                                        // Show error overlay and return without pasting
+                                        error!("Post-processing failed: {}", error_msg);
+                                        utils::show_error_overlay(&ah, &error_msg);
+                                        change_tray_icon(&ah, TrayIconState::Idle);
+                                        return;
                                     }
                                 }
                             }
@@ -471,13 +534,17 @@ struct RambleToCoherentAction;
 /// Process transcription through LLM using ramble-specific settings
 /// Returns Ok(Some(processed)) on success, Ok(None) if disabled/skipped, Err(msg) on error
 async fn process_ramble_to_coherent(
+    app: &AppHandle,
     settings: &AppSettings,
     transcription: &str,
 ) -> Result<Option<String>, String> {
-    if !settings.ramble_enabled {
-        debug!("Ramble to Coherent is disabled");
-        return Ok(None);
-    }
+    // If the shortcut is pressed, we ALWAYS process regardless of ramble_enabled setting.
+    // The setting is mostly for UI/default state.
+    info!(
+        "Starting Ramble to Coherent processing ({} chars)",
+        transcription.len()
+    );
+    utils::log_to_frontend(app, "info", "Starting refinement...");
 
     let provider_id = &settings.ramble_provider_id;
     let provider = match settings
@@ -488,21 +555,27 @@ async fn process_ramble_to_coherent(
     {
         Some(provider) => provider,
         None => {
-            return Err(format!("Provider '{}' not found", provider_id));
+            let msg = format!("Provider '{}' not found", provider_id);
+            utils::log_to_frontend(app, "error", &msg);
+            return Err(msg);
         }
     };
 
     let model = &settings.ramble_model;
     if model.trim().is_empty() {
-        return Err("No model configured".to_string());
+        let msg = "No model configured".to_string();
+        utils::log_to_frontend(app, "error", &msg);
+        return Err(msg);
     }
 
     let prompt = &settings.ramble_prompt;
     if prompt.trim().is_empty() {
-        return Err("Prompt is empty".to_string());
+        let msg = "Prompt is empty".to_string();
+        utils::log_to_frontend(app, "error", &msg);
+        return Err(msg);
     }
 
-    debug!(
+    info!(
         "Starting Ramble to Coherent with provider '{}' (model: {})",
         provider.id, model
     );
@@ -518,7 +591,9 @@ async fn process_ramble_to_coherent(
         .unwrap_or_default();
 
     if api_key.is_empty() {
-        return Err("API key not configured".to_string());
+        let msg = "API key not configured".to_string();
+        utils::log_to_frontend(app, "error", &msg);
+        return Err(msg);
     }
 
     // Create OpenAI-compatible client
@@ -556,28 +631,17 @@ async fn process_ramble_to_coherent(
         Ok(response) => {
             if let Some(choice) = response.choices.first() {
                 if let Some(content) = &choice.message.content {
-                    debug!(
+                    info!(
                         "Ramble to Coherent succeeded. Output length: {} chars",
                         content.len()
                     );
+                    utils::log_to_frontend(app, "info", "Refinement complete");
                     return Ok(Some(content.clone()));
                 }
             }
             Err("No response from AI".to_string())
         }
-        Err(e) => {
-            let error_str = e.to_string();
-            // Extract useful error message from API errors
-            if error_str.contains("401") || error_str.contains("Unauthorized") {
-                Err("Invalid API key".to_string())
-            } else if error_str.contains("429") {
-                Err("Rate limited - try again".to_string())
-            } else if error_str.contains("model") {
-                Err(format!("Invalid model: {}", model))
-            } else {
-                Err(format!("API error: {}", error_str))
-            }
-        }
+        Err(e) => Err(extract_llm_error(&e, model)),
     }
 }
 
@@ -689,7 +753,7 @@ impl ShortcutAction for RambleToCoherentAction {
                             show_making_coherent_overlay(&ah);
 
                             // Apply ramble processing
-                            match process_ramble_to_coherent(&settings, &transcription).await {
+                            match process_ramble_to_coherent(&ah, &settings, &transcription).await {
                                 Ok(Some(processed)) => {
                                     final_text = processed.clone();
                                     post_processed_text = Some(processed);

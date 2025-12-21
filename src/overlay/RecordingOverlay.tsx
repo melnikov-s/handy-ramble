@@ -79,17 +79,42 @@ const RecordingOverlay: React.FC = () => {
         setLevels(smoothed.slice(0, 9));
       });
 
+      // Listen for backend logs
+      const unlistenLog = await listen<{ level: string; message: string }>(
+        "backend-log",
+        (event) => {
+          const { level, message } = event.payload;
+          if (level === "error") {
+            console.error(`[Backend Error] ${message}`);
+            // If it's a critical error, we might want to show it, but usually show-overlay-error handles that
+          } else {
+            console.log(`[Backend ${level}] ${message}`);
+          }
+        },
+      );
+
       // Cleanup function
       return () => {
         unlistenShow();
         unlistenError();
         unlistenHide();
         unlistenLevel();
+        unlistenLog();
       };
     };
 
     setupEventListeners();
   }, []);
+
+  // Auto-dismiss errors after 5 seconds
+  useEffect(() => {
+    if (state === "error" && isVisible) {
+      const timer = setTimeout(() => {
+        handleDismissError();
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [state, isVisible]);
 
   const handleDismissError = () => {
     setIsVisible(false);
@@ -115,7 +140,7 @@ const RecordingOverlay: React.FC = () => {
 
   const getIcon = () => {
     if (state === "recording") {
-      return <MicrophoneIcon color="#FAA2CA" />;
+      return <MicrophoneIcon color="#1e40af" />;
     } else if (
       state === "ramble_recording" ||
       state === "making_coherent" ||
@@ -127,10 +152,10 @@ const RecordingOverlay: React.FC = () => {
     } else if (state === "error") {
       return <AlertCircle size={16} style={{ color: "#ff6b6b" }} />;
     } else if (state === "paused") {
-      return <MicrophoneIcon color="#FAA2CA" />;
+      return <MicrophoneIcon color="#1e40af" />;
     } else {
       // transcribing state
-      return <TranscriptionIcon color="#FAA2CA" />;
+      return <TranscriptionIcon color="#1e40af" />;
     }
   };
 
@@ -230,7 +255,7 @@ const RecordingOverlay: React.FC = () => {
             className="error-text text-red-400 text-xs truncate max-w-[120px]"
             title={errorMessage}
           >
-            {errorMessage}
+            {t("overlay.refinementFailed", "Refinement failed")}: {errorMessage}
           </div>
         )}
       </div>
@@ -251,13 +276,13 @@ const RecordingOverlay: React.FC = () => {
                 <PlayIcon
                   width={16}
                   height={16}
-                  color={isRambleMode ? "#00e5cc" : "#FAA2CA"}
+                  color={isRambleMode ? "#00e5cc" : "#1e40af"}
                 />
               ) : (
                 <PauseIcon
                   width={16}
                   height={16}
-                  color={isRambleMode ? "#00e5cc" : "#FAA2CA"}
+                  color={isRambleMode ? "#00e5cc" : "#1e40af"}
                 />
               )}
             </div>
@@ -267,7 +292,7 @@ const RecordingOverlay: React.FC = () => {
                 commands.cancelOperation();
               }}
             >
-              <CancelIcon color={isRambleMode ? "#00e5cc" : "#FAA2CA"} />
+              <CancelIcon color={isRambleMode ? "#00e5cc" : "#1e40af"} />
             </div>
           </>
         )}

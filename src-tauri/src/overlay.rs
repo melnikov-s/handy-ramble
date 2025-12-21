@@ -411,3 +411,21 @@ pub fn emit_levels(app_handle: &AppHandle, levels: &Vec<f32>) {
         let _ = overlay_window.emit("mic-level", levels);
     }
 }
+
+/// Logs a message to the frontend developer console via the recording overlay
+pub fn log_to_frontend(app_handle: &AppHandle, level: &str, message: &str) {
+    if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
+        #[derive(serde::Serialize, Clone)]
+        struct LogPayload {
+            level: String,
+            message: String,
+        }
+        let _ = overlay_window.emit(
+            "backend-log",
+            LogPayload {
+                level: level.to_string(),
+                message: message.to_string(),
+            },
+        );
+    }
+}
