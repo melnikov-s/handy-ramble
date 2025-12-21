@@ -278,6 +278,8 @@ pub fn run() {
         shortcut::change_update_checks_setting,
         trigger_update_check,
         commands::cancel_operation,
+        commands::pause_operation,
+        commands::resume_operation,
         commands::get_app_dir_path,
         commands::get_app_settings,
         commands::get_default_settings,

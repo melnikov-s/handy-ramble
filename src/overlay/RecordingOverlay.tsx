@@ -5,6 +5,8 @@ import {
   MicrophoneIcon,
   TranscriptionIcon,
   CancelIcon,
+  PauseIcon,
+  PlayIcon,
 } from "../components/icons";
 import { Sparkles, AlertCircle, X } from "lucide-react";
 import "./RecordingOverlay.css";
@@ -17,6 +19,8 @@ type OverlayState =
   | "transcribing"
   | "ramble_transcribing"
   | "making_coherent"
+  | "paused"
+  | "ramble_paused"
   | "error";
 
 interface ErrorPayload {
@@ -93,15 +97,37 @@ const RecordingOverlay: React.FC = () => {
     setState("recording");
   };
 
+  const handlePauseResume = () => {
+    if (state === "paused" || state === "ramble_paused") {
+      commands.resumeOperation();
+    } else if (state === "recording" || state === "ramble_recording") {
+      commands.pauseOperation();
+    }
+  };
+
+  const isPaused = state === "paused" || state === "ramble_paused";
+  const isRecording = state === "recording" || state === "ramble_recording";
+  const isRambleMode =
+    state === "ramble_recording" ||
+    state === "ramble_transcribing" ||
+    state === "making_coherent" ||
+    state === "ramble_paused";
+
   const getIcon = () => {
     if (state === "recording") {
       return <MicrophoneIcon color="#FAA2CA" />;
-    } else if (state === "ramble_recording" || state === "making_coherent") {
+    } else if (
+      state === "ramble_recording" ||
+      state === "making_coherent" ||
+      state === "ramble_paused"
+    ) {
       return <Sparkles size={16} style={{ color: "#00e5cc" }} />;
     } else if (state === "ramble_transcribing") {
       return <TranscriptionIcon color="#00e5cc" />;
     } else if (state === "error") {
       return <AlertCircle size={16} style={{ color: "#ff6b6b" }} />;
+    } else if (state === "paused") {
+      return <MicrophoneIcon color="#FAA2CA" />;
     } else {
       // transcribing state
       return <TranscriptionIcon color="#FAA2CA" />;
@@ -110,7 +136,7 @@ const RecordingOverlay: React.FC = () => {
 
   return (
     <div
-      className={`recording-overlay ${isVisible ? "fade-in" : ""} ${state === "ramble_recording" || state === "ramble_transcribing" || state === "making_coherent" ? "refining-mode" : ""} ${state === "error" ? "error-state" : ""}`}
+      className={`recording-overlay ${isVisible ? "fade-in" : ""} ${isRambleMode ? "refining-mode" : ""} ${state === "error" ? "error-state" : ""} ${isPaused ? "paused-state" : ""}`}
     >
       <div className="overlay-left">{getIcon()}</div>
 
@@ -155,6 +181,30 @@ const RecordingOverlay: React.FC = () => {
             </div>
           </div>
         )}
+        {state === "paused" && (
+          <div className="stacked-content">
+            <div className="mode-label paused-label">
+              {t("overlay.paused", "Paused")}
+            </div>
+            <div className="bars-container paused-bars">
+              {levels.map((_, i) => (
+                <div key={i} className="bar paused-bar" />
+              ))}
+            </div>
+          </div>
+        )}
+        {state === "ramble_paused" && (
+          <div className="stacked-content">
+            <div className="mode-label refining-paused-label">
+              {t("overlay.paused", "Paused")}
+            </div>
+            <div className="bars-container paused-bars">
+              {levels.map((_, i) => (
+                <div key={i} className="bar refining-paused-bar" />
+              ))}
+            </div>
+          </div>
+        )}
         {state === "transcribing" && (
           <div className="transcribing-text">{t("overlay.transcribing")}</div>
         )}
@@ -186,17 +236,40 @@ const RecordingOverlay: React.FC = () => {
       </div>
 
       <div className="overlay-right">
-        {(state === "recording" || state === "ramble_recording") && (
-          <div
-            className={`cancel-button ${state === "ramble_recording" ? "refining-cancel" : ""}`}
-            onClick={() => {
-              commands.cancelOperation();
-            }}
-          >
-            <CancelIcon
-              color={state === "ramble_recording" ? "#00e5cc" : "#FAA2CA"}
-            />
-          </div>
+        {(isRecording || isPaused) && (
+          <>
+            <div
+              className={`pause-button ${isRambleMode ? "refining-pause" : ""}`}
+              onClick={handlePauseResume}
+              title={
+                isPaused
+                  ? t("overlay.resume", "Resume")
+                  : t("overlay.pause", "Pause")
+              }
+            >
+              {isPaused ? (
+                <PlayIcon
+                  width={16}
+                  height={16}
+                  color={isRambleMode ? "#00e5cc" : "#FAA2CA"}
+                />
+              ) : (
+                <PauseIcon
+                  width={16}
+                  height={16}
+                  color={isRambleMode ? "#00e5cc" : "#FAA2CA"}
+                />
+              )}
+            </div>
+            <div
+              className={`cancel-button ${isRambleMode ? "refining-cancel" : ""}`}
+              onClick={() => {
+                commands.cancelOperation();
+              }}
+            >
+              <CancelIcon color={isRambleMode ? "#00e5cc" : "#FAA2CA"} />
+            </div>
+          </>
         )}
         {state === "error" && (
           <div

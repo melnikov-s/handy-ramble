@@ -1,0 +1,33 @@
+import React from "react";
+
+interface PauseIconProps {
+  width?: number;
+  height?: number;
+  color?: string;
+  className?: string;
+}
+
+const PauseIcon: React.FC<PauseIconProps> = ({
+  width = 24,
+  height = 24,
+  color = "#FAA2CA",
+  className = "",
+}) => {
+  return (
+    <svg
+      width={width}
+      height={height}
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+    >
+      <g fill={color}>
+        <rect x="6" y="5" width="4" height="14" rx="1" />
+        <rect x="14" y="5" width="4" height="14" rx="1" />
+      </g>
+    </svg>
+  );
+};
+
+export default PauseIcon;

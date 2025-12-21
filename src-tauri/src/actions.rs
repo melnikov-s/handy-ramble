@@ -8,8 +8,9 @@ use crate::settings::{get_settings, AppSettings, APPLE_INTELLIGENCE_PROVIDER_ID}
 use crate::shortcut;
 use crate::tray::{change_tray_icon, TrayIconState};
 use crate::utils::{
-    self, show_making_coherent_overlay, show_ramble_recording_overlay,
-    show_ramble_transcribing_overlay, show_recording_overlay, show_transcribing_overlay,
+    self, is_operation_paused, resume_current_operation, show_making_coherent_overlay,
+    show_ramble_recording_overlay, show_ramble_transcribing_overlay, show_recording_overlay,
+    show_transcribing_overlay,
 };
 use async_openai::types::{
     ChatCompletionRequestMessage, ChatCompletionRequestUserMessageArgs,
@@ -250,6 +251,13 @@ impl ShortcutAction for TranscribeAction {
     fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
         let start_time = Instant::now();
         debug!("TranscribeAction::start called for binding: {}", binding_id);
+
+        // Check if we're resuming from a paused state
+        if is_operation_paused(app, binding_id) {
+            debug!("Resuming paused transcription for binding: {}", binding_id);
+            resume_current_operation(app);
+            return;
+        }
 
         // Load model in the background
         let tm = app.state::<Arc<TranscriptionManager>>();
@@ -580,6 +588,16 @@ impl ShortcutAction for RambleToCoherentAction {
             "RambleToCoherentAction::start called for binding: {}",
             binding_id
         );
+
+        // Check if we're resuming from a paused state
+        if is_operation_paused(app, binding_id) {
+            debug!(
+                "Resuming paused ramble recording for binding: {}",
+                binding_id
+            );
+            resume_current_operation(app);
+            return;
+        }
 
         // Load model in the background
         let tm = app.state::<Arc<TranscriptionManager>>();

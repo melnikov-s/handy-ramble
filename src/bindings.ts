@@ -327,6 +327,12 @@ async triggerUpdateCheck() : Promise<Result<null, string>> {
 async cancelOperation() : Promise<void> {
     await TAURI_INVOKE("cancel_operation");
 },
+async pauseOperation() : Promise<boolean> {
+    return await TAURI_INVOKE("pause_operation");
+},
+async resumeOperation() : Promise<boolean> {
+    return await TAURI_INVOKE("resume_operation");
+},
 async getAppDirPath() : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_app_dir_path") };
