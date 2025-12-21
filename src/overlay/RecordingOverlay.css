@@ -8,8 +8,16 @@
   background: #000000cc;
   border-radius: 18px;
   opacity: 0;
-  transition: opacity 300ms ease-out;
+  transition:
+    opacity 300ms ease-out,
+    background 300ms ease-out;
   box-sizing: border-box;
+}
+
+/* Making Coherent state - cyan/teal AI theme */
+.recording-overlay.making-coherent-state {
+  background: linear-gradient(135deg, #001a1acc 0%, #002626cc 100%);
+  border: 1px solid #00d4aa44;
 }
 
 .overlay-left {
@@ -60,6 +68,16 @@
   animation: transcribing-pulse 1.5s infinite ease-in-out;
 }
 
+/* Making Coherent text - cyan glow effect */
+.making-coherent-text {
+  color: #00e5cc;
+  font-size: 12px;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  animation: coherent-pulse 1.2s infinite ease-in-out;
+  text-shadow: 0 0 8px #00e5cc66;
+}
+
 @keyframes transcribing-pulse {
   0%,
   100% {
@@ -67,6 +85,18 @@
   }
   50% {
     opacity: 1;
+  }
+}
+
+@keyframes coherent-pulse {
+  0%,
+  100% {
+    opacity: 0.7;
+    text-shadow: 0 0 8px #00e5cc44;
+  }
+  50% {
+    opacity: 1;
+    text-shadow: 0 0 12px #00e5cc88;
   }
 }
 
@@ -92,4 +122,17 @@
 
 .cancel-button:active {
   transform: scale(0.95);
+}
+
+/* Error state styling */
+.recording-overlay.error-state {
+  background: linear-gradient(135deg, #1a0000cc 0%, #260000cc 100%);
+  border: 1px solid #ff444444;
+}
+
+.error-text {
+  color: #ff6b6b;
+  font-size: 11px;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }

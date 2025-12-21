@@ -22,10 +22,18 @@ use tauri::AppHandle;
 /// Binding identifiers for raw modifier shortcuts
 pub const RAW_BINDING_RIGHT_OPTION: &str = "right_option";
 pub const RAW_BINDING_LEFT_OPTION: &str = "left_option";
+pub const RAW_BINDING_SHIFT_RIGHT_OPTION: &str = "shift+right_option";
+pub const RAW_BINDING_SHIFT_LEFT_OPTION: &str = "shift+left_option";
 
 /// Check if a binding string is a raw modifier binding (macOS-only)
 pub fn is_raw_modifier_binding(binding: &str) -> bool {
-    matches!(binding, RAW_BINDING_RIGHT_OPTION | RAW_BINDING_LEFT_OPTION)
+    matches!(
+        binding,
+        RAW_BINDING_RIGHT_OPTION
+            | RAW_BINDING_LEFT_OPTION
+            | RAW_BINDING_SHIFT_RIGHT_OPTION
+            | RAW_BINDING_SHIFT_LEFT_OPTION
+    )
 }
 
 /// Represents the state of a modifier key
@@ -52,6 +60,8 @@ struct ModifierListenerState {
     pressed_state: HashMap<String, bool>,
     /// App handle for triggering actions
     app_handle: Option<AppHandle>,
+    /// Track if Shift is currently held (to allow Shift+Option shortcuts to work)
+    shift_pressed: bool,
 }
 
 impl ModifierListenerState {
@@ -61,6 +71,7 @@ impl ModifierListenerState {
             suspended: std::collections::HashSet::new(),
             pressed_state: HashMap::new(),
             app_handle: None,
+            shift_pressed: false,
         }
     }
 }
@@ -167,19 +178,66 @@ pub fn resume_raw_binding(binding_id: &str) {
 /// rdev callback for handling keyboard events
 fn rdev_callback(event: Event) {
     match event.event_type {
+        // Track Shift key state
+        EventType::KeyPress(Key::ShiftLeft) | EventType::KeyPress(Key::ShiftRight) => {
+            if let Ok(mut guard) = get_listener_state().lock() {
+                guard.shift_pressed = true;
+            }
+        }
+        EventType::KeyRelease(Key::ShiftLeft) | EventType::KeyRelease(Key::ShiftRight) => {
+            if let Ok(mut guard) = get_listener_state().lock() {
+                guard.shift_pressed = false;
+            }
+        }
         // Left Alt/Option key (rdev uses Key::Alt for left)
         EventType::KeyPress(Key::Alt) => {
-            handle_modifier_event(RAW_BINDING_LEFT_OPTION, ModifierKeyState::Pressed);
+            let shift_held = get_listener_state()
+                .lock()
+                .map(|g| g.shift_pressed)
+                .unwrap_or(false);
+            if shift_held {
+                // Shift+Left Option combination
+                handle_modifier_event(RAW_BINDING_SHIFT_LEFT_OPTION, ModifierKeyState::Pressed);
+            } else {
+                // Left Option only
+                handle_modifier_event(RAW_BINDING_LEFT_OPTION, ModifierKeyState::Pressed);
+            }
         }
         EventType::KeyRelease(Key::Alt) => {
-            handle_modifier_event(RAW_BINDING_LEFT_OPTION, ModifierKeyState::Released);
+            let shift_held = get_listener_state()
+                .lock()
+                .map(|g| g.shift_pressed)
+                .unwrap_or(false);
+            if shift_held {
+                handle_modifier_event(RAW_BINDING_SHIFT_LEFT_OPTION, ModifierKeyState::Released);
+            } else {
+                handle_modifier_event(RAW_BINDING_LEFT_OPTION, ModifierKeyState::Released);
+            }
         }
         // Right Alt/Option key (rdev reports as Key::AltGr on macOS)
         EventType::KeyPress(Key::AltGr) => {
-            handle_modifier_event(RAW_BINDING_RIGHT_OPTION, ModifierKeyState::Pressed);
+            let shift_held = get_listener_state()
+                .lock()
+                .map(|g| g.shift_pressed)
+                .unwrap_or(false);
+            if shift_held {
+                // Shift+Right Option combination
+                handle_modifier_event(RAW_BINDING_SHIFT_RIGHT_OPTION, ModifierKeyState::Pressed);
+            } else {
+                // Right Option only
+                handle_modifier_event(RAW_BINDING_RIGHT_OPTION, ModifierKeyState::Pressed);
+            }
         }
         EventType::KeyRelease(Key::AltGr) => {
-            handle_modifier_event(RAW_BINDING_RIGHT_OPTION, ModifierKeyState::Released);
+            let shift_held = get_listener_state()
+                .lock()
+                .map(|g| g.shift_pressed)
+                .unwrap_or(false);
+            if shift_held {
+                handle_modifier_event(RAW_BINDING_SHIFT_RIGHT_OPTION, ModifierKeyState::Released);
+            } else {
+                handle_modifier_event(RAW_BINDING_RIGHT_OPTION, ModifierKeyState::Released);
+            }
         }
         _ => {}
     }

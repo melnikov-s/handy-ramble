@@ -6,16 +6,23 @@ import {
   TranscriptionIcon,
   CancelIcon,
 } from "../components/icons";
+import { Sparkles, AlertCircle, X } from "lucide-react";
 import "./RecordingOverlay.css";
 import { commands } from "@/bindings";
 import { syncLanguageFromSettings } from "@/i18n";
 
-type OverlayState = "recording" | "transcribing";
+type OverlayState = "recording" | "transcribing" | "making_coherent" | "error";
+
+interface ErrorPayload {
+  state: string;
+  message: string;
+}
 
 const RecordingOverlay: React.FC = () => {
   const { t } = useTranslation();
   const [isVisible, setIsVisible] = useState(false);
   const [state, setState] = useState<OverlayState>("recording");
+  const [errorMessage, setErrorMessage] = useState<string>("");
   const [levels, setLevels] = useState<number[]>(Array(16).fill(0));
   const smoothedLevelsRef = useRef<number[]>(Array(16).fill(0));
 
@@ -27,12 +34,25 @@ const RecordingOverlay: React.FC = () => {
         await syncLanguageFromSettings();
         const overlayState = event.payload as OverlayState;
         setState(overlayState);
+        setErrorMessage("");
         setIsVisible(true);
       });
+
+      // Listen for error overlay event from Rust
+      const unlistenError = await listen<ErrorPayload>(
+        "show-overlay-error",
+        async (event) => {
+          await syncLanguageFromSettings();
+          setState("error");
+          setErrorMessage(event.payload.message);
+          setIsVisible(true);
+        },
+      );
 
       // Listen for hide-overlay event from Rust
       const unlistenHide = await listen("hide-overlay", () => {
         setIsVisible(false);
+        setErrorMessage("");
       });
 
       // Listen for mic-level updates
@@ -52,6 +72,7 @@ const RecordingOverlay: React.FC = () => {
       // Cleanup function
       return () => {
         unlistenShow();
+        unlistenError();
         unlistenHide();
         unlistenLevel();
       };
@@ -60,16 +81,28 @@ const RecordingOverlay: React.FC = () => {
     setupEventListeners();
   }, []);
 
+  const handleDismissError = () => {
+    setIsVisible(false);
+    setErrorMessage("");
+    setState("recording");
+  };
+
   const getIcon = () => {
     if (state === "recording") {
       return <MicrophoneIcon />;
+    } else if (state === "making_coherent") {
+      return <Sparkles className="w-4 h-4 text-cyan-400" />;
+    } else if (state === "error") {
+      return <AlertCircle className="w-4 h-4 text-red-500" />;
     } else {
       return <TranscriptionIcon />;
     }
   };
 
   return (
-    <div className={`recording-overlay ${isVisible ? "fade-in" : ""}`}>
+    <div
+      className={`recording-overlay ${isVisible ? "fade-in" : ""} ${state === "making_coherent" ? "making-coherent-state" : ""} ${state === "error" ? "error-state" : ""}`}
+    >
       <div className="overlay-left">{getIcon()}</div>
 
       <div className="overlay-middle">
@@ -80,9 +113,9 @@ const RecordingOverlay: React.FC = () => {
                 key={i}
                 className="bar"
                 style={{
-                  height: `${Math.min(20, 4 + Math.pow(v, 0.7) * 16)}px`, // Cap at 20px max height
+                  height: `${Math.min(20, 4 + Math.pow(v, 0.7) * 16)}px`,
                   transition: "height 60ms ease-out, opacity 120ms ease-out",
-                  opacity: Math.max(0.2, v * 1.7), // Minimum opacity for visibility
+                  opacity: Math.max(0.2, v * 1.7),
                 }}
               />
             ))}
@@ -90,6 +123,19 @@ const RecordingOverlay: React.FC = () => {
         )}
         {state === "transcribing" && (
           <div className="transcribing-text">{t("overlay.transcribing")}</div>
+        )}
+        {state === "making_coherent" && (
+          <div className="making-coherent-text">
+            {t("overlay.makingCoherent", "Making Coherent...")}
+          </div>
+        )}
+        {state === "error" && (
+          <div
+            className="error-text text-red-400 text-xs truncate max-w-[120px]"
+            title={errorMessage}
+          >
+            {errorMessage}
+          </div>
         )}
       </div>
 
@@ -102,6 +148,15 @@ const RecordingOverlay: React.FC = () => {
             }}
           >
             <CancelIcon />
+          </div>
+        )}
+        {state === "error" && (
+          <div
+            className="cancel-button"
+            onClick={handleDismissError}
+            title={t("overlay.dismissError", "Dismiss")}
+          >
+            <X className="w-4 h-4" />
           </div>
         )}
       </div>
