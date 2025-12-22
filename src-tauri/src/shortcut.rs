@@ -1102,16 +1102,23 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
                                     let audio_manager = ah.state::<Arc<AudioRecordingManager>>();
                                     audio_manager.set_coherent_mode(true);
                                     
-                                    // Capture selection context for coherent processing
-                                    if let Ok(Some(text)) = crate::clipboard::get_selected_text(ah) {
-                                        debug!("Captured selection context: {} chars", text.len());
-                                        audio_manager.set_selection_context(text);
-                                    }
-                                    
-                                    // Switch overlay to refining UI (cyan theme)
-                                    crate::utils::show_ramble_recording_overlay(ah);
-                                    // Emit refining mode so pause button appears
-                                    overlay::emit_mode_determined(ah, "refining");
+                                    // Spawn async to not block the event handler
+                                    // This is critical: get_selected_text uses enigo keystrokes that can
+                                    // interfere with keyboard event detection if done synchronously
+                                    let ah_clone = ah.clone();
+                                    let audio_manager_clone = Arc::clone(&audio_manager);
+                                    std::thread::spawn(move || {
+                                        // Capture selection context for coherent processing
+                                        if let Ok(Some(text)) = crate::clipboard::get_selected_text(&ah_clone) {
+                                            debug!("Captured selection context: {} chars", text.len());
+                                            audio_manager_clone.set_selection_context(text);
+                                        }
+                                        
+                                        // Switch overlay to refining UI
+                                        crate::utils::show_ramble_recording_overlay(&ah_clone);
+                                        // Emit refining mode so pause button appears
+                                        overlay::emit_mode_determined(&ah_clone, "refining");
+                                    });
                                 }
                             }
                         }
