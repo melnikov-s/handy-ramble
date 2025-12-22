@@ -486,11 +486,6 @@ impl AudioRecordingManager {
         )
     }
 
-    /// Check if recording is currently paused
-    pub fn is_paused(&self) -> bool {
-        matches!(*self.state.lock().unwrap(), RecordingState::Paused { .. })
-    }
-
     /// Pause any ongoing recording, preserving samples recorded so far
     /// Returns the binding_id if pausing was successful
     pub fn pause_recording(&self) -> Option<String> {

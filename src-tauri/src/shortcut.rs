@@ -1045,23 +1045,29 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
                                 let ah_clone = ah.clone();
                                 let binding_id_clone = binding_id_for_closure.clone();
                                 
-                                std::thread::spawn(move || {
-                                    std::thread::sleep(std::time::Duration::from_millis(threshold));
-                                    
-                                    // Check if still active (user is still holding)
-                                    let toggle_state_manager = ah_clone.state::<ManagedToggleState>();
-                                    let is_still_active = toggle_state_manager
-                                        .lock()
-                                        .ok()
-                                        .and_then(|s| s.active_toggles.get(&binding_id_clone).copied())
-                                        .unwrap_or(false);
-                                    
-                                    if is_still_active {
-                                        // User has been holding for threshold ms - this is "hold" mode
-                                        debug!("[TOGGLE] Threshold passed while still holding - emitting hold mode");
-                                        overlay::emit_mode_determined(&ah_clone, "hold");
-                                    }
-                                });
+                                    std::thread::spawn(move || {
+                                        std::thread::sleep(std::time::Duration::from_millis(threshold));
+                                        
+                                        // Check if still physically pressed AND recording is still active
+                                        let is_still_physically_pressed = get_press_timestamps()
+                                            .lock()
+                                            .ok()
+                                            .map(|t| t.contains_key(&binding_id_clone))
+                                            .unwrap_or(false);
+
+                                        let toggle_state_manager = ah_clone.state::<ManagedToggleState>();
+                                        let is_still_active = toggle_state_manager
+                                            .lock()
+                                            .ok()
+                                            .and_then(|s| s.active_toggles.get(&binding_id_clone).copied())
+                                            .unwrap_or(false);
+                                        
+                                        if is_still_physically_pressed && is_still_active {
+                                            // User has been holding for threshold ms - this is "hold" mode
+                                            debug!("[TOGGLE] Threshold passed while still holding - emitting hold mode");
+                                            overlay::emit_mode_determined(&ah_clone, "hold");
+                                        }
+                                    });
                             }
                         }
                         ShortcutState::Released => {
