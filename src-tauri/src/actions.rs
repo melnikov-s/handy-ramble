@@ -12,9 +12,9 @@ use crate::utils::{
 };
 use async_openai::types::{
     ChatCompletionRequestMessage, ChatCompletionRequestMessageContentPartImageArgs,
-    ChatCompletionRequestMessageContentPartTextArgs, ChatCompletionRequestUserMessageArgs,
-    ChatCompletionRequestUserMessageContent, ChatCompletionRequestUserMessageContentPart,
-    CreateChatCompletionRequestArgs,
+    ChatCompletionRequestMessageContentPartTextArgs, ChatCompletionRequestSystemMessageArgs,
+    ChatCompletionRequestUserMessageArgs, ChatCompletionRequestUserMessageContent,
+    ChatCompletionRequestUserMessageContentPart, CreateChatCompletionRequestArgs,
 };
 use ferrous_opencc::{config::BuiltinConfig, OpenCC};
 use log::{debug, error, info, warn};
@@ -620,12 +620,35 @@ async fn process_ramble_to_coherent(
         }
     };
 
-    let model = &settings.ramble_model;
+    // Check for screenshots context to determine model
+    let audio_manager = app.state::<Arc<AudioRecordingManager>>();
+    let vision_context = audio_manager.get_vision_context();
+    let has_screenshots = !vision_context.is_empty();
+
+    // Determine which model to use
+    let model = if settings.ramble_use_vision_model && has_screenshots {
+        if !settings.ramble_vision_model.trim().is_empty() {
+            debug!(
+                "Using specialized vision model for screenshots: {}",
+                settings.ramble_vision_model
+            );
+            &settings.ramble_vision_model
+        } else {
+            warn!("Vision model enabled but empty, falling back to standard model");
+            &settings.ramble_model
+        }
+    } else {
+        &settings.ramble_model
+    };
+
     if model.trim().is_empty() {
         let msg = "No model configured".to_string();
         utils::log_to_frontend(app, "error", &msg);
         return Err(msg);
     }
+
+    // Log the model being used to the frontend
+    utils::log_to_frontend(app, "info", &format!("Using model: {}", model));
 
     let prompt = &settings.ramble_prompt;
     if prompt.trim().is_empty() {
@@ -766,9 +789,18 @@ async fn process_ramble_to_coherent(
         }
     };
 
+    // Create the system message to enforce proxy persona
+    let system_message = ChatCompletionRequestSystemMessageArgs::default()
+        .content("You are an AI assistant acting as the user's proxy. You must speak **as** the user, in the first person. Do not address the user directly. Do not explain your response. Your output will be sent to another agent or system as if the user wrote it.")
+        .build()
+        .map_err(|e| format!("Request error (system message): {}", e))?;
+
     let request = match CreateChatCompletionRequestArgs::default()
         .model(model)
-        .messages(vec![message])
+        .messages(vec![
+            ChatCompletionRequestMessage::System(system_message),
+            message,
+        ])
         .build()
     {
         Ok(req) => req,

@@ -304,6 +304,10 @@ pub struct AppSettings {
     pub ramble_model: String,
     #[serde(default = "default_ramble_prompt")]
     pub ramble_prompt: String,
+    #[serde(default = "default_ramble_use_vision_model")]
+    pub ramble_use_vision_model: bool,
+    #[serde(default = "default_ramble_vision_model")]
+    pub ramble_vision_model: String,
     /// Threshold in milliseconds for tap vs hold detection (smart PTT)
     #[serde(default = "default_hold_threshold_ms")]
     pub hold_threshold_ms: u64,
@@ -398,10 +402,20 @@ fn default_ramble_model() -> String {
     "gemini-2.5-flash-lite".to_string()
 }
 
+fn default_ramble_use_vision_model() -> bool {
+    false
+}
+
+fn default_ramble_vision_model() -> String {
+    "gemini-2.0-flash".to_string()
+}
+
 fn default_ramble_prompt() -> String {
     "You are transforming rambling speech into clean, well-structured text.
 
 The input is unfiltered speech-to-text. Your job is to make it readable while preserving all meaning.
+
+IMPORTANT: You are the user's proxy. Speak AS the user, not TO the user. Formulate the response as if the user is typing it.
 
 ---
 
@@ -728,6 +742,8 @@ pub fn get_default_settings() -> AppSettings {
         ramble_provider_id: default_ramble_provider_id(),
         ramble_model: default_ramble_model(),
         ramble_prompt: default_ramble_prompt(),
+        ramble_use_vision_model: default_ramble_use_vision_model(),
+        ramble_vision_model: default_ramble_vision_model(),
         hold_threshold_ms: default_hold_threshold_ms(),
     }
 }

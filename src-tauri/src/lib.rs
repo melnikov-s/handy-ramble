@@ -274,6 +274,8 @@ pub fn run() {
         shortcut::change_ramble_provider_setting,
         shortcut::change_ramble_model_setting,
         shortcut::change_ramble_prompt_setting,
+        shortcut::change_ramble_use_vision_model_setting,
+        shortcut::change_ramble_vision_model_setting,
         shortcut::reset_ramble_prompt_to_default,
         shortcut::change_hold_threshold_setting,
         shortcut::change_update_checks_setting,
