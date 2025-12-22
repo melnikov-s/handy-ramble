@@ -10,7 +10,7 @@ interface PauseIconProps {
 const PauseIcon: React.FC<PauseIconProps> = ({
   width = 24,
   height = 24,
-  color = "#FAA2CA",
+  color = "#1e40af",
   className = "",
 }) => {
   return (

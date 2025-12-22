@@ -429,3 +429,11 @@ pub fn log_to_frontend(app_handle: &AppHandle, level: &str, message: &str) {
         );
     }
 }
+
+/// Emits mode-determined event to the overlay to show/hide pause button
+/// mode should be "quick_press" for toggle mode (pause button shown)
+pub fn emit_mode_determined(app_handle: &AppHandle, mode: &str) {
+    if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
+        let _ = overlay_window.emit("mode-determined", mode);
+    }
+}

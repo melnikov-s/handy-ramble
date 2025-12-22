@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Handy Ramble",
+  "productName": "Ramble",
   "version": "0.6.8",
-  "identifier": "com.pais.handy-ramble",
+  "identifier": "com.pais.ramble",
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:1420",
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Handy Ramble",
+        "title": "Ramble",
         "width": 680,
         "height": 570,
         "minWidth": 680,
@@ -67,7 +67,7 @@
       }
     },
     "windows": {
-      "signCommand": "trusted-signing-cli -e https://eus.codesigning.azure.net/ -a CJ-Signing -c cjpais-dev -d Handy %1"
+      "signCommand": "trusted-signing-cli -e https://eus.codesigning.azure.net/ -a CJ-Signing -c cjpais-dev -d Ramble %1"
     }
   },
   "plugins": {

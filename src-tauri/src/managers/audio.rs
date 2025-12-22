@@ -395,6 +395,10 @@ impl AudioRecordingManager {
             RecordingState::Recording {
                 binding_id: ref active,
             } if active == binding_id => {
+                debug!(
+                    "[AUDIO-BUG] stop_recording: Matched Recording state for binding '{}'",
+                    binding_id
+                );
                 *state = RecordingState::Idle;
                 drop(state);
 
