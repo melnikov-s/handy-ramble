@@ -15,12 +15,9 @@ import { RecordingRetentionPeriodSelector } from "../RecordingRetentionPeriod";
 import { ClamshellMicrophoneSelector } from "../ClamshellMicrophoneSelector";
 import { RambleShortcut } from "../RambleShortcut";
 import { UpdateChecksToggle } from "../UpdateChecksToggle";
-import { useSettings } from "../../../hooks/useSettings";
 
 export const DebugSettings: React.FC = () => {
   const { t } = useTranslation();
-  const { getSetting } = useSettings();
-  const pushToTalk = getSetting("push_to_talk");
   const isLinux = type() === "linux";
 
   return (
@@ -45,13 +42,7 @@ export const DebugSettings: React.FC = () => {
         <MuteWhileRecording descriptionMode="tooltip" grouped={true} />
         <AppendTrailingSpace descriptionMode="tooltip" grouped={true} />
         {/* Cancel shortcut is disabled on Linux due to instability with dynamic shortcut registration */}
-        {!isLinux && (
-          <RambleShortcut
-            shortcutId="cancel"
-            grouped={true}
-            disabled={pushToTalk}
-          />
-        )}
+        {!isLinux && <RambleShortcut shortcutId="cancel" grouped={true} />}
       </SettingsGroup>
     </div>
   );

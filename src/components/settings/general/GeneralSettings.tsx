@@ -5,7 +5,6 @@ import { LanguageSelector } from "../LanguageSelector";
 import { RambleShortcut } from "../RambleShortcut";
 import { SettingsGroup } from "../../ui/SettingsGroup";
 import { OutputDeviceSelector } from "../OutputDeviceSelector";
-import { PushToTalk } from "../PushToTalk";
 import { AudioFeedback } from "../AudioFeedback";
 import { useSettings } from "../../../hooks/useSettings";
 import { VolumeSlider } from "../VolumeSlider";
@@ -18,7 +17,6 @@ export const GeneralSettings: React.FC = () => {
       <SettingsGroup title={t("settings.general.title")}>
         <RambleShortcut shortcutId="transcribe" grouped={true} />
         <LanguageSelector descriptionMode="tooltip" grouped={true} />
-        <PushToTalk descriptionMode="tooltip" grouped={true} />
       </SettingsGroup>
       <SettingsGroup title={t("settings.sound.title")}>
         <MicrophoneSelector descriptionMode="tooltip" grouped={true} />
