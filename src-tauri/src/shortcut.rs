@@ -1079,6 +1079,10 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
                                     "[TOGGLE] Shortcut {} released after {}ms (PTT stop) - calling action.stop()",
                                     shortcut_string, hold_duration_ms
                                 );
+                                
+                                // Emit hold mode so UI can show "Raw" briefly before transitioning
+                                overlay::emit_mode_determined(ah, "hold");
+                                
                                 action.stop(ah, &binding_id_for_closure, &shortcut_string);
                             } else {
                                 // Quick tap - toggle mode = COHERENT mode in unified UX
@@ -1102,9 +1106,11 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
                                     let audio_manager = ah.state::<Arc<AudioRecordingManager>>();
                                     audio_manager.set_coherent_mode(true);
                                     
-                                    // Spawn async to not block the event handler
-                                    // This is critical: get_selected_text uses enigo keystrokes that can
-                                    // interfere with keyboard event detection if done synchronously
+                                    // Emit refining mode and update overlay SYNCHRONOUSLY (so UI updates immediately)
+                                    crate::utils::show_ramble_recording_overlay(ah);
+                                    overlay::emit_mode_determined(ah, "refining");
+                                    
+                                    // Spawn async ONLY for clipboard copy (blocks keyboard if done synchronously)
                                     let ah_clone = ah.clone();
                                     let audio_manager_clone = Arc::clone(&audio_manager);
                                     std::thread::spawn(move || {
@@ -1113,11 +1119,6 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
                                             debug!("Captured selection context: {} chars", text.len());
                                             audio_manager_clone.set_selection_context(text);
                                         }
-                                        
-                                        // Switch overlay to refining UI
-                                        crate::utils::show_ramble_recording_overlay(&ah_clone);
-                                        // Emit refining mode so pause button appears
-                                        overlay::emit_mode_determined(&ah_clone, "refining");
                                     });
                                 }
                             }
