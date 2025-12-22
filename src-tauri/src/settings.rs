@@ -637,26 +637,8 @@ pub fn get_default_settings() -> AppSettings {
         },
     );
 
-    // Ramble to Coherent keybinding
-    #[cfg(target_os = "windows")]
-    let ramble_shortcut = "ctrl+shift+space";
-    #[cfg(target_os = "macos")]
-    let ramble_shortcut = "option+shift+space";
-    #[cfg(target_os = "linux")]
-    let ramble_shortcut = "ctrl+shift+space";
-    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
-    let ramble_shortcut = "alt+shift+space";
-
-    bindings.insert(
-        "ramble_to_coherent".to_string(),
-        ShortcutBinding {
-            id: "ramble_to_coherent".to_string(),
-            name: "Ramble to Coherent".to_string(),
-            description: "Transcribes and cleans up rambling speech using AI.".to_string(),
-            default_binding: ramble_shortcut.to_string(),
-            current_binding: ramble_shortcut.to_string(),
-        },
-    );
+    // Note: ramble_to_coherent is no longer a separate binding.
+    // Unified hotkey: hold transcribe key = raw, quick tap = coherent.
 
     AppSettings {
         bindings,
@@ -746,6 +728,13 @@ pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
                         settings.bindings.insert(key, value);
                         updated = true;
                     }
+                }
+
+                // Migration: Remove deprecated ramble_to_coherent binding
+                // This binding is now merged into the transcribe key (hold=raw, quick press=coherent)
+                if settings.bindings.remove("ramble_to_coherent").is_some() {
+                    debug!("Removed deprecated ramble_to_coherent binding");
+                    updated = true;
                 }
 
                 if updated {

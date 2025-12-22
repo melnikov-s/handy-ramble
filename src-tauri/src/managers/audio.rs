@@ -157,6 +157,9 @@ pub struct AudioRecordingManager {
     /// Stores text selected by the user when the "Ramble to Coherent" action starts.
     /// This context is passed to the LLM to allow for "refining" existing text.
     selection_context: Arc<Mutex<Option<String>>>,
+    /// When true, the current recording will be processed through LLM refinement on stop.
+    /// Set by quick-press (toggle mode) to enable coherent mode for unified hotkey UX.
+    coherent_mode: Arc<Mutex<bool>>,
 }
 
 impl AudioRecordingManager {
@@ -182,6 +185,7 @@ impl AudioRecordingManager {
             did_mute: Arc::new(Mutex::new(false)),
             paused_samples: Arc::new(Mutex::new(Vec::new())),
             selection_context: Arc::new(Mutex::new(None)),
+            coherent_mode: Arc::new(Mutex::new(false)),
         };
 
         // Always-on?  Open immediately.
@@ -358,6 +362,8 @@ impl AudioRecordingManager {
             if let RecordingState::Idle = *state {
                 // Clear any leftover paused samples from previous session
                 self.paused_samples.lock().unwrap().clear();
+                // Reset coherent mode for new session
+                *self.coherent_mode.lock().unwrap() = false;
                 // Clear any previous selection context
                 *self.selection_context.lock().unwrap() = None;
 
@@ -593,5 +599,16 @@ impl AudioRecordingManager {
     /// Retrieves the selection context, if any.
     pub fn get_selection_context(&self) -> Option<String> {
         self.selection_context.lock().unwrap().clone()
+    }
+
+    /// Sets coherent mode for the current recording session.
+    /// When true, stop will process through LLM refinement.
+    pub fn set_coherent_mode(&self, enabled: bool) {
+        *self.coherent_mode.lock().unwrap() = enabled;
+    }
+
+    /// Gets whether coherent mode is enabled for the current session.
+    pub fn get_coherent_mode(&self) -> bool {
+        *self.coherent_mode.lock().unwrap()
     }
 }

@@ -19,6 +19,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use tauri::AppHandle;
 
+use crate::managers::audio::AudioRecordingManager;
+
 /// Binding identifiers for raw modifier shortcuts
 pub const RAW_BINDING_RIGHT_OPTION: &str = "right_option";
 pub const RAW_BINDING_LEFT_OPTION: &str = "left_option";
@@ -503,10 +505,21 @@ fn handle_modifier_event(binding_string: &str, key_state: ModifierKeyState) {
                     );
 
                     if is_still_active {
-                        // Recording continues, user will tap again to stop
-                        // Emit quick_press mode so pause button appears
+                        // Quick press = coherent mode (unified hotkey UX)
+                        let audio_manager = app.state::<Arc<AudioRecordingManager>>();
+                        audio_manager.set_coherent_mode(true);
+
+                        // Capture selection context for coherent processing
+                        if let Ok(Some(text)) = crate::clipboard::get_selected_text(&app) {
+                            debug!("Captured selection context: {} chars", text.len());
+                            audio_manager.set_selection_context(text);
+                        }
+
+                        // Switch overlay to refining UI (cyan theme)
+                        crate::utils::show_ramble_recording_overlay(&app);
+                        // Emit refining mode so pause button appears
                         use crate::overlay;
-                        overlay::emit_mode_determined(&app, "quick_press");
+                        overlay::emit_mode_determined(&app, "refining");
                     }
                 }
             }
