@@ -565,6 +565,7 @@ async fn process_ramble_to_coherent(
     app: &AppHandle,
     settings: &AppSettings,
     transcription: &str,
+    selection_context: Option<String>,
 ) -> Result<Option<String>, String> {
     // If the shortcut is pressed, we ALWAYS process regardless of ramble_enabled setting.
     // The setting is mostly for UI/default state.
@@ -609,7 +610,30 @@ async fn process_ramble_to_coherent(
     );
 
     // Replace ${output} variable in the prompt with the actual text
-    let processed_prompt = prompt.replace("${output}", transcription);
+    // Replace ${selection} variable with selected text if available
+    let processed_prompt = if let Some(selection) = selection_context {
+        if prompt.contains("${selection}") {
+            // User has explicitly included ${selection} in their prompt
+            prompt
+                .replace("${output}", transcription)
+                .replace("${selection}", &selection)
+        } else {
+            // User hasn't included ${selection}, so we ignore it to respect "not combined" requested by user unless explicit.
+            warn!("Selection context available but ${{selection}} variable missing in prompt. Ignoring selection.");
+            prompt.replace("${output}", transcription)
+        }
+    } else {
+        // No selection context, just clear the variable if it exists
+        prompt
+            .replace("${output}", transcription)
+            .replace("${selection}", "")
+    };
+
+    debug!(
+        "Processed prompt ({} chars):\n{}",
+        processed_prompt.len(),
+        processed_prompt
+    );
 
     // Get API key from post_process_api_keys (reuses same keys)
     let api_key = settings
@@ -691,6 +715,29 @@ impl ShortcutAction for RambleToCoherentAction {
             return true;
         }
 
+        // Get the microphone mode to determine audio feedback timing
+        let settings = get_settings(app);
+        let is_always_on = settings.always_on_microphone;
+
+        // Capture selected text for context (clipboard hack)
+        // This happens before starting recording. Takes ~200ms due to clipboard operations.
+        // We store it temporarily and set it AFTER try_start_recording succeeds,
+        // because try_start_recording clears the selection_context.
+        let captured_selection = match crate::clipboard::get_selected_text(app) {
+            Ok(Some(text)) => {
+                debug!("Captured selection context: {} chars", text.len());
+                Some(text)
+            }
+            Ok(None) => {
+                debug!("No text selected for context");
+                None
+            }
+            Err(e) => {
+                warn!("Failed to get selection context: {}", e);
+                None
+            }
+        };
+
         debug!(
             "RambleToCoherentAction::start called for binding: {}. Attempting to start recording.",
             binding_id
@@ -705,10 +752,6 @@ impl ShortcutAction for RambleToCoherentAction {
         show_ramble_recording_overlay(app);
 
         let rm = app.state::<Arc<AudioRecordingManager>>();
-
-        // Get the microphone mode to determine audio feedback timing
-        let settings = get_settings(app);
-        let is_always_on = settings.always_on_microphone;
 
         let mut recording_started = false;
         if is_always_on {
@@ -732,7 +775,11 @@ impl ShortcutAction for RambleToCoherentAction {
             }
         }
 
+        // Set selection context AFTER recording starts (try_start_recording clears it)
         if recording_started {
+            if let Some(text) = captured_selection {
+                rm.set_selection_context(text);
+            }
             shortcut::register_cancel_shortcut(app);
         }
 
@@ -797,8 +844,19 @@ impl ShortcutAction for RambleToCoherentAction {
                             // Show "making coherent" overlay during LLM processing
                             show_making_coherent_overlay(&ah);
 
+                            // Apply ramble processing with captured selection
+                            // Retrieve selection context from RM
+                            let selection_context = rm.get_selection_context();
+
                             // Apply ramble processing
-                            match process_ramble_to_coherent(&ah, &settings, &transcription).await {
+                            match process_ramble_to_coherent(
+                                &ah,
+                                &settings,
+                                &final_text,
+                                selection_context,
+                            )
+                            .await
+                            {
                                 Ok(Some(processed)) => {
                                     final_text = processed.clone();
                                     post_processed_text = Some(processed);

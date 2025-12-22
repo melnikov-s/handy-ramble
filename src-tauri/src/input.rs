@@ -112,6 +112,49 @@ pub fn send_paste_shift_insert(enigo: &mut Enigo) -> Result<(), String> {
     Ok(())
 }
 
+/// Sends a Cmd+C copy command (macOS).
+#[cfg(target_os = "macos")]
+pub fn send_copy_cmd_c(enigo: &mut Enigo) -> Result<(), String> {
+    enigo
+        .key(Key::Meta, enigo::Direction::Press)
+        .map_err(|e| format!("Failed to press Cmd key: {}", e))?;
+    enigo
+        .key(Key::Unicode('c'), enigo::Direction::Click)
+        .map_err(|e| format!("Failed to click C key: {}", e))?;
+
+    std::thread::sleep(std::time::Duration::from_millis(50));
+
+    enigo
+        .key(Key::Meta, enigo::Direction::Release)
+        .map_err(|e| format!("Failed to release Cmd key: {}", e))?;
+
+    Ok(())
+}
+
+/// Sends a Ctrl+C copy command (Windows/Linux).
+#[cfg(not(target_os = "macos"))]
+pub fn send_copy_ctrl_c(enigo: &mut Enigo) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    let c_key = Key::Other(0x43); // VK_C
+    #[cfg(target_os = "linux")]
+    let c_key = Key::Unicode('c');
+
+    enigo
+        .key(Key::Control, enigo::Direction::Press)
+        .map_err(|e| format!("Failed to press Control key: {}", e))?;
+    enigo
+        .key(c_key, enigo::Direction::Click)
+        .map_err(|e| format!("Failed to click C key: {}", e))?;
+
+    std::thread::sleep(std::time::Duration::from_millis(50));
+
+    enigo
+        .key(Key::Control, enigo::Direction::Release)
+        .map_err(|e| format!("Failed to release Control key: {}", e))?;
+
+    Ok(())
+}
+
 /// Pastes text directly using the enigo text method.
 /// This tries to use system input methods if possible, otherwise simulates keystrokes one by one.
 pub fn paste_text_direct(enigo: &mut Enigo, text: &str) -> Result<(), String> {
