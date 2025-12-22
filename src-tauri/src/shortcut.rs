@@ -1081,7 +1081,7 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
                                 );
                                 action.stop(ah, &binding_id_for_closure, &shortcut_string);
                             } else {
-                                // Quick tap - toggle mode.
+                                // Quick tap - toggle mode = COHERENT mode in unified UX
                                 // CRITICAL: Only emit if we are still active (i.e. this was the START tap).
                                 // If we just stopped on Pressed, active_toggles will be false now.
                                 let is_still_active = {
@@ -1098,9 +1098,20 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
                                 );
 
                                 if is_still_active {
-                                    // Recording continues, user will tap again to stop
-                                    // Emit quick_press mode so pause button appears
-                                    overlay::emit_mode_determined(ah, "quick_press");
+                                    // Quick press = coherent mode (unified hotkey UX)
+                                    let audio_manager = ah.state::<Arc<AudioRecordingManager>>();
+                                    audio_manager.set_coherent_mode(true);
+                                    
+                                    // Capture selection context for coherent processing
+                                    if let Ok(Some(text)) = crate::clipboard::get_selected_text(ah) {
+                                        debug!("Captured selection context: {} chars", text.len());
+                                        audio_manager.set_selection_context(text);
+                                    }
+                                    
+                                    // Switch overlay to refining UI (cyan theme)
+                                    crate::utils::show_ramble_recording_overlay(ah);
+                                    // Emit refining mode so pause button appears
+                                    overlay::emit_mode_determined(ah, "refining");
                                 }
                             }
                         }

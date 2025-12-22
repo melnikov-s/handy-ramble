@@ -5,13 +5,11 @@ import { commands } from "@/bindings";
 
 import { SettingsGroup } from "../ui/SettingsGroup";
 import { SettingContainer } from "../ui/SettingContainer";
-import { ToggleSwitch } from "../ui/ToggleSwitch";
 import { ResetButton } from "../ui/ResetButton";
 
 import { ProviderSelect } from "./PostProcessingSettingsApi/ProviderSelect";
 import { ApiKeyField } from "./PostProcessingSettingsApi/ApiKeyField";
 import { ModelSelect } from "./PostProcessingSettingsApi/ModelSelect";
-import { RambleShortcut } from "./RambleShortcut";
 import { useSettings } from "../../hooks/useSettings";
 
 export const RambleSettings: React.FC = () => {
@@ -42,7 +40,6 @@ export const RambleSettings: React.FC = () => {
   const [isUpdating, setIsUpdating] = useState(false);
 
   // Access settings with type safety - these fields will exist after bindings regenerate
-  const enabled = (settings as any)?.ramble_enabled ?? false;
   const providerId = (settings as any)?.ramble_provider_id ?? "gemini";
   const model = (settings as any)?.ramble_model ?? "";
   const providers = settings?.post_process_providers ?? [];
@@ -58,18 +55,6 @@ export const RambleSettings: React.FC = () => {
       setPrompt(settingsPrompt);
     }
   }, [(settings as any)?.ramble_prompt]);
-
-  const handleEnabledChange = async (value: boolean) => {
-    setIsUpdating(true);
-    try {
-      await commands.changeRambleEnabledSetting(value);
-      await refreshSettings();
-    } catch (error) {
-      console.error("Failed to change ramble enabled:", error);
-    } finally {
-      setIsUpdating(false);
-    }
-  };
 
   const handleProviderChange = async (newProviderId: string | null) => {
     if (!newProviderId) return;
@@ -155,29 +140,27 @@ export const RambleSettings: React.FC = () => {
   return (
     <div className="max-w-3xl w-full mx-auto space-y-6">
       <SettingsGroup title={t("settings.ramble.title", "Ramble to Coherent")}>
-        <ToggleSwitch
-          checked={enabled}
-          onChange={handleEnabledChange}
-          disabled={isUpdating}
-          isUpdating={isUpdating}
-          label={t(
-            "settings.ramble.enabled.title",
-            "Enable Ramble to Coherent",
-          )}
-          description={t(
-            "settings.ramble.enabled.description",
-            "Use a secondary keybinding to transcribe and clean up rambling speech using AI.",
-          )}
-          descriptionMode="tooltip"
-          grouped={true}
-        />
-
-        <RambleShortcut
-          shortcutId="ramble_to_coherent"
-          descriptionMode="tooltip"
-          grouped={true}
-          disabled={!enabled}
-        />
+        <div className="px-4 py-3 text-sm text-mid-gray">
+          <p className="mb-2">
+            <strong>
+              {t("settings.ramble.howItWorks.title", "How it works:")}
+            </strong>
+          </p>
+          <ul className="list-disc list-inside space-y-1">
+            <li>
+              {t(
+                "settings.ramble.howItWorks.hold",
+                "Hold the transcribe key → Raw transcription",
+              )}
+            </li>
+            <li>
+              {t(
+                "settings.ramble.howItWorks.quickPress",
+                "Quick tap → AI-powered text cleanup (refining)",
+              )}
+            </li>
+          </ul>
+        </div>
       </SettingsGroup>
 
       <SettingsGroup title={t("settings.ramble.llm.title", "AI Provider")}>

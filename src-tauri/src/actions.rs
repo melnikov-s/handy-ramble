@@ -419,20 +419,24 @@ impl ShortcutAction for TranscribeAction {
 
         let binding_id = binding_id.to_string(); // Clone binding_id for the async task
 
+        // CRITICAL: Stop recording synchronously to transition state to Idle immediately.
+        // This prevents race conditions where user tries to start new recording before state changes.
+        let stop_recording_time = Instant::now();
+        let samples = rm.stop_recording(&binding_id);
+        debug!(
+            "Recording stopped synchronously in {:?}, samples: {}",
+            stop_recording_time.elapsed(),
+            samples.as_ref().map(|s| s.len()).unwrap_or(0)
+        );
+
         tauri::async_runtime::spawn(async move {
-            let binding_id = binding_id.clone(); // Clone for the inner async task
             debug!(
                 "Starting async transcription task for binding: {}",
                 binding_id
             );
 
-            let stop_recording_time = Instant::now();
-            if let Some(samples) = rm.stop_recording(&binding_id) {
-                debug!(
-                    "Recording stopped and samples retrieved in {:?}, sample count: {}",
-                    stop_recording_time.elapsed(),
-                    samples.len()
-                );
+            if let Some(samples) = samples {
+                debug!("Processing {} samples for transcription", samples.len());
                 let transcription_time = Instant::now();
                 let samples_clone = samples.clone(); // Clone for history saving
                 match tm.transcribe(samples) {
@@ -448,48 +452,85 @@ impl ShortcutAction for TranscribeAction {
                             let mut post_processed_text: Option<String> = None;
                             let mut post_process_prompt: Option<String> = None;
 
-                            // First, check if Chinese variant conversion is needed
-                            if let Some(converted_text) =
-                                maybe_convert_chinese_variant(&settings, &transcription).await
-                            {
-                                final_text = converted_text.clone();
-                                post_processed_text = Some(converted_text);
-                            }
-                            // Then apply regular post-processing if enabled
-                            else if settings.post_process_enabled {
-                                match maybe_post_process_transcription(
+                            // Check if coherent mode is enabled (unified hotkey: quick press)
+                            let coherent_mode = rm.get_coherent_mode();
+                            let selection_context = rm.get_selection_context();
+
+                            if coherent_mode {
+                                // Coherent mode: route through LLM refinement
+                                debug!("Coherent mode enabled - routing through ramble processing");
+                                show_making_coherent_overlay(&ah);
+                                post_process_prompt = Some(settings.ramble_prompt.clone());
+
+                                match process_ramble_to_coherent(
                                     &ah,
                                     &settings,
                                     &transcription,
+                                    selection_context,
                                 )
                                 .await
                                 {
-                                    Ok(Some(processed_text)) => {
-                                        final_text = processed_text.clone();
-                                        post_processed_text = Some(processed_text);
-
-                                        // Get the prompt that was used
-                                        if let Some(prompt_id) =
-                                            &settings.post_process_selected_prompt_id
-                                        {
-                                            if let Some(prompt) = settings
-                                                .post_process_prompts
-                                                .iter()
-                                                .find(|p| &p.id == prompt_id)
-                                            {
-                                                post_process_prompt = Some(prompt.prompt.clone());
-                                            }
-                                        }
+                                    Ok(Some(processed)) => {
+                                        final_text = processed.clone();
+                                        post_processed_text = Some(processed);
                                     }
                                     Ok(None) => {
-                                        // Post-processing disabled, use original
+                                        // Ramble processing skipped, use original
                                     }
                                     Err(error_msg) => {
                                         // Show error overlay and return without pasting
-                                        error!("Post-processing failed: {}", error_msg);
+                                        error!("Coherent processing failed: {}", error_msg);
                                         utils::show_error_overlay(&ah, &error_msg);
                                         change_tray_icon(&ah, TrayIconState::Idle);
                                         return;
+                                    }
+                                }
+                            } else {
+                                // Raw mode: standard processing path
+                                // First, check if Chinese variant conversion is needed
+                                if let Some(converted_text) =
+                                    maybe_convert_chinese_variant(&settings, &transcription).await
+                                {
+                                    final_text = converted_text.clone();
+                                    post_processed_text = Some(converted_text);
+                                }
+                                // Then apply regular post-processing if enabled
+                                else if settings.post_process_enabled {
+                                    match maybe_post_process_transcription(
+                                        &ah,
+                                        &settings,
+                                        &transcription,
+                                    )
+                                    .await
+                                    {
+                                        Ok(Some(processed_text)) => {
+                                            final_text = processed_text.clone();
+                                            post_processed_text = Some(processed_text);
+
+                                            // Get the prompt that was used
+                                            if let Some(prompt_id) =
+                                                &settings.post_process_selected_prompt_id
+                                            {
+                                                if let Some(prompt) = settings
+                                                    .post_process_prompts
+                                                    .iter()
+                                                    .find(|p| &p.id == prompt_id)
+                                                {
+                                                    post_process_prompt =
+                                                        Some(prompt.prompt.clone());
+                                                }
+                                            }
+                                        }
+                                        Ok(None) => {
+                                            // Post-processing disabled, use original
+                                        }
+                                        Err(error_msg) => {
+                                            // Show error overlay and return without pasting
+                                            error!("Post-processing failed: {}", error_msg);
+                                            utils::show_error_overlay(&ah, &error_msg);
+                                            change_tray_icon(&ah, TrayIconState::Idle);
+                                            return;
+                                        }
                                     }
                                 }
                             }
@@ -976,10 +1017,8 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
         "transcribe".to_string(),
         Arc::new(TranscribeAction) as Arc<dyn ShortcutAction>,
     );
-    map.insert(
-        "ramble_to_coherent".to_string(),
-        Arc::new(RambleToCoherentAction) as Arc<dyn ShortcutAction>,
-    );
+    // Note: ramble_to_coherent is no longer a separate action.
+    // Unified hotkey: hold transcribe key = raw, quick tap = coherent.
     map.insert(
         "cancel".to_string(),
         Arc::new(CancelAction) as Arc<dyn ShortcutAction>,
