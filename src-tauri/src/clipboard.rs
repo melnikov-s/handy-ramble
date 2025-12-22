@@ -175,3 +175,76 @@ pub fn paste(text: String, app_handle: AppHandle) -> Result<(), String> {
 
     Ok(())
 }
+
+/// Captures the currently selected text by simulating a copy command.
+/// This is a "hack" that uses the clipboard, so it saves/restores the previous clipboard content.
+pub fn get_selected_text(app_handle: &AppHandle) -> Result<Option<String>, String> {
+    use log::debug;
+
+    debug!("[SELECTION] Starting get_selected_text");
+
+    // 1. Get Enigo instance
+    let enigo_state = app_handle
+        .try_state::<EnigoState>()
+        .ok_or("Enigo state not initialized")?;
+    let mut enigo = enigo_state
+        .0
+        .lock()
+        .map_err(|e| format!("Failed to lock Enigo: {}", e))?;
+
+    let clipboard = app_handle.clipboard();
+
+    // 2. Save current clipboard content
+    let previous_content = clipboard.read_text().unwrap_or_default();
+    debug!(
+        "[SELECTION] Previous clipboard content: {} chars",
+        previous_content.len()
+    );
+
+    // 3. Clear clipboard to detect if copy was successful
+    let _ = clipboard.write_text("");
+
+    // 4. Send Copy command (Cmd+C / Ctrl+C)
+    debug!("[SELECTION] Sending copy command...");
+    #[cfg(target_os = "macos")]
+    let copy_result = input::send_copy_cmd_c(&mut enigo);
+    #[cfg(not(target_os = "macos"))]
+    let copy_result = input::send_copy_ctrl_c(&mut enigo);
+
+    if let Err(e) = &copy_result {
+        debug!("[SELECTION] Copy command failed: {}", e);
+    } else {
+        debug!("[SELECTION] Copy command sent successfully");
+    }
+
+    // 5. Wait for OS to process the copy
+    std::thread::sleep(std::time::Duration::from_millis(150));
+
+    // 6. Read new content
+    let selected_text = clipboard.read_text().unwrap_or_default();
+    debug!(
+        "[SELECTION] Clipboard after copy: {} chars, content: '{}'",
+        selected_text.len(),
+        if selected_text.len() > 100 {
+            &selected_text[..100]
+        } else {
+            &selected_text
+        }
+    );
+
+    // 7. Restore previous content
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    let _ = clipboard.write_text(&previous_content);
+    debug!("[SELECTION] Restored previous clipboard");
+
+    if selected_text.is_empty() {
+        debug!("[SELECTION] No selection detected (empty clipboard after copy)");
+        Ok(None)
+    } else {
+        debug!(
+            "[SELECTION] Selection captured: {} chars",
+            selected_text.len()
+        );
+        Ok(Some(selected_text))
+    }
+}

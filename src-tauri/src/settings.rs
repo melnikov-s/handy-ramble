@@ -455,6 +455,11 @@ The output should be noticeably cleaner and more readable than the input while c
 
 Return ONLY the cleaned, formatted text. No preamble.
 
+---
+
+Selected text (may be empty):
+${selection}
+
 Input transcript:
 ${output}".to_string()
 }

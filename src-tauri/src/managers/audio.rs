@@ -154,6 +154,9 @@ pub struct AudioRecordingManager {
     did_mute: Arc<Mutex<bool>>,
     /// Buffer to store samples recorded before pause
     paused_samples: Arc<Mutex<Vec<f32>>>,
+    /// Stores text selected by the user when the "Ramble to Coherent" action starts.
+    /// This context is passed to the LLM to allow for "refining" existing text.
+    selection_context: Arc<Mutex<Option<String>>>,
 }
 
 impl AudioRecordingManager {
@@ -178,6 +181,7 @@ impl AudioRecordingManager {
             is_paused: Arc::new(Mutex::new(false)),
             did_mute: Arc::new(Mutex::new(false)),
             paused_samples: Arc::new(Mutex::new(Vec::new())),
+            selection_context: Arc::new(Mutex::new(None)),
         };
 
         // Always-on?  Open immediately.
@@ -354,6 +358,8 @@ impl AudioRecordingManager {
             if let RecordingState::Idle = *state {
                 // Clear any leftover paused samples from previous session
                 self.paused_samples.lock().unwrap().clear();
+                // Clear any previous selection context
+                *self.selection_context.lock().unwrap() = None;
 
                 // Ensure microphone is open in on-demand mode
                 if matches!(*self.mode.lock().unwrap(), MicrophoneMode::OnDemand) {
@@ -577,5 +583,15 @@ impl AudioRecordingManager {
             }
             _ => {}
         }
+    }
+
+    /// Sets the selection context for the current recording session.
+    pub fn set_selection_context(&self, text: String) {
+        *self.selection_context.lock().unwrap() = Some(text);
+    }
+
+    /// Retrieves the selection context, if any.
+    pub fn get_selection_context(&self) -> Option<String> {
+        self.selection_context.lock().unwrap().clone()
     }
 }
