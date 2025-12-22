@@ -35,14 +35,23 @@ pub fn init_shortcuts(app: &AppHandle) {
 
     // Register all default shortcuts, applying user customizations
     for (id, default_binding) in default_bindings {
-        if id == "cancel" {
-            continue; // Skip cancel shortcut, it will be registered dynamically
-        }
         let binding = user_settings
             .bindings
             .get(&id)
             .cloned()
             .unwrap_or(default_binding);
+
+        // Skip cancel (Escape) - it's handled via a low-level listener to avoid global blocking
+        if id == "cancel" {
+            continue;
+        }
+
+        // For vision and pause, we use the current binding but we also register 
+        // common variants to ENSURE key swallowing works on macOS.
+        if id == "vision_capture" || id == "pause_toggle" {
+            register_swallowing_shortcuts(app, binding);
+            continue;
+        }
 
         if let Err(e) = register_shortcut(app, binding) {
             error!("Failed to register shortcut {} during init: {}", id, e);
@@ -79,13 +88,19 @@ pub fn change_binding(
             });
         }
     };
-    // If this is the cancel binding, just update the settings and return
-    // It's managed dynamically, so we don't register/unregister here
-    if id == "cancel" {
+    // If this is a dynamic binding (vision_capture, pause_toggle), just update settings
+    // Note: cancel is handled via raw listener, but we still allow changing its binding string
+    if id == "cancel" || id == "vision_capture" || id == "pause_toggle" {
         if let Some(mut b) = settings.bindings.get(&id).cloned() {
             b.current_binding = binding;
             settings.bindings.insert(id.clone(), b.clone());
             settings::write_settings(&app, settings);
+
+            // Re-register vision/pause if changed (they are static)
+            if id != "cancel" {
+                register_swallowing_shortcuts(&app, b.clone());
+            }
+
             return Ok(BindingResponse {
                 success: true,
                 binding: Some(b.clone()),
@@ -877,47 +892,6 @@ pub fn resume_binding(app: AppHandle, id: String) -> Result<(), String> {
     Ok(())
 }
 
-pub fn register_cancel_shortcut(app: &AppHandle) {
-    // Cancel shortcut is disabled on Linux due to instability with dynamic shortcut registration
-    #[cfg(target_os = "linux")]
-    {
-        let _ = app;
-        return;
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    {
-        let app_clone = app.clone();
-        tauri::async_runtime::spawn(async move {
-            if let Some(cancel_binding) = get_settings(&app_clone).bindings.get("cancel").cloned() {
-                if let Err(e) = register_shortcut(&app_clone, cancel_binding) {
-                    eprintln!("Failed to register cancel shortcut: {}", e);
-                }
-            }
-        });
-    }
-}
-
-pub fn unregister_cancel_shortcut(app: &AppHandle) {
-    // Cancel shortcut is disabled on Linux due to instability with dynamic shortcut registration
-    #[cfg(target_os = "linux")]
-    {
-        let _ = app;
-        return;
-    }
-
-    #[cfg(not(target_os = "linux"))]
-    {
-        let app_clone = app.clone();
-        tauri::async_runtime::spawn(async move {
-            if let Some(cancel_binding) = get_settings(&app_clone).bindings.get("cancel").cloned() {
-                // We ignore errors here as it might already be unregistered
-                let _ = unregister_shortcut(&app_clone, cancel_binding);
-            }
-        });
-    }
-}
-
 pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<(), String> {
     // Validate human-level rules first
     if let Err(e) = validate_shortcut_string(&binding.current_binding) {
@@ -954,6 +928,15 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
         return Err(error_msg);
     }
 
+    let reg_result = app.global_shortcut().register(shortcut);
+    match reg_result {
+        Ok(_) => debug!("Successfully registered shortcut: {} (id={})", binding.current_binding, binding.id),
+        Err(e) => {
+            error!("Failed to register shortcut '{}' (id={}): {}", binding.current_binding, binding.id, e);
+            return Err(e.to_string());
+        }
+    }
+
     // Clone binding.id for use in the closure
     let binding_id_for_closure = binding.id.clone();
 
@@ -968,9 +951,8 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
 
                 if let Some(action) = ACTION_MAP.get(&binding_id_for_closure) {
                     if binding_id_for_closure == "cancel" {
-                        let audio_manager = ah.state::<Arc<AudioRecordingManager>>();
-                        if audio_manager.is_recording() && event.state == ShortcutState::Pressed {
-                            debug!("[KEY] Cancel shortcut activated while recording");
+                        if event.state == ShortcutState::Pressed {
+                            debug!("[KEY] Cancel shortcut activated");
                             action.start(ah, &binding_id_for_closure, &shortcut_string);
                         }
                         return;
@@ -1137,14 +1119,16 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
                                     let audio_manager = ah.state::<Arc<AudioRecordingManager>>();
                                     audio_manager.set_coherent_mode(true);
                                     
-                                    // Emit refining mode and update overlay SYNCHRONOUSLY (so UI updates immediately)
+                                    // Emit refining mode and update overlay SYNCHRONOUSLY
+                                    // Ensure the state becomes 'ramble_recording' so UI shows 'Refined' label
                                     crate::utils::show_ramble_recording_overlay(ah);
                                     overlay::emit_mode_determined(ah, "refining");
                                     
-                                    // Spawn async ONLY for clipboard copy (blocks keyboard if done synchronously)
+                                    // Spawn async ONLY for clipboard copy
                                     let ah_clone = ah.clone();
                                     let audio_manager_clone = Arc::clone(&audio_manager);
-                                    std::thread::spawn(move || {
+                                    // Run on main thread to prevent crash on macOS (TSM/Enigo requirements)
+                                    let _ = ah.run_on_main_thread(move || {
                                         // Capture selection context for coherent processing
                                         if let Ok(Some(text)) = crate::clipboard::get_selected_text(&ah_clone) {
                                             debug!("Captured selection context: {} chars", text.len());
@@ -1156,10 +1140,51 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
                         }
                     }
                 } else {
-                    warn!(
-                        "No action defined in ACTION_MAP for shortcut ID '{}'. Shortcut: '{}', State: {:?}",
-                        binding_id_for_closure, shortcut_string, event.state
-                    );
+                    // Handle dynamic/contextual shortcuts (Pause, Vision)
+                    let audio_manager = ah.state::<Arc<AudioRecordingManager>>();
+                    let is_active = audio_manager.is_recording() || audio_manager.get_paused_binding_id().is_some();
+
+                    if !is_active && binding_id_for_closure != "cancel" {
+                        debug!("[KEY] Ignoring contextual shortcut '{}' - not recording or paused", binding_id_for_closure);
+                        return;
+                    }
+
+                    match binding_id_for_closure.as_str() {
+                        "pause_toggle" => {
+                            if event.state == ShortcutState::Pressed {
+                                debug!("[KEY] Pause toggle shortcut activated");
+                                let app_handle = ah.clone();
+                                tauri::async_runtime::spawn(async move {
+                                    crate::commands::pause_operation(app_handle);
+                                });
+                            }
+                        }
+                        "vision_capture" => {
+                            if event.state == ShortcutState::Pressed {
+                                debug!("[KEY] Vision capture shortcut activated");
+                                let app_handle = ah.clone();
+                                tauri::async_runtime::spawn(async move {
+                                    match crate::vision::capture_screen() {
+                                        Ok(base64) => {
+                                            let audio_manager = app_handle.state::<Arc<AudioRecordingManager>>();
+                                            audio_manager.add_vision_context(base64);
+                                            // Pulse the overlay to show feedback
+                                            let _ = app_handle.emit("vision-captured", ());
+                                        }
+                                        Err(e) => {
+                                            error!("Vision capture failed: {}", e);
+                                        }
+                                    }
+                                });
+                            }
+                        }
+                        _ => {
+                            warn!(
+                                "No action defined in ACTION_MAP for shortcut ID '{}'. Shortcut: '{}', State: {:?}",
+                                binding_id_for_closure, shortcut_string, event.state
+                            );
+                        }
+                    }
                 }
             }
         })
@@ -1201,4 +1226,36 @@ pub fn unregister_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<
     })?;
 
     Ok(())
+}
+
+/// Register multiple shortcut variants for the same action to ensure "swallowing" works 
+/// regardless of whether the user holds Shift or other modifiers.
+fn register_swallowing_shortcuts(app: &AppHandle, binding: ShortcutBinding) {
+    let base_binding = binding.current_binding.clone();
+    let id = binding.id.clone();
+    
+    // Register the primary binding
+    if let Err(e) = register_shortcut(app, binding.clone()) {
+        debug!("Primary swallowing shortcut {} for {} already registered or failed: {}", base_binding, id, e);
+    }
+
+    // Register a variant without Shift if it was something like Option+Shift+P
+    // but the user might just press Option+P.
+    let variants = if id == "pause_toggle" {
+        vec!["Option+P", "Alt+P"]
+    } else if id == "vision_capture" {
+        vec!["Option+S", "Alt+S"]
+    } else {
+        vec![]
+    };
+
+    for variant in variants {
+        if variant.to_lowercase() != base_binding.to_lowercase() {
+            let mut v_binding = binding.clone();
+            v_binding.current_binding = variant.to_string();
+            if let Err(e) = register_shortcut(app, v_binding) {
+                 debug!("Variant swallowing shortcut {} for {} already registered or failed: {}", variant, id, e);
+            }
+        }
+    }
 }

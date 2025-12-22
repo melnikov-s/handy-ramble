@@ -18,6 +18,7 @@ mod signal_handle;
 mod tray;
 mod tray_i18n;
 mod utils;
+mod vision;
 use specta_typescript::{BigIntExportBehavior, Typescript};
 use tauri_specta::{collect_commands, Builder};
 
@@ -280,6 +281,7 @@ pub fn run() {
         commands::cancel_operation,
         commands::pause_operation,
         commands::resume_operation,
+        commands::trigger_vision_capture,
         commands::get_app_dir_path,
         commands::get_app_settings,
         commands::get_default_settings,

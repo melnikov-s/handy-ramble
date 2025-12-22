@@ -32,6 +32,7 @@
 .overlay-left {
   display: flex;
   align-items: center;
+  gap: 4px;
 }
 
 .overlay-middle {
@@ -146,6 +147,33 @@
   text-shadow: 0 0 4px #00e5cc33;
 }
 
+.vision-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #93c5fd88;
+  margin-left: 2px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  transition: all 150ms ease-out;
+}
+
+.vision-indicator:hover {
+  background: #1e40af33;
+  transform: scale(1.05);
+  color: #93c5fd;
+}
+
+.vision-indicator:active {
+  transform: scale(0.95);
+}
+
+.vision-indicator.has-vision {
+  color: #10b981; /* Green check color */
+  filter: drop-shadow(0 0 4px #10b98188);
+}
+
 /* Refining dots indicator */
 .refining-indicator {
   display: flex;
@@ -258,3 +286,9 @@
     -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
+/* Screenshot flash animation */
+.recording-overlay.screenshot-flash {
+  box-shadow: 0 0 15px #93c5fd, inset 0 0 15px #93c5fd;
+  border-color: #93c5fd;
+  transition: all 100ms ease-out;
+}

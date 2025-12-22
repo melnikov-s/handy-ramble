@@ -16,6 +16,8 @@ export const GeneralSettings: React.FC = () => {
     <div className="max-w-3xl w-full mx-auto space-y-6">
       <SettingsGroup title={t("settings.general.title")}>
         <RambleShortcut shortcutId="transcribe" grouped={true} />
+        <RambleShortcut shortcutId="vision_capture" grouped={true} />
+        <RambleShortcut shortcutId="pause_toggle" grouped={true} />
         <LanguageSelector descriptionMode="tooltip" grouped={true} />
       </SettingsGroup>
       <SettingsGroup title={t("settings.sound.title")}>

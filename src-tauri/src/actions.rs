@@ -5,14 +5,15 @@ use crate::managers::audio::AudioRecordingManager;
 use crate::managers::history::HistoryManager;
 use crate::managers::transcription::TranscriptionManager;
 use crate::settings::{get_settings, AppSettings, APPLE_INTELLIGENCE_PROVIDER_ID};
-use crate::shortcut;
 use crate::tray::{change_tray_icon, TrayIconState};
 use crate::utils::{
     self, is_operation_paused, resume_current_operation, show_making_coherent_overlay,
     show_recording_overlay, show_transcribing_overlay,
 };
 use async_openai::types::{
-    ChatCompletionRequestMessage, ChatCompletionRequestUserMessageArgs,
+    ChatCompletionRequestMessage, ChatCompletionRequestMessageContentPartImageArgs,
+    ChatCompletionRequestMessageContentPartTextArgs, ChatCompletionRequestUserMessageArgs,
+    ChatCompletionRequestUserMessageContent, ChatCompletionRequestUserMessageContentPart,
     CreateChatCompletionRequestArgs,
 };
 use ferrous_opencc::{config::BuiltinConfig, OpenCC};
@@ -21,8 +22,7 @@ use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
-use tauri::AppHandle;
-use tauri::Manager;
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::ManagedToggleState;
 
@@ -364,23 +364,16 @@ impl ShortcutAction for TranscribeAction {
             }
         }
 
-        if recording_started {
-            // Dynamically register the cancel shortcut in a separate task to avoid deadlock
-            shortcut::register_cancel_shortcut(app);
-        }
-
         debug!(
             "TranscribeAction::start completed in {:?}, returning {}",
             start_time.elapsed(),
             recording_started
         );
+
         recording_started
     }
 
     fn stop(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
-        // Unregister the cancel shortcut when transcription stops
-        shortcut::unregister_cancel_shortcut(app);
-
         // Reset toggle state so next press starts fresh
         let toggle_state_manager = app.state::<ManagedToggleState>();
         if let Ok(mut states) = toggle_state_manager.lock() {
@@ -694,13 +687,82 @@ async fn process_ramble_to_coherent(
     };
 
     // Build the chat completion request
-    let message = match ChatCompletionRequestUserMessageArgs::default()
-        .content(processed_prompt)
-        .build()
-    {
-        Ok(msg) => ChatCompletionRequestMessage::User(msg),
-        Err(e) => {
-            return Err(format!("Request error: {}", e));
+    // If vision is supported and a screenshot is available, use array content (vision)
+    let audio_manager = app.state::<Arc<AudioRecordingManager>>();
+    let vision_context = audio_manager.get_vision_context();
+
+    let message = if provider.supports_vision {
+        if !vision_context.is_empty() {
+            info!(
+                "Vision enabled: Attaching {} screenshots to request",
+                vision_context.len()
+            );
+            utils::log_to_frontend(app, "info", "Analyzing screenshots...");
+
+            let text_part = ChatCompletionRequestMessageContentPartTextArgs::default()
+                .text(processed_prompt)
+                .build()
+                .map_err(|e| format!("Request error (text part): {}", e))?;
+
+            let mut parts = vec![ChatCompletionRequestUserMessageContentPart::Text(text_part)];
+
+            for (i, base64_image) in vision_context.iter().enumerate() {
+                debug!(
+                    "Attaching screenshot {} ({} chars)",
+                    i + 1,
+                    base64_image.len()
+                );
+                let image_part = ChatCompletionRequestMessageContentPartImageArgs::default()
+                    .image_url(format!("data:image/png;base64,{}", base64_image))
+                    .build()
+                    .map_err(|e| format!("Request error (image part {}): {}", i, e))?;
+                parts.push(ChatCompletionRequestUserMessageContentPart::ImageUrl(
+                    image_part,
+                ));
+            }
+
+            let content = ChatCompletionRequestUserMessageContent::Array(parts);
+
+            ChatCompletionRequestMessage::User(
+                ChatCompletionRequestUserMessageArgs::default()
+                    .content(content)
+                    .build()
+                    .map_err(|e| format!("Request error (user message): {}", e))?,
+            )
+        } else {
+            warn!("Provider supports vision but no screenshot context found.");
+            // Proceed with text only
+            match ChatCompletionRequestUserMessageArgs::default()
+                .content(processed_prompt)
+                .build()
+            {
+                Ok(msg) => ChatCompletionRequestMessage::User(msg),
+                Err(e) => {
+                    return Err(format!("Request error: {}", e));
+                }
+            }
+        }
+    } else {
+        if !vision_context.is_empty() {
+            warn!(
+                "Screenshots captured but provider '{}' does NOT support vision. Ignoring {} images.",
+                provider.id,
+                vision_context.len()
+            );
+            utils::log_to_frontend(
+                app,
+                "warning",
+                "Provider doesn't support images - ignoring screenshots",
+            );
+        }
+        match ChatCompletionRequestUserMessageArgs::default()
+            .content(processed_prompt)
+            .build()
+        {
+            Ok(msg) => ChatCompletionRequestMessage::User(msg),
+            Err(e) => {
+                return Err(format!("Request error: {}", e));
+            }
         }
     };
 
@@ -772,6 +834,50 @@ impl ShortcutAction for TestAction {
     }
 }
 
+// Pause Action
+struct PauseAction;
+
+impl ShortcutAction for PauseAction {
+    fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) -> bool {
+        crate::utils::toggle_pause_operation(app);
+        true
+    }
+
+    fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {}
+}
+
+// Vision Action
+struct VisionAction;
+
+impl ShortcutAction for VisionAction {
+    fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) -> bool {
+        let app_clone = app.clone();
+        tauri::async_runtime::spawn(async move {
+            crate::utils::log_to_frontend(&app_clone, "info", "Capturing screenshot...");
+            match crate::vision::capture_screen() {
+                Ok(base64) => {
+                    info!("Vision capture successful ({} chars)", base64.len());
+                    crate::utils::log_to_frontend(&app_clone, "info", "Screenshot captured!");
+                    let audio_manager = app_clone.state::<Arc<AudioRecordingManager>>();
+                    audio_manager.add_vision_context(base64);
+                    let _ = app_clone.emit("vision-captured", ());
+                }
+                Err(e) => {
+                    error!("Vision capture failed: {}", e);
+                    crate::utils::log_to_frontend(
+                        &app_clone,
+                        "error",
+                        &format!("Screenshot failed: {}", e),
+                    );
+                }
+            }
+        });
+        true
+    }
+
+    fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {}
+}
+
 // Static Action Map
 pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::new(|| {
     let mut map = HashMap::new();
@@ -784,6 +890,14 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
     map.insert(
         "cancel".to_string(),
         Arc::new(CancelAction) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "pause_toggle".to_string(),
+        Arc::new(PauseAction) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "vision_capture".to_string(),
+        Arc::new(VisionAction) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "test".to_string(),

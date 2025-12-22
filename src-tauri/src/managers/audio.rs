@@ -160,6 +160,8 @@ pub struct AudioRecordingManager {
     /// When true, the current recording will be processed through LLM refinement on stop.
     /// Set by quick-press (toggle mode) to enable coherent mode for unified hotkey UX.
     coherent_mode: Arc<Mutex<bool>>,
+    /// Stores the Base64 representation of screenshots captured during the session.
+    vision_context: Arc<Mutex<Vec<String>>>,
 }
 
 impl AudioRecordingManager {
@@ -186,6 +188,7 @@ impl AudioRecordingManager {
             paused_samples: Arc::new(Mutex::new(Vec::new())),
             selection_context: Arc::new(Mutex::new(None)),
             coherent_mode: Arc::new(Mutex::new(false)),
+            vision_context: Arc::new(Mutex::new(Vec::new())),
         };
 
         // Always-on?  Open immediately.
@@ -348,8 +351,8 @@ impl AudioRecordingManager {
     /* ---------- recording --------------------------------------------------- */
 
     pub fn try_start_recording(&self, binding_id: &str) -> bool {
-        let max_retries = 4;
-        let retry_delay = Duration::from_millis(50);
+        let max_retries = 10;
+        let retry_delay = Duration::from_millis(100);
 
         for attempt in 0..max_retries {
             let mut state = self.state.lock().unwrap();
@@ -366,6 +369,8 @@ impl AudioRecordingManager {
                 *self.coherent_mode.lock().unwrap() = false;
                 // Clear any previous selection context
                 *self.selection_context.lock().unwrap() = None;
+                // Clear any previous vision context
+                self.vision_context.lock().unwrap().clear();
 
                 // Ensure microphone is open in on-demand mode
                 if matches!(*self.mode.lock().unwrap(), MicrophoneMode::OnDemand) {
@@ -399,9 +404,10 @@ impl AudioRecordingManager {
             }
         }
 
-        info!(
-            "[AUDIO] Failed to start recording after {} retries. State was never Idle.",
-            max_retries
+        error!(
+            "[AUDIO] Failed to start recording after {} retries ({}ms total wait). State was never Idle.",
+            max_retries,
+            max_retries * retry_delay.as_millis()
         );
         false
     }
@@ -605,5 +611,22 @@ impl AudioRecordingManager {
     /// Gets whether coherent mode is enabled for the current session.
     pub fn get_coherent_mode(&self) -> bool {
         *self.coherent_mode.lock().unwrap()
+    }
+
+    /// Sets the vision context for the current recording session.
+    /// Adds a vision context (screenshot) for the current recording session.
+    pub fn add_vision_context(&self, base64_image: String) {
+        debug!(
+            "Adding vision context (image size: {} chars)",
+            base64_image.len()
+        );
+        self.vision_context.lock().unwrap().push(base64_image);
+    }
+
+    /// Retrieves the vision context (list of images), if any.
+    pub fn get_vision_context(&self) -> Vec<String> {
+        let ctx = self.vision_context.lock().unwrap().clone();
+        debug!("Retrieved vision context ({} images)", ctx.len());
+        ctx
     }
 }

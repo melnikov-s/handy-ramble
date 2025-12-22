@@ -17,7 +17,7 @@ use rdev::{listen, Event, EventType, Key};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter, Manager};
 
 use crate::managers::audio::AudioRecordingManager;
 
@@ -75,6 +75,12 @@ struct ModifierListenerState {
     app_handle: Option<AppHandle>,
     /// Track if Shift is currently held (to allow Shift+Option shortcuts to work)
     shift_pressed: bool,
+    /// Track if Alt/Option is currently held
+    alt_pressed: bool,
+    /// Track if Control is currently held
+    ctrl_pressed: bool,
+    /// Track if Command/Meta is currently held
+    meta_pressed: bool,
 }
 
 impl ModifierListenerState {
@@ -86,6 +92,9 @@ impl ModifierListenerState {
             press_timestamps: HashMap::new(),
             app_handle: None,
             shift_pressed: false,
+            alt_pressed: false,
+            ctrl_pressed: false,
+            meta_pressed: false,
         }
     }
 }
@@ -189,105 +198,295 @@ pub fn resume_raw_binding(binding_id: &str) {
     }
 }
 
+/// Force reset the 'pressed' state of all raw bindings.
+/// This is used when an operation is cancelled (e.g. via Escape) to ensure
+/// that subsequent presses are correctly detected as new presses, even if
+/// the physical key release was missed or already processed.
+pub fn force_reset_pressed_state() {
+    let state = get_listener_state();
+    if let Ok(mut guard) = state.lock() {
+        for val in guard.pressed_state.values_mut() {
+            *val = false;
+        }
+        // Also clear invalid timestamps to avoid stuck PTT logic
+        guard.press_timestamps.clear();
+        debug!("[RESET] Forced reset of all raw binding pressed states");
+    }
+}
+
 /// rdev callback for handling keyboard events
 fn rdev_callback(event: Event) {
     match event.event_type {
         // Track Shift key state
-        EventType::KeyPress(Key::ShiftLeft) | EventType::KeyPress(Key::ShiftRight) => {
-            debug!("[KEY] Shift pressed");
-            if let Ok(mut guard) = get_listener_state().lock() {
-                guard.shift_pressed = true;
+        EventType::KeyPress(k) => {
+            debug!("[KEY-RAW] Press: {:?}", k);
+            match k {
+                Key::ShiftLeft | Key::ShiftRight => {
+                    debug!("[KEY] Shift pressed");
+                    if let Ok(mut guard) = get_listener_state().lock() {
+                        guard.shift_pressed = true;
+                    }
+                }
+                Key::Alt | Key::AltGr => {
+                    debug!("[KEY] Alt/Option pressed");
+                    if let Ok(mut guard) = get_listener_state().lock() {
+                        guard.alt_pressed = true;
+                    }
+                    if k == Key::Alt {
+                        let shift_held = get_listener_state()
+                            .lock()
+                            .map(|g| g.shift_pressed)
+                            .unwrap_or(false);
+                        debug!("[KEY] Left Option PRESSED (shift_held={})", shift_held);
+                        if shift_held {
+                            handle_modifier_event(
+                                RAW_BINDING_SHIFT_LEFT_OPTION,
+                                ModifierKeyState::Pressed,
+                            );
+                        } else {
+                            handle_modifier_event(
+                                RAW_BINDING_LEFT_OPTION,
+                                ModifierKeyState::Pressed,
+                            );
+                        }
+                    } else {
+                        let shift_held = get_listener_state()
+                            .lock()
+                            .map(|g| g.shift_pressed)
+                            .unwrap_or(false);
+                        debug!("[KEY] Right Option PRESSED (shift_held={})", shift_held);
+                        if shift_held {
+                            handle_modifier_event(
+                                RAW_BINDING_SHIFT_RIGHT_OPTION,
+                                ModifierKeyState::Pressed,
+                            );
+                        } else {
+                            handle_modifier_event(
+                                RAW_BINDING_RIGHT_OPTION,
+                                ModifierKeyState::Pressed,
+                            );
+                        }
+                    }
+                }
+                Key::ControlLeft | Key::ControlRight => {
+                    debug!("[KEY] Control pressed");
+                    if let Ok(mut guard) = get_listener_state().lock() {
+                        guard.ctrl_pressed = true;
+                    }
+                }
+                Key::MetaLeft | Key::MetaRight => {
+                    debug!("[KEY] Command/Meta pressed");
+                    if let Ok(mut guard) = get_listener_state().lock() {
+                        guard.meta_pressed = true;
+                    }
+                    if k == Key::MetaLeft {
+                        let shift_held = get_listener_state()
+                            .lock()
+                            .map(|g| g.shift_pressed)
+                            .unwrap_or(false);
+                        debug!("[KEY] Left Command PRESSED (shift_held={})", shift_held);
+                        if shift_held {
+                            handle_modifier_event(
+                                RAW_BINDING_SHIFT_LEFT_COMMAND,
+                                ModifierKeyState::Pressed,
+                            );
+                        } else {
+                            handle_modifier_event(
+                                RAW_BINDING_LEFT_COMMAND,
+                                ModifierKeyState::Pressed,
+                            );
+                        }
+                    } else {
+                        let shift_held = get_listener_state()
+                            .lock()
+                            .map(|g| g.shift_pressed)
+                            .unwrap_or(false);
+                        debug!("[KEY] Right Command PRESSED (shift_held={})", shift_held);
+                        if shift_held {
+                            handle_modifier_event(
+                                RAW_BINDING_SHIFT_RIGHT_COMMAND,
+                                ModifierKeyState::Pressed,
+                            );
+                        } else {
+                            handle_modifier_event(
+                                RAW_BINDING_RIGHT_COMMAND,
+                                ModifierKeyState::Pressed,
+                            );
+                        }
+                    }
+                }
+                // Handle passive hotkeys (S for Screenshot, P for Pause, Escape for Cancel)
+                Key::Escape | Key::KeyS | Key::KeyP => {
+                    handle_passive_key(k);
+                }
+                _ => {}
             }
         }
-        EventType::KeyRelease(Key::ShiftLeft) | EventType::KeyRelease(Key::ShiftRight) => {
-            debug!("[KEY] Shift released");
-            if let Ok(mut guard) = get_listener_state().lock() {
-                guard.shift_pressed = false;
+        EventType::KeyRelease(k) => {
+            debug!("[KEY-RAW] Release: {:?}", k);
+            match k {
+                Key::ShiftLeft | Key::ShiftRight => {
+                    debug!("[KEY] Shift released");
+                    if let Ok(mut guard) = get_listener_state().lock() {
+                        guard.shift_pressed = false;
+                    }
+                }
+                Key::Alt | Key::AltGr => {
+                    debug!("[KEY] Alt/Option released");
+                    if let Ok(mut guard) = get_listener_state().lock() {
+                        guard.alt_pressed = false;
+                    }
+                    if k == Key::Alt {
+                        let shift_held = get_listener_state()
+                            .lock()
+                            .map(|g| g.shift_pressed)
+                            .unwrap_or(false);
+                        if shift_held {
+                            handle_modifier_event(
+                                RAW_BINDING_SHIFT_LEFT_OPTION,
+                                ModifierKeyState::Released,
+                            );
+                        } else {
+                            handle_modifier_event(
+                                RAW_BINDING_LEFT_OPTION,
+                                ModifierKeyState::Released,
+                            );
+                        }
+                    } else {
+                        let shift_held = get_listener_state()
+                            .lock()
+                            .map(|g| g.shift_pressed)
+                            .unwrap_or(false);
+                        if shift_held {
+                            handle_modifier_event(
+                                RAW_BINDING_SHIFT_RIGHT_OPTION,
+                                ModifierKeyState::Released,
+                            );
+                        } else {
+                            handle_modifier_event(
+                                RAW_BINDING_RIGHT_OPTION,
+                                ModifierKeyState::Released,
+                            );
+                        }
+                    }
+                }
+                Key::ControlLeft | Key::ControlRight => {
+                    debug!("[KEY] Control released");
+                    if let Ok(mut guard) = get_listener_state().lock() {
+                        guard.ctrl_pressed = false;
+                    }
+                }
+                Key::MetaLeft | Key::MetaRight => {
+                    debug!("[KEY] Command/Meta released");
+                    if let Ok(mut guard) = get_listener_state().lock() {
+                        guard.meta_pressed = false;
+                    }
+                    if k == Key::MetaLeft {
+                        let shift_held = get_listener_state()
+                            .lock()
+                            .map(|g| g.shift_pressed)
+                            .unwrap_or(false);
+                        if shift_held {
+                            handle_modifier_event(
+                                RAW_BINDING_SHIFT_LEFT_COMMAND,
+                                ModifierKeyState::Released,
+                            );
+                        } else {
+                            handle_modifier_event(
+                                RAW_BINDING_LEFT_COMMAND,
+                                ModifierKeyState::Released,
+                            );
+                        }
+                    } else {
+                        let shift_held = get_listener_state()
+                            .lock()
+                            .map(|g| g.shift_pressed)
+                            .unwrap_or(false);
+                        if shift_held {
+                            handle_modifier_event(
+                                RAW_BINDING_SHIFT_RIGHT_COMMAND,
+                                ModifierKeyState::Released,
+                            );
+                        } else {
+                            handle_modifier_event(
+                                RAW_BINDING_RIGHT_COMMAND,
+                                ModifierKeyState::Released,
+                            );
+                        }
+                    }
+                }
+                _ => {}
             }
-        }
-        // Left Alt/Option key (rdev uses Key::Alt for left)
-        EventType::KeyPress(Key::Alt) => {
-            let shift_held = get_listener_state()
-                .lock()
-                .map(|g| g.shift_pressed)
-                .unwrap_or(false);
-            debug!("[KEY] Left Option PRESSED (shift_held={})", shift_held);
-            if shift_held {
-                // Shift+Left Option combination
-                handle_modifier_event(RAW_BINDING_SHIFT_LEFT_OPTION, ModifierKeyState::Pressed);
-            } else {
-                // Left Option only
-                handle_modifier_event(RAW_BINDING_LEFT_OPTION, ModifierKeyState::Pressed);
-            }
-        }
-        EventType::KeyRelease(Key::Alt) => {
-            debug!("[KEY] Left Option RELEASED - sending release for both variants");
-            // Handle release for BOTH shift and non-shift variants to ensure pressed_state
-            // is properly cleared regardless of whether Shift was pressed/released between
-            // the Option key press and release events
-            handle_modifier_event(RAW_BINDING_LEFT_OPTION, ModifierKeyState::Released);
-            handle_modifier_event(RAW_BINDING_SHIFT_LEFT_OPTION, ModifierKeyState::Released);
-        }
-        // Right Alt/Option key (rdev reports as Key::AltGr on macOS)
-        EventType::KeyPress(Key::AltGr) => {
-            let shift_held = get_listener_state()
-                .lock()
-                .map(|g| g.shift_pressed)
-                .unwrap_or(false);
-            debug!("[KEY] Right Option PRESSED (shift_held={})", shift_held);
-            if shift_held {
-                // Shift+Right Option combination
-                handle_modifier_event(RAW_BINDING_SHIFT_RIGHT_OPTION, ModifierKeyState::Pressed);
-            } else {
-                // Right Option only
-                handle_modifier_event(RAW_BINDING_RIGHT_OPTION, ModifierKeyState::Pressed);
-            }
-        }
-        EventType::KeyRelease(Key::AltGr) => {
-            debug!("[KEY] Right Option RELEASED - sending release for both variants");
-            // Handle release for BOTH shift and non-shift variants to ensure pressed_state
-            // is properly cleared regardless of whether Shift was pressed/released between
-            // the Option key press and release events
-            handle_modifier_event(RAW_BINDING_RIGHT_OPTION, ModifierKeyState::Released);
-            handle_modifier_event(RAW_BINDING_SHIFT_RIGHT_OPTION, ModifierKeyState::Released);
-        }
-        // Left Command key
-        EventType::KeyPress(Key::MetaLeft) => {
-            let shift_held = get_listener_state()
-                .lock()
-                .map(|g| g.shift_pressed)
-                .unwrap_or(false);
-            debug!("[KEY] Left Command PRESSED (shift_held={})", shift_held);
-            if shift_held {
-                handle_modifier_event(RAW_BINDING_SHIFT_LEFT_COMMAND, ModifierKeyState::Pressed);
-            } else {
-                handle_modifier_event(RAW_BINDING_LEFT_COMMAND, ModifierKeyState::Pressed);
-            }
-        }
-        EventType::KeyRelease(Key::MetaLeft) => {
-            debug!("[KEY] Left Command RELEASED - sending release for both variants");
-            handle_modifier_event(RAW_BINDING_LEFT_COMMAND, ModifierKeyState::Released);
-            handle_modifier_event(RAW_BINDING_SHIFT_LEFT_COMMAND, ModifierKeyState::Released);
-        }
-        // Right Command key
-        EventType::KeyPress(Key::MetaRight) => {
-            let shift_held = get_listener_state()
-                .lock()
-                .map(|g| g.shift_pressed)
-                .unwrap_or(false);
-            debug!("[KEY] Right Command PRESSED (shift_held={})", shift_held);
-            if shift_held {
-                handle_modifier_event(RAW_BINDING_SHIFT_RIGHT_COMMAND, ModifierKeyState::Pressed);
-            } else {
-                handle_modifier_event(RAW_BINDING_RIGHT_COMMAND, ModifierKeyState::Pressed);
-            }
-        }
-        EventType::KeyRelease(Key::MetaRight) => {
-            debug!("[KEY] Right Command RELEASED - sending release for both variants");
-            handle_modifier_event(RAW_BINDING_RIGHT_COMMAND, ModifierKeyState::Released);
-            handle_modifier_event(RAW_BINDING_SHIFT_RIGHT_COMMAND, ModifierKeyState::Released);
         }
         _ => {}
+    }
+}
+
+/// Handle Escape, S and P keys while an operation is active
+fn handle_passive_key(key: Key) {
+    let app_handle = {
+        let guard = match get_listener_state().lock() {
+            Ok(g) => g,
+            Err(_) => return,
+        };
+        guard.app_handle.clone()
+    };
+
+    if let Some(app) = app_handle {
+        let audio_manager = app.state::<Arc<AudioRecordingManager>>();
+        // Check if recording or paused
+        let is_active =
+            audio_manager.is_recording() || audio_manager.get_paused_binding_id().is_some();
+
+        if is_active {
+            match key {
+                Key::Escape => {
+                    info!("[RAW] Cancel triggered via Escape");
+                    crate::utils::cancel_current_operation(&app);
+                }
+                Key::KeyS => {
+                    // Vision capture - only if a modifier is held to avoid accidental triggers while typing
+                    if let Ok(guard) = get_listener_state().lock() {
+                        if guard.shift_pressed
+                            || guard.alt_pressed
+                            || guard.ctrl_pressed
+                            || guard.meta_pressed
+                        {
+                            info!("[RAW] Vision capture triggered via S + Modifier");
+                            let app_clone = app.clone();
+                            tauri::async_runtime::spawn(async move {
+                                match crate::vision::capture_screen() {
+                                    Ok(base64) => {
+                                        let audio_manager =
+                                            app_clone.state::<Arc<AudioRecordingManager>>();
+                                        audio_manager.add_vision_context(base64);
+                                        let _ = app_clone.emit("vision-captured", ());
+                                    }
+                                    Err(e) => error!("Vision capture failed: {}", e),
+                                }
+                            });
+                        }
+                    }
+                }
+                Key::KeyP => {
+                    // Pause toggle - only if a modifier is held
+                    if let Ok(guard) = get_listener_state().lock() {
+                        if guard.shift_pressed
+                            || guard.alt_pressed
+                            || guard.ctrl_pressed
+                            || guard.meta_pressed
+                        {
+                            info!("[RAW] Pause toggle triggered via P + Modifier");
+                            let app_clone = app.clone();
+                            tauri::async_runtime::spawn(async move {
+                                crate::utils::toggle_pause_operation(&app_clone);
+                            });
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
     }
 }
 
@@ -311,11 +510,26 @@ fn handle_modifier_event(binding_string: &str, key_state: ModifierKeyState) {
         let binding = match guard.bindings.get(binding_string) {
             Some(b) => b.clone(),
             None => {
-                debug!(
-                    "[HANDLER] Binding '{}' not registered, skipping",
-                    binding_string
-                );
-                return; // Not registered
+                // FALLBACK: if "shift+modifier" is not registered, try the base "modifier"
+                if binding_string.starts_with("shift+") {
+                    let base_binding = &binding_string[6..];
+                    match guard.bindings.get(base_binding) {
+                        Some(b) => b.clone(),
+                        None => {
+                            debug!(
+                                "[HANDLER] Binding '{}' (and fallback '{}') not registered, skipping",
+                                binding_string, base_binding
+                            );
+                            return;
+                        }
+                    }
+                } else {
+                    debug!(
+                        "[HANDLER] Binding '{}' not registered, skipping",
+                        binding_string
+                    );
+                    return; // Not registered
+                }
             }
         };
 
@@ -592,7 +806,8 @@ fn handle_modifier_event(binding_string: &str, key_state: ModifierKeyState) {
                         // Spawn async ONLY for clipboard copy (blocks rdev if done synchronously)
                         let app_clone = app.clone();
                         let audio_manager_clone = Arc::clone(&audio_manager);
-                        std::thread::spawn(move || {
+                        // Run on main thread to prevent crash on macOS (TSM/Enigo requirements)
+                        let _ = app.run_on_main_thread(move || {
                             // Capture selection context for coherent processing
                             if let Ok(Some(text)) = crate::clipboard::get_selected_text(&app_clone)
                             {

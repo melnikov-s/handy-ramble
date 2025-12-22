@@ -101,6 +101,8 @@ pub struct PostProcessProvider {
     pub allow_base_url_edit: bool,
     #[serde(default)]
     pub models_endpoint: Option<String>,
+    #[serde(default)]
+    pub supports_vision: bool,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
@@ -476,6 +478,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             base_url: "https://api.openai.com/v1".to_string(),
             allow_base_url_edit: false,
             models_endpoint: Some("/models".to_string()),
+            supports_vision: true,
         },
         PostProcessProvider {
             id: "openrouter".to_string(),
@@ -483,6 +486,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             base_url: "https://openrouter.ai/api/v1".to_string(),
             allow_base_url_edit: false,
             models_endpoint: Some("/models".to_string()),
+            supports_vision: true,
         },
         PostProcessProvider {
             id: "anthropic".to_string(),
@@ -490,6 +494,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             base_url: "https://api.anthropic.com/v1".to_string(),
             allow_base_url_edit: false,
             models_endpoint: Some("/models".to_string()),
+            supports_vision: true,
         },
         PostProcessProvider {
             id: "gemini".to_string(),
@@ -497,6 +502,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             base_url: "https://generativelanguage.googleapis.com/v1beta/openai".to_string(),
             allow_base_url_edit: false,
             models_endpoint: Some("/models".to_string()),
+            supports_vision: true,
         },
         PostProcessProvider {
             id: "custom".to_string(),
@@ -504,6 +510,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
             base_url: "http://localhost:11434/v1".to_string(),
             allow_base_url_edit: true,
             models_endpoint: Some("/models".to_string()),
+            supports_vision: true,
         },
     ];
 
@@ -516,6 +523,7 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
                 base_url: "apple-intelligence://local".to_string(),
                 allow_base_url_edit: false,
                 models_endpoint: None,
+                supports_vision: false,
             });
         }
     }
@@ -567,6 +575,7 @@ fn default_post_process_prompts() -> Vec<LLMPrompt> {
 fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
     let mut changed = false;
     for provider in default_post_process_providers() {
+        // 1. Add missing providers
         if settings
             .post_process_providers
             .iter()
@@ -576,6 +585,7 @@ fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
             changed = true;
         }
 
+        // 2. Ensure API key entry exists
         if !settings.post_process_api_keys.contains_key(&provider.id) {
             settings
                 .post_process_api_keys
@@ -583,6 +593,7 @@ fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
             changed = true;
         }
 
+        // 3. Ensure Model entry exists
         let default_model = default_model_for_provider(&provider.id);
         match settings.post_process_models.get_mut(&provider.id) {
             Some(existing) => {
@@ -595,6 +606,23 @@ fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
                 settings
                     .post_process_models
                     .insert(provider.id.clone(), default_model);
+                changed = true;
+            }
+        }
+
+        // 4. Sync capability flags (supports_vision) for default providers
+        // This ensures existing users get the new capability enabled automatically
+        if let Some(existing) = settings
+            .post_process_providers
+            .iter_mut()
+            .find(|p| p.id == provider.id)
+        {
+            if existing.supports_vision != provider.supports_vision {
+                debug!(
+                    "Updating supports_vision for provider '{}': {} -> {}",
+                    existing.id, existing.supports_vision, provider.supports_vision
+                );
+                existing.supports_vision = provider.supports_vision;
                 changed = true;
             }
         }
@@ -634,6 +662,26 @@ pub fn get_default_settings() -> AppSettings {
             description: "Cancels the current recording.".to_string(),
             default_binding: "escape".to_string(),
             current_binding: "escape".to_string(),
+        },
+    );
+    bindings.insert(
+        "vision_capture".to_string(),
+        ShortcutBinding {
+            id: "vision_capture".to_string(),
+            name: "Vision Capture".to_string(),
+            description: "Captures screenshot during recording.".to_string(),
+            default_binding: "Option+Shift+S".to_string(),
+            current_binding: "Option+Shift+S".to_string(),
+        },
+    );
+    bindings.insert(
+        "pause_toggle".to_string(),
+        ShortcutBinding {
+            id: "pause_toggle".to_string(),
+            name: "Toggle Pause".to_string(),
+            description: "Pauses/Resumes recording.".to_string(),
+            default_binding: "Option+Shift+P".to_string(),
+            current_binding: "Option+Shift+P".to_string(),
         },
     );
 
