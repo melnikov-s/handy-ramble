@@ -4,7 +4,7 @@ pub mod models;
 pub mod transcription;
 
 use crate::settings::{get_settings, write_settings, AppSettings, LogLevel};
-use crate::utils::{cancel_current_operation, pause_current_operation, resume_current_operation};
+use crate::utils::{cancel_current_operation, resume_current_operation};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_opener::OpenerExt;
 
@@ -17,7 +17,8 @@ pub fn cancel_operation(app: AppHandle) {
 #[tauri::command]
 #[specta::specta]
 pub fn pause_operation(app: AppHandle) -> bool {
-    pause_current_operation(&app).is_some()
+    crate::utils::toggle_pause_operation(&app);
+    true
 }
 
 #[tauri::command]
@@ -40,7 +41,24 @@ pub fn get_app_dir_path(app: AppHandle) -> Result<String, String> {
 #[tauri::command]
 #[specta::specta]
 pub fn get_app_settings(app: AppHandle) -> Result<AppSettings, String> {
-    Ok(get_settings(&app))
+    // Wrap in catch_unwind to prevent app crash if serialization fails
+    // This seems to be happening with serde_json::ser::format_escaped_str_contents
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let settings = get_settings(&app);
+        // Force serialization check
+        if let Err(e) = serde_json::to_string(&settings) {
+            log::error!("Settings serialization check failed: {}", e);
+        }
+        settings
+    }));
+
+    match result {
+        Ok(settings) => Ok(settings),
+        Err(e) => {
+            log::error!("get_app_settings panicked: {:?}", e);
+            Err("Failed to retrieve settings due to internal error".to_string())
+        }
+    }
 }
 
 #[tauri::command]
@@ -126,4 +144,12 @@ pub fn open_app_data_dir(app: AppHandle) -> Result<(), String> {
         .map_err(|e| format!("Failed to open app data directory: {}", e))?;
 
     Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn trigger_vision_capture(app: AppHandle) {
+    if let Some(action) = crate::actions::ACTION_MAP.get("vision_capture") {
+        action.start(&app, "vision_capture", "");
+    }
 }

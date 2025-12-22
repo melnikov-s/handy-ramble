@@ -95,6 +95,14 @@
           "cancel": {
             "name": "Cancel",
             "description": "Cancels the current recording."
+          },
+          "vision_capture": {
+            "name": "Vision Capture",
+            "description": "Captures a screenshot for the LLM context."
+          },
+          "pause_toggle": {
+            "name": "Pause/Resume",
+            "description": "Pauses or resumes the recording."
           }
         },
         "errors": {

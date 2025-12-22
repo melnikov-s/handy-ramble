@@ -1,4 +1,5 @@
 import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -8,7 +9,7 @@ import {
   PauseIcon,
   PlayIcon,
 } from "../components/icons";
-import { Sparkles, AlertCircle, X } from "lucide-react";
+import { Sparkles, AlertCircle, X, Camera } from "lucide-react";
 import "./RecordingOverlay.css";
 import { commands } from "@/bindings";
 import { syncLanguageFromSettings } from "@/i18n";
@@ -38,105 +39,130 @@ const RecordingOverlay: React.FC = () => {
   // Mode determination state - hide pause button until mode is known
   const [modeKnown, setModeKnown] = useState(false);
   const [isQuickPressMode, setIsQuickPressMode] = useState(false);
+  const [flashScreenshot, setFlashScreenshot] = useState(false);
+  const [hasScreenshot, setHasScreenshot] = useState(false);
+
+  // Track pending optimistic flashes to prevent duplicates from backend events
+  const pendingOptimisticFlashesRef = useRef(0);
 
   useEffect(() => {
+    let isMounted = true;
+    const unlisteners: (() => void)[] = [];
+
     const setupEventListeners = async () => {
+      // Helper to safely register listeners
+      const register = async <T,>(
+        event: string,
+        handler: (event: { payload: T }) => void,
+      ) => {
+        const unlisten = await listen<T>(event, handler);
+        if (!isMounted) {
+          unlisten();
+        } else {
+          unlisteners.push(unlisten);
+        }
+      };
+
       // Listen for show-overlay event from Rust
-      const unlistenShow = await listen("show-overlay", async (event) => {
+      await register<string>("show-overlay", async (event) => {
         // Sync language from settings each time overlay is shown
         await syncLanguageFromSettings();
-        const overlayState = event.payload as string;
-        console.log("Overlay state received:", overlayState);
+        const overlayState = event.payload;
+        console.log("[UI] show-overlay received:", overlayState);
         setState(overlayState as OverlayState);
         setErrorMessage("");
         setIsVisible(true);
 
         // Reset mode known state only when a NEW recording session starts (initial 'recording' state)
-        // Do NOT reset when transitioning to 'ramble_recording' - that state is set AFTER mode is determined
         if (overlayState === "recording") {
           setModeKnown(false);
           setIsQuickPressMode(false);
+          setHasScreenshot(false);
+          pendingOptimisticFlashesRef.current = 0;
         } else if (
           overlayState === "transcribing" ||
           overlayState === "ramble_transcribing" ||
           overlayState === "making_coherent"
         ) {
-          // Reset when transitioning to processing states (new session will follow)
           setModeKnown(false);
           setIsQuickPressMode(false);
         }
-        // Note: 'ramble_recording', 'paused', 'ramble_paused' do NOT reset mode
       });
 
       // Listen for error overlay event from Rust
-      const unlistenError = await listen<ErrorPayload>(
-        "show-overlay-error",
-        async (event) => {
-          await syncLanguageFromSettings();
-          setState("error");
-          setErrorMessage(event.payload.message);
-          setIsVisible(true);
-        },
-      );
+      await register<ErrorPayload>("show-overlay-error", async (event) => {
+        await syncLanguageFromSettings();
+        setState("error");
+        setErrorMessage(event.payload.message);
+        setIsVisible(true);
+      });
 
       // Listen for hide-overlay event from Rust
-      const unlistenHide = await listen("hide-overlay", () => {
+      await register<void>("hide-overlay", () => {
         setIsVisible(false);
         setErrorMessage("");
-        // Reset mode state when hiding
         setModeKnown(false);
         setIsQuickPressMode(false);
+        setHasScreenshot(false);
+        pendingOptimisticFlashesRef.current = 0;
       });
 
       // Listen for mode-determined event from Rust
-      const unlistenMode = await listen<string>("mode-determined", (event) => {
+      await register<string>("mode-determined", (event) => {
         const mode = event.payload;
+        console.log("[UI] mode-determined received:", mode);
         setModeKnown(true);
-        // 'refining' = quick press mode (toggle), pause button visible
-        // 'hold' = PTT mode, no pause button
         setIsQuickPressMode(mode === "refining");
       });
 
       // Listen for mic-level updates
-      const unlistenLevel = await listen<number[]>("mic-level", (event) => {
-        const newLevels = event.payload as number[];
-
-        // Apply smoothing to reduce jitter
+      await register<number[]>("mic-level", (event) => {
+        const newLevels = event.payload;
         const smoothed = smoothedLevelsRef.current.map((prev, i) => {
           const target = newLevels[i] || 0;
-          return prev * 0.7 + target * 0.3; // Smooth transition
+          return prev * 0.7 + target * 0.3;
         });
-
         smoothedLevelsRef.current = smoothed;
         setLevels(smoothed.slice(0, 9));
       });
 
       // Listen for backend logs
-      const unlistenLog = await listen<{ level: string; message: string }>(
+      await register<{ level: string; message: string }>(
         "backend-log",
         (event) => {
           const { level, message } = event.payload;
           if (level === "error") {
             console.error(`[Backend Error] ${message}`);
-            // If it's a critical error, we might want to show it, but usually show-overlay-error handles that
           } else {
             console.log(`[Backend ${level}] ${message}`);
           }
         },
       );
 
-      // Cleanup function
-      return () => {
-        unlistenShow();
-        unlistenError();
-        unlistenHide();
-        unlistenMode();
-        unlistenLevel();
-        unlistenLog();
-      };
+      // Listen for vision capture feedback from Rust
+      await register<void>("vision-captured", () => {
+        console.log("[UI] vision-captured received");
+        setHasScreenshot(true);
+
+        if (pendingOptimisticFlashesRef.current > 0) {
+          console.log(
+            "[UI] Suppressing duplicate flash (handled optimistically)",
+          );
+          pendingOptimisticFlashesRef.current -= 1;
+          return;
+        }
+
+        setFlashScreenshot(true);
+        setTimeout(() => setFlashScreenshot(false), 500);
+      });
     };
 
     setupEventListeners();
+
+    return () => {
+      isMounted = false;
+      unlisteners.forEach((u) => u());
+    };
   }, []);
 
   // Auto-dismiss errors after 5 seconds
@@ -155,6 +181,20 @@ const RecordingOverlay: React.FC = () => {
     setState("recording");
   };
 
+  const handleVisionCapture = () => {
+    // Optimistically trigger flash animation
+    // Increment counter so we ignore the subsequent backend confirmation
+    pendingOptimisticFlashesRef.current += 1;
+    setHasScreenshot(true);
+    setFlashScreenshot(true);
+    setTimeout(() => setFlashScreenshot(false), 500);
+
+    // Trigger backend command
+    invoke("trigger_vision_capture").catch((err) =>
+      console.error("Failed to trigger vision capture:", err),
+    );
+  };
+
   const handlePauseResume = () => {
     if (state === "paused" || state === "ramble_paused") {
       commands.resumeOperation();
@@ -168,6 +208,21 @@ const RecordingOverlay: React.FC = () => {
   // Show pause button only when: mode is known AND in quick press mode (refining), OR already paused
   const showPauseButton =
     isPaused || (isRecording && modeKnown && isQuickPressMode);
+
+  // Show vision indicator if: recording or paused, preventing it from showing during processing
+  const isProcessing =
+    state === "transcribing" ||
+    state === "ramble_transcribing" ||
+    state === "making_coherent" ||
+    state === "error";
+
+  // Only show vision button when in "Refined" (quick press) mode, or if we already have a screenshot attached.
+  // In "Raw" mode (hold), screenshots are not used, so we hide the button to avoid confusion.
+  // We also check modeKnown to avoid showing it prematurely before we know if it's Raw or Refined.
+  const showVisionButton =
+    !isProcessing &&
+    (isRecording || isPaused) &&
+    ((modeKnown && isQuickPressMode) || hasScreenshot);
 
   const getIcon = () => {
     if (state === "recording" || state === "ramble_recording") {
@@ -187,9 +242,30 @@ const RecordingOverlay: React.FC = () => {
 
   return (
     <div
-      className={`recording-overlay ${isVisible ? "fade-in" : ""} ${state === "error" ? "error-state" : ""} ${isPaused ? "paused-state" : ""}`}
+      className={`recording-overlay ${isVisible ? "fade-in" : ""} ${state === "error" ? "error-state" : ""} ${isPaused ? "paused-state" : ""} ${flashScreenshot ? "screenshot-flash" : ""}`}
     >
-      <div className="overlay-left">{getIcon()}</div>
+      <div className="overlay-left">
+        {getIcon()}
+        {/* Show vision indicator if enabled */}
+        {showVisionButton && (
+          <div
+            className={`vision-indicator ${hasScreenshot ? "has-vision" : ""}`}
+            style={{
+              opacity: isQuickPressMode ? 1 : 0.4,
+              cursor: "pointer",
+              pointerEvents: "auto",
+            }}
+            onClick={handleVisionCapture}
+            title={
+              hasScreenshot
+                ? t("overlay.visionCaptured", "Screenshot taken")
+                : t("overlay.takeVision", "Click or Press S for screenshot")
+            }
+          >
+            <Camera size={14} />
+          </div>
+        )}
+      </div>
 
       <div className="overlay-middle">
         {(state === "recording" || state === "ramble_recording") && (

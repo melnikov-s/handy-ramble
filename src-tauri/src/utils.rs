@@ -1,5 +1,4 @@
 use crate::managers::audio::AudioRecordingManager;
-use crate::shortcut;
 use crate::ManagedToggleState;
 use log::{info, warn};
 use std::sync::Arc;
@@ -16,9 +15,6 @@ pub use crate::tray::*;
 pub fn cancel_current_operation(app: &AppHandle) {
     info!("Initiating operation cancellation...");
 
-    // Unregister the cancel shortcut asynchronously
-    shortcut::unregister_cancel_shortcut(app);
-
     // First, reset all shortcut toggle states.
     // This is critical for non-push-to-talk mode where shortcuts toggle on/off
     let toggle_state_manager = app.state::<ManagedToggleState>();
@@ -27,6 +23,10 @@ pub fn cancel_current_operation(app: &AppHandle) {
     } else {
         warn!("Failed to lock toggle state manager during cancellation");
     }
+
+    // Force reset low-level modifier states to avoid "double press" issues
+    #[cfg(target_os = "macos")]
+    crate::macos_modifier_key::force_reset_pressed_state();
 
     // Cancel any ongoing recording
     let audio_manager = app.state::<Arc<AudioRecordingManager>>();
@@ -47,17 +47,16 @@ pub fn pause_current_operation(app: &AppHandle) -> Option<String> {
     let audio_manager = app.state::<Arc<AudioRecordingManager>>();
 
     if let Some(binding_id) = audio_manager.pause_recording() {
-        // Determine if this is a ramble binding by checking the binding_id
-        let is_ramble = binding_id == "ramble_to_coherent";
+        // Correctly determine if session is in coherent mode
+        let is_coherent = audio_manager.get_coherent_mode();
 
         // Show the paused overlay
-        if is_ramble {
-            show_paused_overlay(app, true);
-        } else {
-            show_paused_overlay(app, false);
-        }
+        show_paused_overlay(app, is_coherent);
 
-        info!("Operation paused for binding {}", binding_id);
+        info!(
+            "Operation paused for binding {} (coherent={})",
+            binding_id, is_coherent
+        );
         Some(binding_id)
     } else {
         warn!("No active recording to pause");
@@ -65,29 +64,44 @@ pub fn pause_current_operation(app: &AppHandle) -> Option<String> {
     }
 }
 
-/// Resume a paused recording operation.
-/// Returns the binding_id if resuming was successful.
 pub fn resume_current_operation(app: &AppHandle) -> Option<String> {
     info!("Initiating operation resume...");
 
     let audio_manager = app.state::<Arc<AudioRecordingManager>>();
 
     if let Some(binding_id) = audio_manager.resume_recording() {
-        // Determine if this is a ramble binding
-        let is_ramble = binding_id == "ramble_to_coherent";
+        // Correctly determine if session is in coherent mode
+        let is_coherent = audio_manager.get_coherent_mode();
 
         // Show the appropriate recording overlay
-        if is_ramble {
+        if is_coherent {
             show_ramble_recording_overlay(app);
+            // Re-emit mode so buttons reappear
+            crate::overlay::emit_mode_determined(app, "refining");
         } else {
             show_recording_overlay(app);
+            // Re-emit mode if it was already known (otherwise it stays optimistic)
+            crate::overlay::emit_mode_determined(app, "hold");
         }
 
-        info!("Operation resumed for binding {}", binding_id);
+        info!(
+            "Operation resumed for binding {} (coherent={})",
+            binding_id, is_coherent
+        );
         Some(binding_id)
     } else {
         warn!("No paused recording to resume");
         None
+    }
+}
+
+/// Toggle pause/resume of the current recording operation.
+pub fn toggle_pause_operation(app: &AppHandle) {
+    let audio_manager = app.state::<Arc<AudioRecordingManager>>();
+    if audio_manager.get_paused_binding_id().is_some() {
+        resume_current_operation(app);
+    } else {
+        pause_current_operation(app);
     }
 }
 
