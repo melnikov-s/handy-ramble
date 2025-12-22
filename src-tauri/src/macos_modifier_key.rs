@@ -509,17 +509,25 @@ fn handle_modifier_event(binding_string: &str, key_state: ModifierKeyState) {
                         let audio_manager = app.state::<Arc<AudioRecordingManager>>();
                         audio_manager.set_coherent_mode(true);
 
-                        // Capture selection context for coherent processing
-                        if let Ok(Some(text)) = crate::clipboard::get_selected_text(&app) {
-                            debug!("Captured selection context: {} chars", text.len());
-                            audio_manager.set_selection_context(text);
-                        }
+                        // Spawn async to not block the event handler
+                        // This is critical: get_selected_text uses enigo keystrokes that can
+                        // interfere with rdev key event detection if done synchronously
+                        let app_clone = app.clone();
+                        let audio_manager_clone = Arc::clone(&audio_manager);
+                        std::thread::spawn(move || {
+                            // Capture selection context for coherent processing
+                            if let Ok(Some(text)) = crate::clipboard::get_selected_text(&app_clone)
+                            {
+                                debug!("Captured selection context: {} chars", text.len());
+                                audio_manager_clone.set_selection_context(text);
+                            }
 
-                        // Switch overlay to refining UI (cyan theme)
-                        crate::utils::show_ramble_recording_overlay(&app);
-                        // Emit refining mode so pause button appears
-                        use crate::overlay;
-                        overlay::emit_mode_determined(&app, "refining");
+                            // Switch overlay to refining UI
+                            crate::utils::show_ramble_recording_overlay(&app_clone);
+                            // Emit refining mode so pause button appears
+                            use crate::overlay;
+                            overlay::emit_mode_determined(&app_clone, "refining");
+                        });
                     }
                 }
             }
