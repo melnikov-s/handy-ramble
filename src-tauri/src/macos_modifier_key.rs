@@ -485,6 +485,33 @@ fn handle_modifier_event(binding_string: &str, key_state: ModifierKeyState) {
                     if let Ok(mut states) = toggle_state_manager.lock() {
                         states.active_toggles.insert(binding_id.clone(), false);
                     };
+                } else {
+                    // Successfully started recording - spawn a timer to emit "hold" mode after threshold
+                    // This allows the "Raw" label to appear while user is still holding
+                    use crate::settings::get_settings;
+                    let settings = get_settings(&app);
+                    let threshold = settings.hold_threshold_ms as u64;
+                    let app_clone = app.clone();
+                    let binding_id_clone = binding_id.clone();
+
+                    std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_millis(threshold));
+
+                        // Check if still active (user is still holding)
+                        let toggle_state_manager = app_clone.state::<ManagedToggleState>();
+                        let is_still_active = toggle_state_manager
+                            .lock()
+                            .ok()
+                            .and_then(|s| s.active_toggles.get(&binding_id_clone).copied())
+                            .unwrap_or(false);
+
+                        if is_still_active {
+                            // User has been holding for threshold ms - this is "hold" mode
+                            use crate::overlay;
+                            debug!("[TOGGLE] Threshold passed while still holding - emitting hold mode");
+                            overlay::emit_mode_determined(&app_clone, "hold");
+                        }
+                    });
                 }
             }
             ModifierKeyState::Released => {

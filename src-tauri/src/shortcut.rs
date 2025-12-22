@@ -1037,6 +1037,31 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
                                 if let Ok(mut states) = toggle_state_manager.lock() {
                                     states.active_toggles.insert(binding_id_for_closure.clone(), false);
                                 };
+                            } else {
+                                // Successfully started recording - spawn a timer to emit "hold" mode after threshold
+                                // This allows the "Raw" label to appear while user is still holding
+                                let settings = get_settings(ah);
+                                let threshold = settings.hold_threshold_ms as u64;
+                                let ah_clone = ah.clone();
+                                let binding_id_clone = binding_id_for_closure.clone();
+                                
+                                std::thread::spawn(move || {
+                                    std::thread::sleep(std::time::Duration::from_millis(threshold));
+                                    
+                                    // Check if still active (user is still holding)
+                                    let toggle_state_manager = ah_clone.state::<ManagedToggleState>();
+                                    let is_still_active = toggle_state_manager
+                                        .lock()
+                                        .ok()
+                                        .and_then(|s| s.active_toggles.get(&binding_id_clone).copied())
+                                        .unwrap_or(false);
+                                    
+                                    if is_still_active {
+                                        // User has been holding for threshold ms - this is "hold" mode
+                                        debug!("[TOGGLE] Threshold passed while still holding - emitting hold mode");
+                                        overlay::emit_mode_determined(&ah_clone, "hold");
+                                    }
+                                });
                             }
                         }
                         ShortcutState::Released => {

@@ -126,11 +126,9 @@
   color: #1e40af;
 }
 
-/* Refining label - cyan with glow */
+/* Refining label - blue (same as dictating) */
 .refining-label {
-  color: #00e5cc;
-  text-shadow: 0 0 6px #00e5cc66;
-  animation: refining-label-pulse 1.2s infinite ease-in-out;
+  color: #1e40af;
 }
 
 /* Paused label - dimmed navy */
