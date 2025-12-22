@@ -798,6 +798,24 @@ pub fn change_ramble_model_setting(app: AppHandle, model: String) -> Result<(), 
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_ramble_use_vision_model_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.ramble_use_vision_model = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_ramble_vision_model_setting(app: AppHandle, model: String) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.ramble_vision_model = model;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn change_ramble_prompt_setting(app: AppHandle, prompt: String) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.ramble_prompt = prompt;

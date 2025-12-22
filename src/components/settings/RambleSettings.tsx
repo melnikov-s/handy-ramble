@@ -11,6 +11,7 @@ import { ProviderSelect } from "./PostProcessingSettingsApi/ProviderSelect";
 import { ApiKeyField } from "./PostProcessingSettingsApi/ApiKeyField";
 import { ModelSelect } from "./PostProcessingSettingsApi/ModelSelect";
 import { useSettings } from "../../hooks/useSettings";
+import { ToggleSwitch } from "../ui/ToggleSwitch";
 
 export const RambleSettings: React.FC = () => {
   const { t } = useTranslation();
@@ -44,6 +45,9 @@ export const RambleSettings: React.FC = () => {
   const model = (settings as any)?.ramble_model ?? "";
   const providers = settings?.post_process_providers ?? [];
   const apiKeys = settings?.post_process_api_keys ?? {};
+
+  const useVisionModel = (settings as any)?.ramble_use_vision_model ?? false;
+  const visionModel = (settings as any)?.ramble_vision_model ?? "";
 
   const selectedProvider = providers.find((p) => p.id === providerId);
   const apiKey = apiKeys[providerId] || "";
@@ -86,6 +90,27 @@ export const RambleSettings: React.FC = () => {
       await refreshSettings();
     } catch (error) {
       console.error("Failed to change ramble model:", error);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleUseVisionModelChange = async (enabled: boolean) => {
+    try {
+      await commands.changeRambleUseVisionModelSetting(enabled);
+      await refreshSettings();
+    } catch (error) {
+      console.error("Failed to change use vision model setting:", error);
+    }
+  };
+
+  const handleVisionModelChange = async (newModel: string) => {
+    setIsUpdating(true);
+    try {
+      await commands.changeRambleVisionModelSetting(newModel);
+      await refreshSettings();
+    } catch (error) {
+      console.error("Failed to change vision model:", error);
     } finally {
       setIsUpdating(false);
     }
@@ -246,6 +271,67 @@ export const RambleSettings: React.FC = () => {
             </ResetButton>
           </div>
         </SettingContainer>
+
+        <ToggleSwitch
+          checked={useVisionModel}
+          onChange={handleUseVisionModelChange}
+          label={t(
+            "settings.ramble.vision.useSpecialized.label",
+            "Use different model for screenshots",
+          )}
+          description={t(
+            "settings.ramble.vision.useSpecialized.description",
+            "Route requests with screenshots to a more capable (or slower) model.",
+          )}
+          descriptionMode="tooltip"
+          grouped={true}
+        />
+
+        {useVisionModel && (
+          <SettingContainer
+            title={t("settings.ramble.vision.model.title", "Screenshot Model")}
+            description={t(
+              "settings.ramble.vision.model.description",
+              "Select the model to use when screenshots are attached.",
+            )}
+            descriptionMode="tooltip"
+            layout="stacked"
+            grouped={true}
+          >
+            <div className="flex items-center gap-2">
+              <ModelSelect
+                value={visionModel}
+                options={modelOptions}
+                disabled={false}
+                isLoading={isFetchingModels}
+                placeholder={
+                  modelOptions.length > 0
+                    ? t(
+                        "settings.ramble.model.placeholderWithOptions",
+                        "Select a model",
+                      )
+                    : t(
+                        "settings.ramble.model.placeholderNoOptions",
+                        "Enter model name",
+                      )
+                }
+                onSelect={handleVisionModelChange}
+                onCreate={handleVisionModelChange}
+                onBlur={() => {}}
+                className="flex-1 min-w-[380px]"
+              />
+              <ResetButton
+                onClick={handleRefreshModels}
+                disabled={isFetchingModels}
+                ariaLabel={t("settings.ramble.model.refresh", "Refresh models")}
+              >
+                <RefreshCcw
+                  className={`h-4 w-4 ${isFetchingModels ? "animate-spin" : ""}`}
+                />
+              </ResetButton>
+            </div>
+          </SettingContainer>
+        )}
       </SettingsGroup>
 
       <SettingsGroup
