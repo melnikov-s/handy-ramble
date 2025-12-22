@@ -338,6 +338,42 @@ fn handle_modifier_event(binding_string: &str, key_state: ModifierKeyState) {
         );
 
         if was_pressed == is_now_pressed {
+            // This is normally a duplicate event to filter out.
+            // HOWEVER: if this is a Release and the toggle is still active,
+            // it means we missed the Press that should have triggered stop.
+            // In this case, we should stop anyway as a fallback.
+            if !is_now_pressed {
+                // This is a Release event being filtered - check for active toggle
+                // Clone what we need first, then drop the guard before checking toggle
+                if let Some(app) = guard.app_handle.clone() {
+                    let binding_id = binding.binding_id.clone();
+                    let binding_str = binding_string.to_string();
+                    drop(guard);
+
+                    use crate::actions::ACTION_MAP;
+                    use crate::ManagedToggleState;
+                    use tauri::Manager;
+
+                    let toggle_state_manager = app.state::<ManagedToggleState>();
+                    let is_active = toggle_state_manager
+                        .lock()
+                        .ok()
+                        .and_then(|s| s.active_toggles.get(&binding_id).copied())
+                        .unwrap_or(false);
+
+                    if is_active {
+                        warn!(
+                            "[HANDLER] FALLBACK STOP: Release filtered but toggle is active for '{}' - stopping anyway",
+                            binding_id
+                        );
+                        if let Some(action) = ACTION_MAP.get(&binding_id) {
+                            action.stop(&app, &binding_id, &binding_str);
+                        }
+                    }
+                    return;
+                }
+            }
+
             debug!(
                 "[HANDLER] FILTERING as duplicate: binding='{}' was_pressed={} is_now_pressed={}",
                 binding_string, was_pressed, is_now_pressed
