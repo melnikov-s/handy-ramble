@@ -194,16 +194,14 @@ const RecordingOverlay: React.FC = () => {
       <div className="overlay-middle">
         {(state === "recording" || state === "ramble_recording") && (
           <div className="stacked-content">
-            {/* Only show label once mode is determined (after ~500ms threshold) */}
-            {modeKnown && (
-              <div
-                className={`mode-label ${isQuickPressMode ? "refining-label" : "dictating-label"}`}
-              >
-                {isQuickPressMode
-                  ? t("overlay.refined", "Refined")
-                  : t("overlay.raw", "Raw")}
-              </div>
-            )}
+            <div
+              className={`mode-label ${isQuickPressMode ? "refining-label" : "dictating-label"}`}
+              style={{ visibility: modeKnown ? "visible" : "hidden" }}
+            >
+              {isQuickPressMode
+                ? t("overlay.refined", "Refined")
+                : t("overlay.raw", "Raw")}
+            </div>
             <div className="bars-container">
               {levels.map((v, i) => (
                 <div
