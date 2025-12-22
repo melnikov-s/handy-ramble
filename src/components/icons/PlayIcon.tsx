@@ -10,7 +10,7 @@ interface PlayIconProps {
 const PlayIcon: React.FC<PlayIconProps> = ({
   width = 24,
   height = 24,
-  color = "#FAA2CA",
+  color = "#1e40af",
   className = "",
 }) => {
   return (

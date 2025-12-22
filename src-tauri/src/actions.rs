@@ -17,13 +17,15 @@ use async_openai::types::{
     CreateChatCompletionRequestArgs,
 };
 use ferrous_opencc::{config::BuiltinConfig, OpenCC};
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 use tauri::AppHandle;
 use tauri::Manager;
+
+use crate::ManagedToggleState;
 
 // Shortcut Action Trait
 pub trait ShortcutAction: Send + Sync {
@@ -380,6 +382,18 @@ impl ShortcutAction for TranscribeAction {
         // Unregister the cancel shortcut when transcription stops
         shortcut::unregister_cancel_shortcut(app);
 
+        // Reset toggle state so next press starts fresh
+        let toggle_state_manager = app.state::<ManagedToggleState>();
+        if let Ok(mut states) = toggle_state_manager.lock() {
+            states.active_toggles.insert(binding_id.to_string(), false);
+            debug!(
+                "[ACTION] Reset active_toggles['{}'] = false in TranscribeAction::stop",
+                binding_id
+            );
+        } else {
+            warn!("Failed to lock toggle state manager in TranscribeAction::stop");
+        }
+
         let stop_time = Instant::now();
         debug!("TranscribeAction::stop called for binding: {}", binding_id);
 
@@ -672,6 +686,11 @@ impl ShortcutAction for RambleToCoherentAction {
             return true;
         }
 
+        debug!(
+            "RambleToCoherentAction::start called for binding: {}. Attempting to start recording.",
+            binding_id
+        );
+
         // Load model in the background
         let tm = app.state::<Arc<TranscriptionManager>>();
         tm.initiate_model_load();
@@ -722,9 +741,18 @@ impl ShortcutAction for RambleToCoherentAction {
     fn stop(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
         shortcut::unregister_cancel_shortcut(app);
 
+        // Reset toggle state so next press starts fresh
+        // Reset toggle state so next press starts fresh
+        let toggle_state_manager = app.state::<ManagedToggleState>();
+        if let Ok(mut states) = toggle_state_manager.lock() {
+            states.active_toggles.insert(binding_id.to_string(), false);
+        } else {
+            warn!("Failed to lock toggle state manager in RambleToCoherentAction::stop");
+        }
+
         let stop_time = Instant::now();
         debug!(
-            "RambleToCoherentAction::stop called for binding: {}",
+            "RambleToCoherentAction::stop execution start for binding: {}",
             binding_id
         );
 
@@ -742,12 +770,14 @@ impl ShortcutAction for RambleToCoherentAction {
         let binding_id = binding_id.to_string();
 
         tauri::async_runtime::spawn(async move {
-            debug!(
-                "Starting async ramble transcription task for binding: {}",
-                binding_id
-            );
+            debug!("Starting async stop task. binding_id={}", binding_id);
 
-            if let Some(samples) = rm.stop_recording(&binding_id) {
+            let samples_result = rm.stop_recording(&binding_id);
+            if let Some(samples) = samples_result {
+                debug!(
+                    "Recording stopped successfully. samples_count={}",
+                    samples.len()
+                );
                 let samples_clone = samples.clone();
                 match tm.transcribe(samples) {
                     Ok(transcription) => {

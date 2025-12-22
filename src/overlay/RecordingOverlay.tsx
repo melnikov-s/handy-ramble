@@ -35,6 +35,9 @@ const RecordingOverlay: React.FC = () => {
   const [errorMessage, setErrorMessage] = useState<string>("");
   const [levels, setLevels] = useState<number[]>(Array(16).fill(0));
   const smoothedLevelsRef = useRef<number[]>(Array(16).fill(0));
+  // Mode determination state - hide pause button until mode is known
+  const [modeKnown, setModeKnown] = useState(false);
+  const [isQuickPressMode, setIsQuickPressMode] = useState(false);
 
   useEffect(() => {
     const setupEventListeners = async () => {
@@ -42,10 +45,28 @@ const RecordingOverlay: React.FC = () => {
       const unlistenShow = await listen("show-overlay", async (event) => {
         // Sync language from settings each time overlay is shown
         await syncLanguageFromSettings();
-        const overlayState = event.payload as OverlayState;
-        setState(overlayState);
+        const overlayState = event.payload as string;
+        console.log("Overlay state received:", overlayState);
+        setState(overlayState as OverlayState);
         setErrorMessage("");
         setIsVisible(true);
+
+        // Reset mode known state whenever a new recording or transcribing phase starts
+        // This ensures the pause button only shows up after explicit mode determination for the CURRENT session
+        if (
+          overlayState === "recording" ||
+          overlayState === "ramble_recording"
+        ) {
+          setModeKnown(false);
+          setIsQuickPressMode(false);
+        } else if (
+          overlayState !== "paused" &&
+          overlayState !== "ramble_paused"
+        ) {
+          // If we transitioned to transcribing, making_coherent, or error, also reset mode knowledge
+          setModeKnown(false);
+          setIsQuickPressMode(false);
+        }
       });
 
       // Listen for error overlay event from Rust
@@ -63,6 +84,16 @@ const RecordingOverlay: React.FC = () => {
       const unlistenHide = await listen("hide-overlay", () => {
         setIsVisible(false);
         setErrorMessage("");
+        // Reset mode state when hiding
+        setModeKnown(false);
+        setIsQuickPressMode(false);
+      });
+
+      // Listen for mode-determined event from Rust
+      const unlistenMode = await listen<string>("mode-determined", (event) => {
+        const mode = event.payload;
+        setModeKnown(true);
+        setIsQuickPressMode(mode === "quick_press");
       });
 
       // Listen for mic-level updates
@@ -98,6 +129,7 @@ const RecordingOverlay: React.FC = () => {
         unlistenShow();
         unlistenError();
         unlistenHide();
+        unlistenMode();
         unlistenLevel();
         unlistenLog();
       };
@@ -137,6 +169,9 @@ const RecordingOverlay: React.FC = () => {
     state === "ramble_transcribing" ||
     state === "making_coherent" ||
     state === "ramble_paused";
+  // Show pause button only when: mode is known AND in quick press mode, OR already paused
+  const showPauseButton =
+    isPaused || (isRecording && modeKnown && isQuickPressMode);
 
   const getIcon = () => {
     if (state === "recording") {
@@ -266,6 +301,7 @@ const RecordingOverlay: React.FC = () => {
             <div
               className={`pause-button ${isRambleMode ? "refining-pause" : ""}`}
               onClick={handlePauseResume}
+              style={{ visibility: showPauseButton ? "visible" : "hidden" }}
               title={
                 isPaused
                   ? t("overlay.resume", "Resume")

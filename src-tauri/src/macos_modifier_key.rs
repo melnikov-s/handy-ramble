@@ -486,12 +486,28 @@ fn handle_modifier_event(binding_string: &str, key_state: ModifierKeyState) {
                     );
                     action.stop(&app, &binding_id, binding_string);
                 } else {
-                    // Quick tap - toggle mode, keep recording
+                    // Quick tap - toggle mode.
+                    // CRITICAL: Only emit if we are still active (i.e. this was the START tap).
+                    // If we just stopped on Pressed, active_toggles will be false now.
+                    let is_still_active = {
+                        let toggle_state_manager = app.state::<ManagedToggleState>();
+                        let states = toggle_state_manager
+                            .lock()
+                            .expect("Failed to lock toggle state manager");
+                        *states.active_toggles.get(&binding_id).unwrap_or(&false)
+                    };
+
                     debug!(
-                        "[TOGGLE] Raw binding {} released after {}ms (toggle mode, staying active - NOT calling stop)",
-                        binding_string, hold_duration_ms
+                        "[TOGGLE] Raw binding {} quick released (duration={}ms). is_still_active={}",
+                        binding_string, hold_duration_ms, is_still_active
                     );
-                    // Recording continues, user will tap again to stop
+
+                    if is_still_active {
+                        // Recording continues, user will tap again to stop
+                        // Emit quick_press mode so pause button appears
+                        use crate::overlay;
+                        overlay::emit_mode_determined(&app, "quick_press");
+                    }
                 }
             }
         }
