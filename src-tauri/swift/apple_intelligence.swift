@@ -4,7 +4,7 @@ import FoundationModels
 
 @available(macOS 26.0, *)
 @Generable
-private struct CleanedTranscript: Sendable {
+struct CleanedTranscript: Sendable {
     let cleanedText: String
 }
 
