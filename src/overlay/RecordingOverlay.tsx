@@ -51,22 +51,21 @@ const RecordingOverlay: React.FC = () => {
         setErrorMessage("");
         setIsVisible(true);
 
-        // Reset mode known state whenever a new recording or transcribing phase starts
-        // This ensures the pause button only shows up after explicit mode determination for the CURRENT session
-        if (
-          overlayState === "recording" ||
-          overlayState === "ramble_recording"
-        ) {
+        // Reset mode known state only when a NEW recording session starts (initial 'recording' state)
+        // Do NOT reset when transitioning to 'ramble_recording' - that state is set AFTER mode is determined
+        if (overlayState === "recording") {
           setModeKnown(false);
           setIsQuickPressMode(false);
         } else if (
-          overlayState !== "paused" &&
-          overlayState !== "ramble_paused"
+          overlayState === "transcribing" ||
+          overlayState === "ramble_transcribing" ||
+          overlayState === "making_coherent"
         ) {
-          // If we transitioned to transcribing, making_coherent, or error, also reset mode knowledge
+          // Reset when transitioning to processing states (new session will follow)
           setModeKnown(false);
           setIsQuickPressMode(false);
         }
+        // Note: 'ramble_recording', 'paused', 'ramble_paused' do NOT reset mode
       });
 
       // Listen for error overlay event from Rust
