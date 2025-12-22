@@ -493,11 +493,18 @@ fn handle_modifier_event(binding_string: &str, key_state: ModifierKeyState) {
                     let threshold = settings.hold_threshold_ms as u64;
                     let app_clone = app.clone();
                     let binding_id_clone = binding_id.clone();
+                    let binding_string_clone = binding_string.to_string();
 
                     std::thread::spawn(move || {
                         std::thread::sleep(std::time::Duration::from_millis(threshold));
 
-                        // Check if still active (user is still holding)
+                        // Check if still physically pressed AND recording is still active
+                        let is_still_physically_pressed = get_listener_state()
+                            .lock()
+                            .ok()
+                            .map(|s| s.press_timestamps.contains_key(&binding_string_clone))
+                            .unwrap_or(false);
+
                         let toggle_state_manager = app_clone.state::<ManagedToggleState>();
                         let is_still_active = toggle_state_manager
                             .lock()
@@ -505,7 +512,7 @@ fn handle_modifier_event(binding_string: &str, key_state: ModifierKeyState) {
                             .and_then(|s| s.active_toggles.get(&binding_id_clone).copied())
                             .unwrap_or(false);
 
-                        if is_still_active {
+                        if is_still_physically_pressed && is_still_active {
                             // User has been holding for threshold ms - this is "hold" mode
                             use crate::overlay;
                             debug!("[TOGGLE] Threshold passed while still holding - emitting hold mode");
