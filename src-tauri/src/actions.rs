@@ -411,6 +411,12 @@ impl ShortcutAction for TranscribeAction {
         // Play audio feedback for recording stop
         play_feedback_sound(app, SoundType::Stop);
 
+        // Unmute before playing audio feedback so the stop sound is audible
+        rm.remove_mute();
+
+        // Play audio feedback for recording stop
+        play_feedback_sound(app, SoundType::Stop);
+
         let binding_id = binding_id.to_string(); // Clone binding_id for the async task
 
         tauri::async_runtime::spawn(async move {
@@ -427,7 +433,6 @@ impl ShortcutAction for TranscribeAction {
                     stop_recording_time.elapsed(),
                     samples.len()
                 );
-
                 let transcription_time = Instant::now();
                 let samples_clone = samples.clone(); // Clone for history saving
                 match tm.transcribe(samples) {

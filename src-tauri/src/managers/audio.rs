@@ -4,7 +4,8 @@ use crate::settings::{get_settings, AppSettings};
 use crate::utils;
 use log::{debug, error, info};
 use std::sync::{Arc, Mutex};
-use std::time::Instant;
+use std::thread;
+use std::time::{Duration, Instant};
 use tauri::Manager;
 
 fn set_mute(mute: bool) {
@@ -339,44 +340,58 @@ impl AudioRecordingManager {
     /* ---------- recording --------------------------------------------------- */
 
     pub fn try_start_recording(&self, binding_id: &str) -> bool {
-        let mut state = self.state.lock().unwrap();
+        let max_retries = 4;
+        let retry_delay = Duration::from_millis(50);
 
-        debug!(
-            "[AUDIO] try_start_recording called for binding '{}', current state: {:?}",
-            binding_id, *state
-        );
+        for attempt in 0..max_retries {
+            let mut state = self.state.lock().unwrap();
 
-        if let RecordingState::Idle = *state {
-            // Clear any leftover paused samples from previous session
-            self.paused_samples.lock().unwrap().clear();
-
-            // Ensure microphone is open in on-demand mode
-            if matches!(*self.mode.lock().unwrap(), MicrophoneMode::OnDemand) {
-                if let Err(e) = self.start_microphone_stream() {
-                    error!("Failed to open microphone stream: {e}");
-                    return false;
-                }
-            }
-
-            if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
-                if rec.start().is_ok() {
-                    *self.is_recording.lock().unwrap() = true;
-                    *state = RecordingState::Recording {
-                        binding_id: binding_id.to_string(),
-                    };
-                    debug!("[AUDIO] Recording started successfully for binding {binding_id}");
-                    return true;
-                }
-            }
-            error!("[AUDIO] Recorder not available");
-            false
-        } else {
             debug!(
-                "[AUDIO] Cannot start recording - not in Idle state (current: {:?})",
-                *state
+                "[AUDIO] try_start_recording (attempt {}/{}) called for binding '{}', current state: {:?}",
+                attempt + 1, max_retries, binding_id, *state
             );
-            false
+
+            if let RecordingState::Idle = *state {
+                // Clear any leftover paused samples from previous session
+                self.paused_samples.lock().unwrap().clear();
+
+                // Ensure microphone is open in on-demand mode
+                if matches!(*self.mode.lock().unwrap(), MicrophoneMode::OnDemand) {
+                    if let Err(e) = self.start_microphone_stream() {
+                        error!("Failed to open microphone stream: {e}");
+                        return false;
+                    }
+                }
+
+                if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
+                    if rec.start().is_ok() {
+                        *self.is_recording.lock().unwrap() = true;
+                        *state = RecordingState::Recording {
+                            binding_id: binding_id.to_string(),
+                        };
+                        debug!("[AUDIO] Recording started successfully for binding {binding_id}");
+                        return true;
+                    }
+                }
+                error!("[AUDIO] Recorder not available");
+                return false;
+            } else {
+                debug!(
+                    "[AUDIO] Cannot start recording - not in Idle state (current: {:?}). Waiting...", 
+                    *state
+                );
+                drop(state); // Drop the lock before sleeping!
+                if attempt < max_retries - 1 {
+                    thread::sleep(retry_delay);
+                }
+            }
         }
+
+        info!(
+            "[AUDIO] Failed to start recording after {} retries. State was never Idle.",
+            max_retries
+        );
+        false
     }
 
     pub fn update_selected_device(&self) -> Result<(), anyhow::Error> {
