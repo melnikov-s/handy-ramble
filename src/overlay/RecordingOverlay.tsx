@@ -9,7 +9,7 @@ import {
   PauseIcon,
   PlayIcon,
 } from "../components/icons";
-import { Sparkles, AlertCircle, X, Camera } from "lucide-react";
+import { Sparkles, AlertCircle, X, Camera, FileText } from "lucide-react";
 import "./RecordingOverlay.css";
 import { commands } from "@/bindings";
 import { syncLanguageFromSettings } from "@/i18n";
@@ -24,10 +24,27 @@ type OverlayState =
   | "ramble_paused"
   | "error";
 
+// Prompt mode type matches Rust PromptMode enum
+type PromptMode =
+  | "dynamic"
+  | "development"
+  | "conversation"
+  | "writing"
+  | "email";
+
 interface ErrorPayload {
   state: string;
   message: string;
 }
+
+// Icons for prompt modes (emoji for most, Sparkles component for dynamic)
+const PROMPT_MODE_ICONS: Record<PromptMode, string | null> = {
+  dynamic: null, // Uses Sparkles component instead
+  development: "💻",
+  conversation: "💬",
+  writing: "✍️",
+  email: "📧",
+};
 
 const RecordingOverlay: React.FC = () => {
   const { t } = useTranslation();
@@ -41,9 +58,14 @@ const RecordingOverlay: React.FC = () => {
   const [isQuickPressMode, setIsQuickPressMode] = useState(false);
   const [flashScreenshot, setFlashScreenshot] = useState(false);
   const [hasScreenshot, setHasScreenshot] = useState(false);
+  // Prompt mode state (from tray menu selection)
+  const [promptMode, setPromptMode] = useState<PromptMode>("dynamic");
 
   // Track pending optimistic flashes to prevent duplicates from backend events
   const pendingOptimisticFlashesRef = useRef(0);
+
+  // Context params count (for badge)
+  const [contextParamsCount, setContextParamsCount] = useState(0);
 
   useEffect(() => {
     let isMounted = true;
@@ -73,6 +95,20 @@ const RecordingOverlay: React.FC = () => {
         setErrorMessage("");
         setIsVisible(true);
 
+        // Fetch current prompt mode from settings
+        try {
+          const settings = await commands.getAppSettings();
+          if (settings.status === "ok") {
+            // Cast to any until TypeScript bindings are regenerated
+            const data = settings.data as any;
+            if (data.prompt_mode) {
+              setPromptMode(data.prompt_mode as PromptMode);
+            }
+          }
+        } catch (e) {
+          console.error("Failed to fetch prompt mode:", e);
+        }
+
         // Reset mode known state only when a NEW recording session starts (initial 'recording' state)
         if (overlayState === "recording") {
           setModeKnown(false);
@@ -87,6 +123,12 @@ const RecordingOverlay: React.FC = () => {
           setModeKnown(false);
           setIsQuickPressMode(false);
         }
+      });
+
+      // Listen for prompt mode changes from tray menu
+      await register<PromptMode>("prompt-mode-changed", (event) => {
+        console.log("[UI] prompt-mode-changed received:", event.payload);
+        setPromptMode(event.payload);
       });
 
       // Listen for error overlay event from Rust
@@ -203,6 +245,11 @@ const RecordingOverlay: React.FC = () => {
     }
   };
 
+  const handleOpenContextDialog = () => {
+    // Open the context dialog in a separate window (pauses recording automatically)
+    commands.showContextDialog();
+  };
+
   const isPaused = state === "paused" || state === "ramble_paused";
   const isRecording = state === "recording" || state === "ramble_recording";
   // Show pause button only when: mode is known AND in quick press mode (refining), OR already paused
@@ -226,6 +273,18 @@ const RecordingOverlay: React.FC = () => {
 
   const getIcon = () => {
     if (state === "recording" || state === "ramble_recording") {
+      // In Refined mode, show prompt mode icon; Dynamic uses ear icon, others use emoji
+      if (modeKnown && isQuickPressMode) {
+        if (promptMode === "dynamic") {
+          return <MicrophoneIcon color="#1e40af" />;
+        } else {
+          return (
+            <span className="prompt-mode-icon-main">
+              {PROMPT_MODE_ICONS[promptMode]}
+            </span>
+          );
+        }
+      }
       return <MicrophoneIcon color="#1e40af" />;
     } else if (state === "making_coherent") {
       return <Sparkles size={16} style={{ color: "#1e40af" }} />;
@@ -234,6 +293,18 @@ const RecordingOverlay: React.FC = () => {
     } else if (state === "error") {
       return <AlertCircle size={16} style={{ color: "#ff6b6b" }} />;
     } else if (state === "paused" || state === "ramble_paused") {
+      // In Refined paused mode, show prompt mode icon; Dynamic uses ear icon
+      if (isQuickPressMode) {
+        if (promptMode === "dynamic") {
+          return <MicrophoneIcon color="#1e40af" />;
+        } else {
+          return (
+            <span className="prompt-mode-icon-main">
+              {PROMPT_MODE_ICONS[promptMode]}
+            </span>
+          );
+        }
+      }
       return <MicrophoneIcon color="#1e40af" />;
     } else {
       return <TranscriptionIcon color="#1e40af" />;
@@ -241,135 +312,139 @@ const RecordingOverlay: React.FC = () => {
   };
 
   return (
-    <div
-      className={`recording-overlay ${isVisible ? "fade-in" : ""} ${state === "error" ? "error-state" : ""} ${isPaused ? "paused-state" : ""} ${flashScreenshot ? "screenshot-flash" : ""}`}
-    >
-      <div className="overlay-left">
-        {getIcon()}
-        {/* Show vision indicator if enabled */}
-        {showVisionButton && (
-          <div
-            className={`vision-indicator ${hasScreenshot ? "has-vision" : ""}`}
-            style={{
-              opacity: isQuickPressMode ? 1 : 0.4,
-              cursor: "pointer",
-              pointerEvents: "auto",
-            }}
-            onClick={handleVisionCapture}
-            title={
-              hasScreenshot
-                ? t("overlay.visionCaptured", "Screenshot taken")
-                : t("overlay.takeVision", "Click or Press S for screenshot")
-            }
-          >
-            <Camera size={14} />
-          </div>
-        )}
-      </div>
-
-      <div className="overlay-middle">
-        {(state === "recording" || state === "ramble_recording") && (
-          <div className="stacked-content">
+    <>
+      <div
+        className={`recording-overlay ${isVisible ? "fade-in" : ""} ${state === "error" ? "error-state" : ""} ${isPaused ? "paused-state" : ""} ${flashScreenshot ? "screenshot-flash" : ""}`}
+      >
+        <div className="overlay-left">
+          {getIcon()}
+          {/* Show vision indicator if enabled */}
+          {showVisionButton && (
             <div
-              className={`mode-label ${isQuickPressMode ? "refining-label" : "dictating-label"}`}
-              style={{ visibility: modeKnown ? "visible" : "hidden" }}
-            >
-              {isQuickPressMode
-                ? t("overlay.refined", "Refined")
-                : t("overlay.raw", "Raw")}
-            </div>
-            <div className="bars-container">
-              {levels.map((v, i) => (
-                <div
-                  key={i}
-                  className="bar"
-                  style={{
-                    height: `${Math.min(14, 3 + Math.pow(v, 0.7) * 11)}px`,
-                    transition: "height 60ms ease-out, opacity 120ms ease-out",
-                    opacity: Math.max(0.3, v * 1.5),
-                  }}
-                />
-              ))}
-            </div>
-          </div>
-        )}
-        {isPaused && (
-          <div className="stacked-content">
-            <div className="mode-label paused-label">
-              {t("overlay.paused", "Paused")}
-            </div>
-            <div className="bars-container paused-bars">
-              {levels.map((_, i) => (
-                <div key={i} className="bar paused-bar" />
-              ))}
-            </div>
-          </div>
-        )}
-        {(state === "transcribing" || state === "ramble_transcribing") && (
-          <div className="transcribing-text">{t("overlay.transcribing")}</div>
-        )}
-        {state === "making_coherent" && (
-          <div className="stacked-content">
-            <div className="mode-label refining-label">
-              {t("overlay.refining", "Refining")}
-            </div>
-            <div className="refining-indicator">
-              <div className="refining-dot"></div>
-              <div className="refining-dot"></div>
-              <div className="refining-dot"></div>
-            </div>
-          </div>
-        )}
-        {state === "error" && (
-          <div
-            className="error-text text-red-400 text-xs truncate max-w-[120px]"
-            title={errorMessage}
-          >
-            {t("overlay.refinementFailed", "Refinement failed")}: {errorMessage}
-          </div>
-        )}
-      </div>
-
-      <div className="overlay-right">
-        {(isRecording || isPaused) && (
-          <>
-            <div
-              className="pause-button"
-              onClick={handlePauseResume}
-              style={{ visibility: showPauseButton ? "visible" : "hidden" }}
+              className={`vision-indicator ${hasScreenshot ? "has-vision" : ""}`}
+              style={{
+                opacity: isQuickPressMode ? 1 : 0.4,
+                cursor: "pointer",
+                pointerEvents: "auto",
+              }}
+              onClick={handleVisionCapture}
               title={
-                isPaused
-                  ? t("overlay.resume", "Resume")
-                  : t("overlay.pause", "Pause")
+                hasScreenshot
+                  ? t("overlay.visionCaptured", "Screenshot taken")
+                  : t("overlay.takeVision", "Click or Press S for screenshot")
               }
             >
-              {isPaused ? (
-                <PlayIcon width={16} height={16} color="#1e40af" />
-              ) : (
-                <PauseIcon width={16} height={16} color="#1e40af" />
-              )}
+              <Camera size={14} />
             </div>
+          )}
+        </div>
+
+        <div className="overlay-middle">
+          {(state === "recording" || state === "ramble_recording") && (
+            <div className="stacked-content">
+              <div
+                className={`mode-label ${isQuickPressMode ? "refining-label" : "dictating-label"}`}
+                style={{ visibility: modeKnown ? "visible" : "hidden" }}
+              >
+                {isQuickPressMode
+                  ? t("overlay.refined", "Refined")
+                  : t("overlay.raw", "Raw")}
+              </div>
+              <div className="bars-container">
+                {levels.map((v, i) => (
+                  <div
+                    key={i}
+                    className="bar"
+                    style={{
+                      height: `${Math.min(14, 3 + Math.pow(v, 0.7) * 11)}px`,
+                      transition:
+                        "height 60ms ease-out, opacity 120ms ease-out",
+                      opacity: Math.max(0.3, v * 1.5),
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+          {isPaused && (
+            <div className="stacked-content">
+              <div className="mode-label paused-label">
+                {t("overlay.paused", "Paused")}
+              </div>
+              <div className="bars-container paused-bars">
+                {levels.map((_, i) => (
+                  <div key={i} className="bar paused-bar" />
+                ))}
+              </div>
+            </div>
+          )}
+          {(state === "transcribing" || state === "ramble_transcribing") && (
+            <div className="transcribing-text">{t("overlay.transcribing")}</div>
+          )}
+          {state === "making_coherent" && (
+            <div className="stacked-content">
+              <div className="mode-label refining-label">
+                {t("overlay.refining", "Refining")}
+              </div>
+              <div className="refining-indicator">
+                <div className="refining-dot"></div>
+                <div className="refining-dot"></div>
+                <div className="refining-dot"></div>
+              </div>
+            </div>
+          )}
+          {state === "error" && (
+            <div
+              className="error-text text-red-400 text-xs truncate max-w-[120px]"
+              title={errorMessage}
+            >
+              {t("overlay.refinementFailed", "Refinement failed")}:{" "}
+              {errorMessage}
+            </div>
+          )}
+        </div>
+
+        <div className="overlay-right">
+          {(isRecording || isPaused) && (
+            <>
+              <div
+                className="pause-button"
+                onClick={handlePauseResume}
+                style={{ visibility: showPauseButton ? "visible" : "hidden" }}
+                title={
+                  isPaused
+                    ? t("overlay.resume", "Resume")
+                    : t("overlay.pause", "Pause")
+                }
+              >
+                {isPaused ? (
+                  <PlayIcon width={16} height={16} color="#1e40af" />
+                ) : (
+                  <PauseIcon width={16} height={16} color="#1e40af" />
+                )}
+              </div>
+              <div
+                className="cancel-button"
+                onClick={() => {
+                  commands.cancelOperation();
+                }}
+              >
+                <CancelIcon color="#1e40af" />
+              </div>
+            </>
+          )}
+          {state === "error" && (
             <div
               className="cancel-button"
-              onClick={() => {
-                commands.cancelOperation();
-              }}
+              onClick={handleDismissError}
+              title={t("overlay.dismissError", "Dismiss")}
             >
-              <CancelIcon color="#1e40af" />
+              <X className="w-4 h-4" />
             </div>
-          </>
-        )}
-        {state === "error" && (
-          <div
-            className="cancel-button"
-            onClick={handleDismissError}
-            title={t("overlay.dismissError", "Dismiss")}
-          >
-            <X className="w-4 h-4" />
-          </div>
-        )}
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
 };
 

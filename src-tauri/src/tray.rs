@@ -1,7 +1,7 @@
-use crate::settings;
+use crate::settings::{self, PromptMode};
 use crate::tray_i18n::get_tray_translations;
 use tauri::image::Image;
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIcon;
 use tauri::{AppHandle, Manager, Theme};
 
@@ -75,6 +75,21 @@ pub fn change_tray_icon(app: &AppHandle, icon: TrayIconState) {
     update_tray_menu(app, &icon, None);
 }
 
+/// Set the prompt mode and update the tray menu
+pub fn set_prompt_mode(app: &AppHandle, mode: PromptMode) {
+    use tauri::Emitter;
+
+    let mut settings = settings::get_settings(app);
+    settings.prompt_mode = mode;
+    settings::write_settings(app, settings);
+
+    // Emit event for overlay/frontend to update
+    let _ = app.emit("prompt-mode-changed", mode);
+
+    // Refresh the tray menu to update checkmarks
+    update_tray_menu(app, &TrayIconState::Idle, None);
+}
+
 pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&str>) {
     let settings = settings::get_settings(app);
 
@@ -115,6 +130,67 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
         .expect("failed to create quit item");
     let separator = || PredefinedMenuItem::separator(app).expect("failed to create separator");
 
+    // Create prompt mode submenu items with checkmarks
+    let current_mode = settings.prompt_mode;
+
+    let mode_dynamic = CheckMenuItem::with_id(
+        app,
+        "mode_dynamic",
+        format!("{} {}", PromptMode::Dynamic.icon(), &strings.dynamic),
+        true,
+        current_mode == PromptMode::Dynamic,
+        None::<&str>,
+    )
+    .expect("failed to create dynamic mode item");
+
+    let mode_development = CheckMenuItem::with_id(
+        app,
+        "mode_development",
+        format!(
+            "{} {}",
+            PromptMode::Development.icon(),
+            &strings.development
+        ),
+        true,
+        current_mode == PromptMode::Development,
+        None::<&str>,
+    )
+    .expect("failed to create development mode item");
+
+    let mode_conversation = CheckMenuItem::with_id(
+        app,
+        "mode_conversation",
+        format!(
+            "{} {}",
+            PromptMode::Conversation.icon(),
+            &strings.conversation
+        ),
+        true,
+        current_mode == PromptMode::Conversation,
+        None::<&str>,
+    )
+    .expect("failed to create conversation mode item");
+
+    let mode_writing = CheckMenuItem::with_id(
+        app,
+        "mode_writing",
+        format!("{} {}", PromptMode::Writing.icon(), &strings.writing),
+        true,
+        current_mode == PromptMode::Writing,
+        None::<&str>,
+    )
+    .expect("failed to create writing mode item");
+
+    let mode_email = CheckMenuItem::with_id(
+        app,
+        "mode_email",
+        format!("{} {}", PromptMode::Email.icon(), &strings.email),
+        true,
+        current_mode == PromptMode::Email,
+        None::<&str>,
+    )
+    .expect("failed to create email mode item");
+
     let menu = match state {
         TrayIconState::Recording | TrayIconState::Transcribing => {
             let cancel_i = MenuItem::with_id(app, "cancel", &strings.cancel, true, None::<&str>)
@@ -125,6 +201,12 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
                     &version_i,
                     &separator(),
                     &cancel_i,
+                    &separator(),
+                    &mode_dynamic,
+                    &mode_development,
+                    &mode_conversation,
+                    &mode_writing,
+                    &mode_email,
                     &separator(),
                     &settings_i,
                     &check_updates_i,
@@ -138,6 +220,12 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
             app,
             &[
                 &version_i,
+                &separator(),
+                &mode_dynamic,
+                &mode_development,
+                &mode_conversation,
+                &mode_writing,
+                &mode_email,
                 &separator(),
                 &settings_i,
                 &check_updates_i,

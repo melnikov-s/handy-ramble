@@ -1,4 +1,5 @@
 mod actions;
+mod app_detection;
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 mod apple_intelligence;
 mod audio_feedback;
@@ -7,6 +8,7 @@ mod clipboard;
 mod commands;
 mod helpers;
 mod input;
+mod known_apps;
 mod llm_client;
 #[cfg(target_os = "macos")]
 mod macos_modifier_key;
@@ -194,6 +196,22 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             }
             "quit" => {
                 app.exit(0);
+            }
+            // Prompt mode selections
+            "mode_dynamic" => {
+                tray::set_prompt_mode(app, settings::PromptMode::Dynamic);
+            }
+            "mode_development" => {
+                tray::set_prompt_mode(app, settings::PromptMode::Development);
+            }
+            "mode_conversation" => {
+                tray::set_prompt_mode(app, settings::PromptMode::Conversation);
+            }
+            "mode_writing" => {
+                tray::set_prompt_mode(app, settings::PromptMode::Writing);
+            }
+            "mode_email" => {
+                tray::set_prompt_mode(app, settings::PromptMode::Email);
             }
             _ => {}
         })
