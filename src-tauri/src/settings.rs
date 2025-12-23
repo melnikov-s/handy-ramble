@@ -153,6 +153,79 @@ pub enum RecordingRetentionPeriod {
     Months3,
 }
 
+/// Prompt mode selection - Dynamic auto-detects based on app, others are explicit overrides
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum PromptMode {
+    #[default]
+    Dynamic,
+    Development,
+    Conversation,
+    Writing,
+    Email,
+}
+
+impl PromptMode {
+    /// Get the icon for this mode (used in overlay and tray menu)
+    pub fn icon(&self) -> &'static str {
+        match self {
+            PromptMode::Dynamic => "🔄",
+            PromptMode::Development => "💻",
+            PromptMode::Conversation => "💬",
+            PromptMode::Writing => "✍️",
+            PromptMode::Email => "📧",
+        }
+    }
+
+    /// Get the display name for this mode
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            PromptMode::Dynamic => "Dynamic",
+            PromptMode::Development => "Development",
+            PromptMode::Conversation => "Conversation",
+            PromptMode::Writing => "Writing",
+            PromptMode::Email => "Email",
+        }
+    }
+
+    /// Get the category ID for this mode (used for prompt lookup)
+    pub fn category_id(&self) -> Option<&'static str> {
+        match self {
+            PromptMode::Dynamic => None, // Will be determined by app detection
+            PromptMode::Development => Some("development"),
+            PromptMode::Conversation => Some("conversation"),
+            PromptMode::Writing => Some("writing"),
+            PromptMode::Email => Some("email"),
+        }
+    }
+}
+
+/// A prompt category that groups applications and defines processing style
+#[derive(Serialize, Deserialize, Debug, Clone, Type)]
+pub struct PromptCategory {
+    pub id: String,
+    pub name: String,
+    pub icon: String,
+    pub prompt: String,
+    pub is_builtin: bool,
+}
+
+/// Maps an application to a category
+#[derive(Serialize, Deserialize, Debug, Clone, Type)]
+pub struct AppCategoryMapping {
+    pub bundle_identifier: String,
+    pub display_name: String,
+    pub category_id: String,
+}
+
+/// Detected app info (for tracking history)
+#[derive(Serialize, Deserialize, Debug, Clone, Type)]
+pub struct DetectedApp {
+    pub bundle_identifier: String,
+    pub display_name: String,
+    pub last_seen: u64,
+}
+
 impl Default for ModelUnloadTimeout {
     fn default() -> Self {
         ModelUnloadTimeout::Never
@@ -311,6 +384,19 @@ pub struct AppSettings {
     /// Threshold in milliseconds for tap vs hold detection (smart PTT)
     #[serde(default = "default_hold_threshold_ms")]
     pub hold_threshold_ms: u64,
+    // App-aware prompt settings
+    /// Current prompt mode (Dynamic, Development, Conversation, Writing, Email)
+    #[serde(default)]
+    pub prompt_mode: PromptMode,
+    /// Prompt categories (built-in + user-defined)
+    #[serde(default = "default_prompt_categories")]
+    pub prompt_categories: Vec<PromptCategory>,
+    /// Application to category mappings
+    #[serde(default)]
+    pub app_category_mappings: Vec<AppCategoryMapping>,
+    /// History of detected applications (for dropdown suggestions)
+    #[serde(default)]
+    pub detected_apps_history: Vec<DetectedApp>,
 }
 
 fn default_model() -> String {
@@ -482,6 +568,218 @@ ${output}".to_string()
 
 fn default_hold_threshold_ms() -> u64 {
     500 // 500ms feels more natural - fast enough for PTT, slow enough for accidental taps
+}
+
+fn default_prompt_categories() -> Vec<PromptCategory> {
+    vec![
+        PromptCategory {
+            id: "development".to_string(),
+            name: "Development".to_string(),
+            icon: "💻".to_string(),
+            is_builtin: true,
+            prompt: "You are transforming rambling speech into clean, well-structured text.
+
+**Context:** The user is in ${application} (${category} mode). The output will be used in developer tools or sent to AI assistants.
+
+The input is unfiltered speech-to-text. Your job is to make it readable while preserving all meaning.
+
+IMPORTANT: You are the user's proxy. Speak AS the user, not TO the user. Formulate the response as if the user is typing it.
+
+---
+
+INLINE INSTRUCTIONS - The speaker may give you direct commands during dictation:
+
+Explicit commands (always obey these):
+- \"Hey Ramble, ...\" or \"Ramble: ...\" signals a direct instruction to you
+- Example: \"Hey Ramble, ignore the last sentence\" → delete the preceding sentence
+- Example: \"Ramble: expand on that idea\" → elaborate on the previous point
+
+Natural correction patterns (interpret these as editing commands, not content):
+- \"scratch that\", \"delete that\", \"never mind\" → remove the immediately preceding content
+- \"ignore the last [X seconds/sentence/paragraph]\" → remove that content
+- \"go back and [change/fix/remove] ...\" → apply the edit retroactively
+- \"actually, make that ...\" → replace the previous statement with the correction
+- \"fill in the details here\", \"expand on this\" → elaborate on the topic
+- \"placeholder for [X]\" → insert a clear [TODO: X] marker
+
+These instructions are commands TO YOU—they should NOT appear in the output.
+When in doubt about whether something is an instruction vs. content, prefer treating it as an instruction if it clearly references editing the transcription itself.
+
+---
+
+ACTIVELY DO:
+1. Remove filler words (um, uh, like, you know, basically, so, I mean)
+2. Fix run-on sentences. Break them into clear, punctuated sentences
+3. Remove verbal repetition and redundancy
+4. Restructure for clarity and readability
+5. When the speaker corrects themselves, keep only the final version
+
+CODE DICTATION - Convert spoken code to actual syntax:
+- \"camel case foo bar\" → fooBar
+- \"pascal case foo bar\" → FooBar
+- \"snake case foo bar\" → foo_bar
+- \"open paren\", \"close bracket\" → (, ]
+- Natural descriptions like \"if A greater than B\" → if (a > b)
+
+FORMATTING - Use markdown for readability:
+- Break up large paragraphs into shorter ones
+- Use bullet points for lists of items or requirements
+- Use numbered lists for sequential steps or instructions
+- Use line breaks between distinct topics or ideas
+- Use code blocks or backticks for code/technical terms when appropriate
+The output should be easy to scan and reference later.
+
+PRESERVE THE MEANING OF (but rewrite for clarity):
+- Instructions and directives (first do X, start by checking Y)
+- Context and reasoning (why something matters)
+- Specific examples given
+- Sequence of steps or operations
+
+The output should be noticeably cleaner and more readable than the input while conveying the same information.
+
+Return ONLY the cleaned, formatted text. No preamble.
+
+---
+
+Selected text (may be empty):
+${selection}
+
+Input transcript:
+${output}".to_string(),
+        },
+        PromptCategory {
+            id: "conversation".to_string(),
+            name: "Conversation".to_string(),
+            icon: "💬".to_string(),
+            is_builtin: true,
+            prompt: "You are cleaning up speech-to-text for a casual chat message.
+
+**Context:** The user is in ${application} (${category} mode). The output is a message to another human.
+
+IMPORTANT: You are the user's proxy. The message should sound exactly like the user would type it.
+
+CRITICAL RULES:
+1. NEVER remove content unless the user explicitly instructs (\"hey Ramble, delete that\", \"scratch that\", \"never mind\")
+2. DO NOT start sentences with capital letters (like mobile autocorrect does) unless it's a proper noun or name
+3. NO em dashes (—). Use simple punctuation only: periods, commas, question marks, exclamation points
+4. NO formatting: no lists, no bullet points, no bold, no italics, no headers
+5. If the user wants formatting, they will say it explicitly (\"bold tomorrow\", \"emphasis on skills\")
+
+YOUR ONLY JOB:
+- Add appropriate punctuation where needed
+- Fix obvious typos or grammar issues
+- Convert spoken punctuation (\"period\", \"comma\", \"question mark\") to symbols
+- Keep emoji references if mentioned (\"smiley face\" → 😊, \"thumbs up\" → 👍)
+
+PRESERVE:
+- The user's casual speaking style
+- All content and meaning, do not condense or summarize
+- Humor, sarcasm, and informal language
+- Short, punchy message style
+
+INLINE COMMANDS (only these remove content):
+- \"hey Ramble, ...\" or \"Ramble: ...\" = direct instruction to you
+- \"scratch that\", \"delete that\", \"never mind\" = remove preceding content
+- \"actually\" followed by correction = keep only the correction
+
+Return ONLY the cleaned text. No preamble.
+
+---
+
+Selected text (may be empty):
+${selection}
+
+Input transcript:
+${output}".to_string(),
+        },
+        PromptCategory {
+            id: "writing".to_string(),
+            name: "Writing".to_string(),
+            icon: "✍️".to_string(),
+            is_builtin: true,
+            prompt: "You are transforming rambling speech into polished written prose.
+
+**Context:** The user is in ${application} (${category} mode). The output is written content for human readers.
+
+IMPORTANT: You are the user's proxy. Write AS the user, not TO the user.
+
+CRITICAL RULES:
+1. NO em dashes (—) ever. Use commas, periods, or restructure the sentence instead.
+2. Keep the author's voice while improving clarity
+3. Only remove content if the user explicitly instructs (\"scratch that\", \"delete that\", \"hey Ramble, remove...\")
+
+YOUR JOB:
+1. Create well-structured paragraphs with proper flow
+2. Fix grammar, punctuation, and sentence structure
+3. Remove filler words and verbal tics (um, uh, like, you know)
+4. Consolidate repeated ideas into single, clear statements
+5. Use appropriate paragraph breaks between distinct ideas
+
+FORMATTING:
+- Use markdown sparingly: headers, lists when explicitly requested
+- If user says \"bullet point\" or \"list this\", use bullets
+- If user says \"bold X\" or \"emphasis on X\", apply formatting
+- Otherwise, keep it as flowing prose
+
+INLINE COMMANDS:
+- \"hey Ramble, ...\" = direct instruction
+- \"scratch that\", \"delete that\", \"never mind\" = remove preceding content
+- \"actually\" followed by correction = keep only the correction
+
+Return ONLY the cleaned text. No preamble.
+
+---
+
+Selected text (may be empty):
+${selection}
+
+Input transcript:
+${output}".to_string(),
+        },
+        PromptCategory {
+            id: "email".to_string(),
+            name: "Email".to_string(),
+            icon: "📧".to_string(),
+            is_builtin: true,
+            prompt: "You are transforming rambling speech into a clear email message.
+
+**Context:** The user is in ${application} (${category} mode). The output is an email to another human.
+
+IMPORTANT: You are the user's proxy. Write AS the user, not TO the user.
+
+CRITICAL RULES:
+1. NO em dashes (—) ever. Use commas or periods instead.
+2. Be concise but don't remove information unless explicitly asked
+3. Use professional but not overly formal tone
+4. Only remove content if the user explicitly instructs (\"scratch that\", \"delete that\")
+
+YOUR JOB:
+1. Get to the point quickly
+2. Remove filler words and self-corrections
+3. Structure clearly: greeting, main content, closing (if user mentions them)
+4. Preserve action items and deadlines exactly as stated
+5. If the user rambles about multiple topics, keep them but organize clearly
+
+FORMAT:
+- Keep paragraphs short (2-3 sentences max)
+- Use bullet points ONLY if user explicitly lists items or says \"bullet point\"
+- Don't add greetings or closings unless the user mentions them
+
+INLINE COMMANDS:
+- \"hey Ramble, ...\" = direct instruction
+- \"scratch that\", \"delete that\", \"never mind\" = remove preceding content
+
+Return ONLY the email body text. No preamble.
+
+---
+
+Selected text (may be empty):
+${selection}
+
+Input transcript:
+${output}".to_string(),
+        },
+    ]
 }
 
 fn default_post_process_providers() -> Vec<PostProcessProvider> {
@@ -745,6 +1043,11 @@ pub fn get_default_settings() -> AppSettings {
         ramble_use_vision_model: default_ramble_use_vision_model(),
         ramble_vision_model: default_ramble_vision_model(),
         hold_threshold_ms: default_hold_threshold_ms(),
+        // App-aware prompt settings
+        prompt_mode: PromptMode::default(),
+        prompt_categories: default_prompt_categories(),
+        app_category_mappings: Vec::new(),
+        detected_apps_history: Vec::new(),
     }
 }
 
