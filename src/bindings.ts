@@ -705,6 +705,46 @@ async isLaptop() : Promise<Result<boolean, string>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Get the list of known applications with suggested categories
+ */
+async getKnownApplications() : Promise<KnownApp[]> {
+    return await TAURI_INVOKE("get_known_applications");
+},
+/**
+ * Get the list of installed applications on the system
+ */
+async getInstalledApplications() : Promise<InstalledApp[]> {
+    return await TAURI_INVOKE("get_installed_applications");
+},
+/**
+ * Get current user-defined app-to-category mappings
+ */
+async getAppCategoryMappings() : Promise<AppCategoryMapping[]> {
+    return await TAURI_INVOKE("get_app_category_mappings");
+},
+/**
+ * Set or update an app-to-category mapping
+ */
+async setAppCategoryMapping(bundleId: string, displayName: string, categoryId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_app_category_mapping", { bundleId, displayName, categoryId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Remove an app-to-category mapping
+ */
+async removeAppCategoryMapping(bundleId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("remove_app_category_mapping", { bundleId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -753,6 +793,14 @@ export type CustomSounds = { start: boolean; stop: boolean }
 export type DetectedApp = { bundle_identifier: string; display_name: string; last_seen: number }
 export type EngineType = "Whisper" | "Parakeet"
 export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null }
+/**
+ * Information about an installed application (from JSON)
+ */
+export type InstalledApp = { bundle_id: string; name: string }
+/**
+ * A known application with suggested category
+ */
+export type KnownApp = { bundle_id: string; name: string; suggested_category: string }
 export type LLMPrompt = { id: string; name: string; prompt: string }
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
 export type ModelInfo = { id: string; name: string; description: string; filename: string; url: string | null; size_mb: number; is_downloaded: boolean; is_downloading: boolean; partial_size: number; is_directory: boolean; engine_type: EngineType; accuracy_score: number; speed_score: number }

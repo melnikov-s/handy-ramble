@@ -397,6 +397,9 @@ pub struct AppSettings {
     /// History of detected applications (for dropdown suggestions)
     #[serde(default)]
     pub detected_apps_history: Vec<DetectedApp>,
+    /// Default category for apps not in known_apps or user mappings
+    #[serde(default = "default_category_id")]
+    pub default_category_id: String,
 }
 
 fn default_model() -> String {
@@ -568,6 +571,10 @@ ${output}".to_string()
 
 fn default_hold_threshold_ms() -> u64 {
     500 // 500ms feels more natural - fast enough for PTT, slow enough for accidental taps
+}
+
+fn default_category_id() -> String {
+    "development".to_string()
 }
 
 fn default_prompt_categories() -> Vec<PromptCategory> {
@@ -1048,6 +1055,7 @@ pub fn get_default_settings() -> AppSettings {
         prompt_categories: default_prompt_categories(),
         app_category_mappings: Vec::new(),
         detected_apps_history: Vec::new(),
+        default_category_id: default_category_id(),
     }
 }
 

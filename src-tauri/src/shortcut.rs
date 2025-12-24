@@ -896,6 +896,21 @@ pub fn reset_prompt_category_to_default(app: AppHandle, id: String) -> Result<St
     }
 }
 
+#[tauri::command]
+#[specta::specta]
+pub fn change_default_category_setting(app: AppHandle, category_id: String) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    
+    // Verify the category exists
+    if !settings.prompt_categories.iter().any(|c| c.id == category_id) {
+        return Err(format!("Category with id '{}' not found", category_id));
+    }
+    
+    settings.default_category_id = category_id;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
 /// Determine whether a shortcut string contains at least one non-modifier key.
 /// We allow single non-modifier keys (e.g. "f5" or "space") but disallow
 /// modifier-only combos (e.g. "ctrl" or "ctrl+shift").

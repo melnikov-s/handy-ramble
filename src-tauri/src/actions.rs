@@ -4,7 +4,10 @@ use crate::audio_feedback::{play_feedback_sound, play_feedback_sound_blocking, S
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::history::HistoryManager;
 use crate::managers::transcription::TranscriptionManager;
-use crate::settings::{get_settings, AppSettings, PromptMode, APPLE_INTELLIGENCE_PROVIDER_ID};
+use crate::settings::{
+    get_settings, write_settings, AppSettings, DetectedApp, PromptMode,
+    APPLE_INTELLIGENCE_PROVIDER_ID,
+};
 use crate::tray::{change_tray_icon, TrayIconState};
 use crate::utils::{
     self, is_operation_paused, resume_current_operation, show_making_coherent_overlay,
@@ -60,6 +63,44 @@ fn extract_llm_error(error: &dyn std::error::Error, model: &str) -> String {
     } else {
         format!("API error: {}", error_str)
     }
+}
+
+/// Record a detected app in the history for UI suggestions
+fn record_detected_app(app: &AppHandle, bundle_id: &str, display_name: &str) {
+    let mut settings = get_settings(app);
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+
+    // Check if app already exists in history
+    if let Some(existing) = settings
+        .detected_apps_history
+        .iter_mut()
+        .find(|a| a.bundle_identifier == bundle_id)
+    {
+        // Update last seen timestamp
+        existing.last_seen = now;
+        existing.display_name = display_name.to_string();
+    } else {
+        // Add new app to history
+        settings.detected_apps_history.push(DetectedApp {
+            bundle_identifier: bundle_id.to_string(),
+            display_name: display_name.to_string(),
+            last_seen: now,
+        });
+    }
+
+    // Limit history size to 100 most recent apps
+    if settings.detected_apps_history.len() > 100 {
+        settings
+            .detected_apps_history
+            .sort_by(|a, b| b.last_seen.cmp(&a.last_seen));
+        settings.detected_apps_history.truncate(100);
+    }
+
+    write_settings(app, settings);
+    debug!("Recorded detected app: {} ({})", display_name, bundle_id);
 }
 
 async fn maybe_post_process_transcription(
@@ -661,7 +702,12 @@ async fn process_ramble_to_coherent(
                 .map(|info| (info.bundle_identifier, info.display_name))
                 .unwrap_or_else(|| ("".to_string(), "Unknown".to_string()));
 
-            // Look up category: user mappings first, then known_apps, then default to development
+            // Record this app in detected_apps_history for UI suggestions
+            if !bundle_id.is_empty() {
+                record_detected_app(app, &bundle_id, &name);
+            }
+
+            // Look up category: user mappings first, then known_apps, then default category
             let cat_id = settings
                 .app_category_mappings
                 .iter()
@@ -670,7 +716,7 @@ async fn process_ramble_to_coherent(
                 .or_else(|| {
                     known_apps::find_known_app(&bundle_id).map(|k| k.suggested_category.clone())
                 })
-                .unwrap_or_else(|| "development".to_string());
+                .unwrap_or_else(|| settings.default_category_id.clone());
 
             debug!(
                 "Dynamic mode: detected app '{}' ({}), using category '{}'",
@@ -684,19 +730,23 @@ async fn process_ramble_to_coherent(
         PromptMode::Email => ("email".to_string(), "Unknown".to_string()),
     };
 
-    // Find the prompt for this category, falling back to ramble_prompt
+    // Find the prompt for this category, falling back to default category's prompt
     let prompt = settings
         .prompt_categories
         .iter()
         .find(|c| c.id == category_id)
-        .map(|c| c.prompt.clone())
-        .unwrap_or_else(|| {
+        .or_else(|| {
             debug!(
-                "Category '{}' not found in prompt_categories, using ramble_prompt",
-                category_id
+                "Category '{}' not found, falling back to default category '{}'",
+                category_id, settings.default_category_id
             );
-            settings.ramble_prompt.clone()
-        });
+            settings
+                .prompt_categories
+                .iter()
+                .find(|c| c.id == settings.default_category_id)
+        })
+        .map(|c| c.prompt.clone())
+        .unwrap_or_default();
 
     if prompt.trim().is_empty() {
         let msg = "Prompt is empty".to_string();
