@@ -1,6 +1,7 @@
 use crate::input;
 use crate::settings;
-use crate::settings::OverlayPosition;
+use crate::settings::{OverlayPosition, PromptMode};
+use crate::{app_detection, known_apps};
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize};
 
 #[cfg(not(target_os = "macos"))]
@@ -413,5 +414,37 @@ pub fn log_to_frontend(app_handle: &AppHandle, level: &str, message: &str) {
 pub fn emit_mode_determined(app_handle: &AppHandle, mode: &str) {
     if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
         let _ = overlay_window.emit("mode-determined", mode);
+
+        // When entering "refining" mode, also detect and emit the category
+        // so the overlay can show the correct icon
+        if mode == "refining" {
+            let settings = settings::get_settings(app_handle);
+            let category_id = match settings.prompt_mode {
+                PromptMode::Dynamic => {
+                    // Detect frontmost app and look up category
+                    let app_info = app_detection::get_frontmost_application();
+                    let bundle_id = app_info
+                        .map(|info| info.bundle_identifier)
+                        .unwrap_or_default();
+
+                    // Look up category: user mappings first, then known_apps, then default
+                    settings
+                        .app_category_mappings
+                        .iter()
+                        .find(|m| m.bundle_identifier == bundle_id)
+                        .map(|m| m.category_id.clone())
+                        .or_else(|| {
+                            known_apps::find_known_app(&bundle_id)
+                                .map(|k| k.suggested_category.clone())
+                        })
+                        .unwrap_or_else(|| "development".to_string())
+                }
+                PromptMode::Development => "development".to_string(),
+                PromptMode::Conversation => "conversation".to_string(),
+                PromptMode::Writing => "writing".to_string(),
+                PromptMode::Email => "email".to_string(),
+            };
+            let _ = overlay_window.emit("category-detected", &category_id);
+        }
     }
 }

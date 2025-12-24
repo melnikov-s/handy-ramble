@@ -4,12 +4,13 @@ use crate::audio_feedback::{play_feedback_sound, play_feedback_sound_blocking, S
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::history::HistoryManager;
 use crate::managers::transcription::TranscriptionManager;
-use crate::settings::{get_settings, AppSettings, APPLE_INTELLIGENCE_PROVIDER_ID};
+use crate::settings::{get_settings, AppSettings, PromptMode, APPLE_INTELLIGENCE_PROVIDER_ID};
 use crate::tray::{change_tray_icon, TrayIconState};
 use crate::utils::{
     self, is_operation_paused, resume_current_operation, show_making_coherent_overlay,
     show_recording_overlay, show_transcribing_overlay,
 };
+use crate::{app_detection, known_apps};
 use async_openai::types::{
     ChatCompletionRequestMessage, ChatCompletionRequestMessageContentPartImageArgs,
     ChatCompletionRequestMessageContentPartTextArgs, ChatCompletionRequestSystemMessageArgs,
@@ -650,7 +651,53 @@ async fn process_ramble_to_coherent(
     // Log the model being used to the frontend
     utils::log_to_frontend(app, "info", &format!("Using model: {}", model));
 
-    let prompt = &settings.ramble_prompt;
+    // === Application-aware prompt category selection ===
+    // Determine which category to use based on prompt mode and frontmost app
+    let (category_id, app_name) = match settings.prompt_mode {
+        PromptMode::Dynamic => {
+            // Detect frontmost app
+            let app_info = app_detection::get_frontmost_application();
+            let (bundle_id, name) = app_info
+                .map(|info| (info.bundle_identifier, info.display_name))
+                .unwrap_or_else(|| ("".to_string(), "Unknown".to_string()));
+
+            // Look up category: user mappings first, then known_apps, then default to development
+            let cat_id = settings
+                .app_category_mappings
+                .iter()
+                .find(|m| m.bundle_identifier == bundle_id)
+                .map(|m| m.category_id.clone())
+                .or_else(|| {
+                    known_apps::find_known_app(&bundle_id).map(|k| k.suggested_category.clone())
+                })
+                .unwrap_or_else(|| "development".to_string());
+
+            debug!(
+                "Dynamic mode: detected app '{}' ({}), using category '{}'",
+                name, bundle_id, cat_id
+            );
+            (cat_id, name)
+        }
+        PromptMode::Development => ("development".to_string(), "Unknown".to_string()),
+        PromptMode::Conversation => ("conversation".to_string(), "Unknown".to_string()),
+        PromptMode::Writing => ("writing".to_string(), "Unknown".to_string()),
+        PromptMode::Email => ("email".to_string(), "Unknown".to_string()),
+    };
+
+    // Find the prompt for this category, falling back to ramble_prompt
+    let prompt = settings
+        .prompt_categories
+        .iter()
+        .find(|c| c.id == category_id)
+        .map(|c| c.prompt.clone())
+        .unwrap_or_else(|| {
+            debug!(
+                "Category '{}' not found in prompt_categories, using ramble_prompt",
+                category_id
+            );
+            settings.ramble_prompt.clone()
+        });
+
     if prompt.trim().is_empty() {
         let msg = "Prompt is empty".to_string();
         utils::log_to_frontend(app, "error", &msg);
@@ -658,26 +705,40 @@ async fn process_ramble_to_coherent(
     }
 
     info!(
-        "Starting Ramble to Coherent with provider '{}' (model: {})",
-        provider.id, model
+        "Starting Ramble to Coherent with provider '{}' (model: {}), category: '{}', app: '{}'",
+        provider.id, model, category_id, app_name
     );
+    utils::log_to_frontend(app, "info", &format!("Using {} mode", category_id));
 
-    // Replace ${output} variable in the prompt with the actual text
-    // Replace ${selection} variable with selected text if available
+    // Emit event to update overlay icon with the detected category
+    let _ = app.emit("category-detected", &category_id);
+
+    // Replace variables in the prompt
+    // ${application} - The detected app name
+    // ${category} - The category name
+    // ${selection} - Selected text captured before recording
+    // ${output} - The transcribed speech
     let processed_prompt = if let Some(selection) = selection_context {
         if prompt.contains("${selection}") {
             // User has explicitly included ${selection} in their prompt
             prompt
+                .replace("${application}", &app_name)
+                .replace("${category}", &category_id)
                 .replace("${output}", transcription)
                 .replace("${selection}", &selection)
         } else {
             // User hasn't included ${selection}, so we ignore it to respect "not combined" requested by user unless explicit.
             warn!("Selection context available but ${{selection}} variable missing in prompt. Ignoring selection.");
-            prompt.replace("${output}", transcription)
+            prompt
+                .replace("${application}", &app_name)
+                .replace("${category}", &category_id)
+                .replace("${output}", transcription)
         }
     } else {
         // No selection context, just clear the variable if it exists
         prompt
+            .replace("${application}", &app_name)
+            .replace("${category}", &category_id)
             .replace("${output}", transcription)
             .replace("${selection}", "")
     };

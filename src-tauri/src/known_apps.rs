@@ -288,7 +288,7 @@ pub fn get_known_applications() -> Vec<KnownApp> {
         KnownApp {
             bundle_id: "com.google.Chrome".to_string(),
             name: "Google Chrome".to_string(),
-            suggested_category: "development".to_string(),
+            suggested_category: "writing".to_string(),
         },
         KnownApp {
             bundle_id: "com.apple.Safari".to_string(),

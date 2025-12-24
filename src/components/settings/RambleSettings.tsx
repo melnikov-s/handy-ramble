@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { RefreshCcw, RotateCcw } from "lucide-react";
-import { commands } from "@/bindings";
+import { RefreshCcw, RotateCcw, ChevronDown, ChevronRight } from "lucide-react";
+import { commands, PromptMode, PromptCategory } from "@/bindings";
 
 import { SettingsGroup } from "../ui/SettingsGroup";
 import { SettingContainer } from "../ui/SettingContainer";
@@ -18,6 +18,10 @@ export const RambleSettings: React.FC = () => {
   const { settings, refreshSettings } = useSettings();
 
   const [prompt, setPrompt] = useState("");
+  const [categoryPrompts, setCategoryPrompts] = useState<
+    Record<string, string>
+  >({});
+  const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
 
   // Default Gemini models for pre-population
   const defaultGeminiModels = [
@@ -59,6 +63,16 @@ export const RambleSettings: React.FC = () => {
       setPrompt(settingsPrompt);
     }
   }, [(settings as any)?.ramble_prompt]);
+
+  // Sync category prompts from settings
+  useEffect(() => {
+    const categories = settings?.prompt_categories ?? [];
+    const prompts: Record<string, string> = {};
+    categories.forEach((cat: PromptCategory) => {
+      prompts[cat.id] = cat.prompt;
+    });
+    setCategoryPrompts(prompts);
+  }, [settings?.prompt_categories]);
 
   const handleProviderChange = async (newProviderId: string | null) => {
     if (!newProviderId) return;
@@ -138,6 +152,53 @@ export const RambleSettings: React.FC = () => {
       }
     } catch (error) {
       console.error("Failed to reset ramble prompt:", error);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handlePromptModeChange = async (mode: PromptMode) => {
+    try {
+      await commands.changePromptModeSetting(mode);
+      await refreshSettings();
+    } catch (error) {
+      console.error("Failed to change prompt mode:", error);
+    }
+  };
+
+  const handleCategoryPromptChange = (
+    categoryId: string,
+    newPrompt: string,
+  ) => {
+    setCategoryPrompts((prev) => ({ ...prev, [categoryId]: newPrompt }));
+  };
+
+  const handleCategoryPromptBlur = async (categoryId: string) => {
+    const originalPrompt = settings?.prompt_categories?.find(
+      (c: PromptCategory) => c.id === categoryId,
+    )?.prompt;
+    const currentPrompt = categoryPrompts[categoryId];
+
+    if (currentPrompt && currentPrompt.trim() !== originalPrompt?.trim()) {
+      try {
+        await commands.updatePromptCategory(categoryId, currentPrompt);
+        await refreshSettings();
+      } catch (error) {
+        console.error("Failed to update category prompt:", error);
+      }
+    }
+  };
+
+  const handleResetCategoryPrompt = async (categoryId: string) => {
+    setIsUpdating(true);
+    try {
+      const result = await commands.resetPromptCategoryToDefault(categoryId);
+      if (result.status === "ok") {
+        setCategoryPrompts((prev) => ({ ...prev, [categoryId]: result.data }));
+        await refreshSettings();
+      }
+    } catch (error) {
+      console.error("Failed to reset category prompt:", error);
     } finally {
       setIsUpdating(false);
     }
@@ -335,16 +396,125 @@ export const RambleSettings: React.FC = () => {
       </SettingsGroup>
 
       <SettingsGroup
-        title={t("settings.ramble.prompt.title", "Cleanup Prompt")}
+        title={t("settings.ramble.categories.title", "Context-Aware Prompts")}
+      >
+        <div className="px-4 py-3 text-sm text-mid-gray">
+          <p>
+            {t(
+              "settings.ramble.categories.description",
+              "Different prompts are used based on your current application. Dynamic mode auto-detects the app; other modes apply the selected prompt regardless of the active app.",
+            )}
+          </p>
+        </div>
+
+        <SettingContainer
+          title={t("settings.ramble.mode.title", "Prompt Mode")}
+          description={t(
+            "settings.ramble.mode.description",
+            "Choose how prompts are selected. Dynamic auto-detects the frontmost app.",
+          )}
+          descriptionMode="tooltip"
+          layout="horizontal"
+          grouped={true}
+        >
+          <select
+            value={settings?.prompt_mode ?? "dynamic"}
+            onChange={(e) =>
+              handlePromptModeChange(e.target.value as PromptMode)
+            }
+            className="px-3 py-2 bg-background border border-mid-gray/30 rounded-lg text-sm focus:outline-none focus:border-logo-primary"
+          >
+            <option value="dynamic">
+              🔄 {t("settings.ramble.mode.dynamic", "Dynamic")}
+            </option>
+            <option value="development">
+              💻 {t("settings.ramble.mode.development", "Development")}
+            </option>
+            <option value="conversation">
+              💬 {t("settings.ramble.mode.conversation", "Conversation")}
+            </option>
+            <option value="writing">
+              ✍️ {t("settings.ramble.mode.writing", "Writing")}
+            </option>
+            <option value="email">
+              📧 {t("settings.ramble.mode.email", "Email")}
+            </option>
+          </select>
+        </SettingContainer>
+
+        {(settings?.prompt_categories ?? []).map((category: PromptCategory) => (
+          <div key={category.id} className="border-t border-mid-gray/10">
+            <button
+              onClick={() =>
+                setExpandedCategory(
+                  expandedCategory === category.id ? null : category.id,
+                )
+              }
+              className="w-full px-4 py-3 flex items-center justify-between hover:bg-mid-gray/5 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-lg">{category.icon}</span>
+                <span className="font-medium">{category.name}</span>
+                {category.is_builtin && (
+                  <span className="text-xs text-mid-gray bg-mid-gray/10 px-1.5 py-0.5 rounded">
+                    {t("settings.ramble.categories.builtin", "Built-in")}
+                  </span>
+                )}
+              </div>
+              {expandedCategory === category.id ? (
+                <ChevronDown className="h-4 w-4 text-mid-gray" />
+              ) : (
+                <ChevronRight className="h-4 w-4 text-mid-gray" />
+              )}
+            </button>
+
+            {expandedCategory === category.id && (
+              <div className="px-4 pb-4 space-y-2">
+                <textarea
+                  value={categoryPrompts[category.id] ?? ""}
+                  onChange={(e) =>
+                    handleCategoryPromptChange(category.id, e.target.value)
+                  }
+                  onBlur={() => handleCategoryPromptBlur(category.id)}
+                  placeholder={t(
+                    "settings.ramble.categories.promptPlaceholder",
+                    "Enter prompt instructions...",
+                  )}
+                  className="w-full min-h-[200px] p-3 bg-background border border-mid-gray/30 rounded-lg text-sm focus:outline-none focus:border-logo-primary resize-y font-mono"
+                />
+                <div className="flex items-center justify-between text-xs text-mid-gray">
+                  <span>
+                    {t(
+                      "settings.ramble.categories.variables",
+                      "Variables: ${output}, ${selection}, ${application}, ${category}",
+                    )}
+                  </span>
+                  <button
+                    onClick={() => handleResetCategoryPrompt(category.id)}
+                    disabled={isUpdating}
+                    className="flex items-center gap-1 px-2 py-1 bg-mid-gray/10 hover:bg-mid-gray/20 rounded transition-colors disabled:opacity-50"
+                  >
+                    <RotateCcw className="h-3 w-3" />
+                    {t("settings.ramble.categories.reset", "Reset")}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </SettingsGroup>
+
+      <SettingsGroup
+        title={t("settings.ramble.prompt.title", "Fallback Prompt")}
       >
         <SettingContainer
           title={t(
             "settings.ramble.prompt.instructions.title",
-            "Prompt Instructions",
+            "Default Prompt",
           )}
           description={t(
             "settings.ramble.prompt.instructions.description",
-            "Instructions for how the AI should clean up your speech. Use ${output} to reference the transcribed text.",
+            "Used when no category-specific prompt matches. This is also the prompt used for unknown applications in Dynamic mode.",
           )}
           descriptionMode="tooltip"
           layout="stacked"
