@@ -8,10 +8,12 @@ mod clipboard;
 mod commands;
 mod helpers;
 mod input;
+#[cfg(target_os = "macos")]
+mod key_listener;
 mod known_apps;
 mod llm_client;
 #[cfg(target_os = "macos")]
-mod macos_modifier_key;
+mod macos_input;
 mod managers;
 mod overlay;
 mod settings;
@@ -138,9 +140,9 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     app_handle.manage(transcription_manager.clone());
     app_handle.manage(history_manager.clone());
 
-    // Initialize the macOS modifier key listener (for standalone Option key bindings)
+    // Initialize the unified key listener (for standalone modifier key bindings on macOS)
     #[cfg(target_os = "macos")]
-    macos_modifier_key::init_modifier_listener(app_handle);
+    key_listener::init(app_handle);
 
     // Initialize the shortcuts
     shortcut::init_shortcuts(app_handle);

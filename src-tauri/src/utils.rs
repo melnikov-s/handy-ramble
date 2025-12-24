@@ -24,9 +24,9 @@ pub fn cancel_current_operation(app: &AppHandle) {
         warn!("Failed to lock toggle state manager during cancellation");
     }
 
-    // Force reset low-level modifier states to avoid "double press" issues
+    // Force reset state machine to avoid stuck states
     #[cfg(target_os = "macos")]
-    crate::macos_modifier_key::force_reset_pressed_state();
+    crate::key_listener::force_reset_state();
 
     // Cancel any ongoing recording
     let audio_manager = app.state::<Arc<AudioRecordingManager>>();

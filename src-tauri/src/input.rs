@@ -25,28 +25,35 @@ pub fn get_cursor_position(app_handle: &AppHandle) -> Option<(i32, i32)> {
 /// Sends a Ctrl+V or Cmd+V paste command using platform-specific virtual key codes.
 /// This ensures the paste works regardless of keyboard layout (e.g., Russian, AZERTY, DVORAK).
 /// Note: On Wayland, this may not work - callers should check for Wayland and use alternative methods.
+#[allow(unused_variables)]
 pub fn send_paste_ctrl_v(enigo: &mut Enigo) -> Result<(), String> {
-    // Platform-specific key definitions
+    // On macOS, use native CGEventPost to avoid interference with rdev
     #[cfg(target_os = "macos")]
-    let (modifier_key, v_key_code) = (Key::Meta, Key::Other(9));
+    {
+        return crate::macos_input::send_paste_cmd_v();
+    }
+
     #[cfg(target_os = "windows")]
     let (modifier_key, v_key_code) = (Key::Control, Key::Other(0x56)); // VK_V
     #[cfg(target_os = "linux")]
     let (modifier_key, v_key_code) = (Key::Control, Key::Unicode('v'));
 
-    // Press modifier + V
-    enigo
-        .key(modifier_key, enigo::Direction::Press)
-        .map_err(|e| format!("Failed to press modifier key: {}", e))?;
-    enigo
-        .key(v_key_code, enigo::Direction::Click)
-        .map_err(|e| format!("Failed to click V key: {}", e))?;
+    #[cfg(not(target_os = "macos"))]
+    {
+        // Press modifier + V
+        enigo
+            .key(modifier_key, enigo::Direction::Press)
+            .map_err(|e| format!("Failed to press modifier key: {}", e))?;
+        enigo
+            .key(v_key_code, enigo::Direction::Click)
+            .map_err(|e| format!("Failed to click V key: {}", e))?;
 
-    std::thread::sleep(std::time::Duration::from_millis(100));
+        std::thread::sleep(std::time::Duration::from_millis(100));
 
-    enigo
-        .key(modifier_key, enigo::Direction::Release)
-        .map_err(|e| format!("Failed to release modifier key: {}", e))?;
+        enigo
+            .key(modifier_key, enigo::Direction::Release)
+            .map_err(|e| format!("Failed to release modifier key: {}", e))?;
+    }
 
     Ok(())
 }
@@ -114,21 +121,10 @@ pub fn send_paste_shift_insert(enigo: &mut Enigo) -> Result<(), String> {
 
 /// Sends a Cmd+C copy command (macOS).
 #[cfg(target_os = "macos")]
+#[allow(unused_variables)]
 pub fn send_copy_cmd_c(enigo: &mut Enigo) -> Result<(), String> {
-    enigo
-        .key(Key::Meta, enigo::Direction::Press)
-        .map_err(|e| format!("Failed to press Cmd key: {}", e))?;
-    enigo
-        .key(Key::Unicode('c'), enigo::Direction::Click)
-        .map_err(|e| format!("Failed to click C key: {}", e))?;
-
-    std::thread::sleep(std::time::Duration::from_millis(50));
-
-    enigo
-        .key(Key::Meta, enigo::Direction::Release)
-        .map_err(|e| format!("Failed to release Cmd key: {}", e))?;
-
-    Ok(())
+    // Use native CGEventPost to avoid interference with rdev
+    crate::macos_input::send_copy_cmd_c()
 }
 
 /// Sends a Ctrl+C copy command (Windows/Linux).
