@@ -359,7 +359,10 @@ impl AudioRecordingManager {
 
             debug!(
                 "[AUDIO] try_start_recording (attempt {}/{}) called for binding '{}', current state: {:?}",
-                attempt + 1, max_retries, binding_id, *state
+                attempt + 1,
+                max_retries,
+                binding_id,
+                *state
             );
 
             if let RecordingState::Idle = *state {
