@@ -842,6 +842,60 @@ pub fn change_hold_threshold_setting(app: AppHandle, threshold_ms: u64) -> Resul
     Ok(())
 }
 
+// Prompt mode and category commands
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_prompt_mode_setting(
+    app: AppHandle,
+    mode: settings::PromptMode,
+) -> Result<(), String> {
+    tray::set_prompt_mode(&app, mode);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn update_prompt_category(
+    app: AppHandle,
+    id: String,
+    prompt: String,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+
+    if let Some(category) = settings.prompt_categories.iter_mut().find(|c| c.id == id) {
+        category.prompt = prompt;
+        settings::write_settings(&app, settings);
+        Ok(())
+    } else {
+        Err(format!("Category with id '{}' not found", id))
+    }
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn reset_prompt_category_to_default(app: AppHandle, id: String) -> Result<String, String> {
+    let mut settings = settings::get_settings(&app);
+    let defaults = settings::get_default_settings();
+
+    // Find the default prompt for this category
+    let default_prompt = defaults
+        .prompt_categories
+        .iter()
+        .find(|c| c.id == id)
+        .map(|c| c.prompt.clone())
+        .ok_or_else(|| format!("Default prompt for category '{}' not found", id))?;
+
+    // Update the current settings
+    if let Some(category) = settings.prompt_categories.iter_mut().find(|c| c.id == id) {
+        category.prompt = default_prompt.clone();
+        settings::write_settings(&app, settings);
+        Ok(default_prompt)
+    } else {
+        Err(format!("Category with id '{}' not found", id))
+    }
+}
+
 /// Determine whether a shortcut string contains at least one non-modifier key.
 /// We allow single non-modifier keys (e.g. "f5" or "space") but disallow
 /// modifier-only combos (e.g. "ctrl" or "ctrl+shift").

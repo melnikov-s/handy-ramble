@@ -37,9 +37,17 @@ interface ErrorPayload {
   message: string;
 }
 
-// Icons for prompt modes (emoji for most, Sparkles component for dynamic)
+// Icons for prompt modes (emoji for most, null for dynamic which shows detected category)
 const PROMPT_MODE_ICONS: Record<PromptMode, string | null> = {
-  dynamic: null, // Uses Sparkles component instead
+  dynamic: null, // Uses detected category icon or ear icon
+  development: "💻",
+  conversation: "💬",
+  writing: "✍️",
+  email: "📧",
+};
+
+// Icons for category IDs (used in Dynamic mode to show detected category)
+const CATEGORY_ICONS: Record<string, string> = {
   development: "💻",
   conversation: "💬",
   writing: "✍️",
@@ -60,6 +68,8 @@ const RecordingOverlay: React.FC = () => {
   const [hasScreenshot, setHasScreenshot] = useState(false);
   // Prompt mode state (from tray menu selection)
   const [promptMode, setPromptMode] = useState<PromptMode>("dynamic");
+  // Detected category in Dynamic mode (from backend when refinement starts)
+  const [detectedCategory, setDetectedCategory] = useState<string | null>(null);
 
   // Track pending optimistic flashes to prevent duplicates from backend events
   const pendingOptimisticFlashesRef = useRef(0);
@@ -114,6 +124,7 @@ const RecordingOverlay: React.FC = () => {
           setModeKnown(false);
           setIsQuickPressMode(false);
           setHasScreenshot(false);
+          setDetectedCategory(null);
           pendingOptimisticFlashesRef.current = 0;
         } else if (
           overlayState === "transcribing" ||
@@ -131,6 +142,12 @@ const RecordingOverlay: React.FC = () => {
         setPromptMode(event.payload);
       });
 
+      // Listen for detected category in Dynamic mode
+      await register<string>("category-detected", (event) => {
+        console.log("[UI] category-detected received:", event.payload);
+        setDetectedCategory(event.payload);
+      });
+
       // Listen for error overlay event from Rust
       await register<ErrorPayload>("show-overlay-error", async (event) => {
         await syncLanguageFromSettings();
@@ -146,6 +163,7 @@ const RecordingOverlay: React.FC = () => {
         setModeKnown(false);
         setIsQuickPressMode(false);
         setHasScreenshot(false);
+        setDetectedCategory(null);
         pendingOptimisticFlashesRef.current = 0;
       });
 
@@ -245,11 +263,6 @@ const RecordingOverlay: React.FC = () => {
     }
   };
 
-  const handleOpenContextDialog = () => {
-    // Open the context dialog in a separate window (pauses recording automatically)
-    commands.showContextDialog();
-  };
-
   const isPaused = state === "paused" || state === "ramble_paused";
   const isRecording = state === "recording" || state === "ramble_recording";
   // Show pause button only when: mode is known AND in quick press mode (refining), OR already paused
@@ -272,38 +285,45 @@ const RecordingOverlay: React.FC = () => {
     ((modeKnown && isQuickPressMode) || hasScreenshot);
 
   const getIcon = () => {
+    // Helper to get category icon
+    const getCategoryIcon = () => {
+      // For explicit modes, use the mode's icon
+      if (promptMode !== "dynamic") {
+        return (
+          <span className="prompt-mode-icon-main">
+            {PROMPT_MODE_ICONS[promptMode]}
+          </span>
+        );
+      }
+      // For Dynamic mode, show detected category icon if available
+      if (detectedCategory && CATEGORY_ICONS[detectedCategory]) {
+        return (
+          <span className="prompt-mode-icon-main">
+            {CATEGORY_ICONS[detectedCategory]}
+          </span>
+        );
+      }
+      // Fallback to microphone icon
+      return <MicrophoneIcon color="#1e40af" />;
+    };
+
     if (state === "recording" || state === "ramble_recording") {
-      // In Refined mode, show prompt mode icon; Dynamic uses ear icon, others use emoji
+      // In Refined mode, show category icon
       if (modeKnown && isQuickPressMode) {
-        if (promptMode === "dynamic") {
-          return <MicrophoneIcon color="#1e40af" />;
-        } else {
-          return (
-            <span className="prompt-mode-icon-main">
-              {PROMPT_MODE_ICONS[promptMode]}
-            </span>
-          );
-        }
+        return getCategoryIcon();
       }
       return <MicrophoneIcon color="#1e40af" />;
     } else if (state === "making_coherent") {
-      return <Sparkles size={16} style={{ color: "#1e40af" }} />;
+      // While refining, show the detected category icon
+      return getCategoryIcon();
     } else if (state === "ramble_transcribing" || state === "transcribing") {
       return <TranscriptionIcon color="#1e40af" />;
     } else if (state === "error") {
       return <AlertCircle size={16} style={{ color: "#ff6b6b" }} />;
     } else if (state === "paused" || state === "ramble_paused") {
-      // In Refined paused mode, show prompt mode icon; Dynamic uses ear icon
+      // In Refined paused mode, show category icon
       if (isQuickPressMode) {
-        if (promptMode === "dynamic") {
-          return <MicrophoneIcon color="#1e40af" />;
-        } else {
-          return (
-            <span className="prompt-mode-icon-main">
-              {PROMPT_MODE_ICONS[promptMode]}
-            </span>
-          );
-        }
+        return getCategoryIcon();
       }
       return <MicrophoneIcon color="#1e40af" />;
     } else {
