@@ -12,12 +12,12 @@ import { ApiKeyField } from "./PostProcessingSettingsApi/ApiKeyField";
 import { ModelSelect } from "./PostProcessingSettingsApi/ModelSelect";
 import { useSettings } from "../../hooks/useSettings";
 import { ToggleSwitch } from "../ui/ToggleSwitch";
+import { AppMappingsSettings } from "./AppMappingsSettings";
 
 export const RambleSettings: React.FC = () => {
   const { t } = useTranslation();
   const { settings, refreshSettings } = useSettings();
 
-  const [prompt, setPrompt] = useState("");
   const [categoryPrompts, setCategoryPrompts] = useState<
     Record<string, string>
   >({});
@@ -55,14 +55,6 @@ export const RambleSettings: React.FC = () => {
 
   const selectedProvider = providers.find((p) => p.id === providerId);
   const apiKey = apiKeys[providerId] || "";
-
-  // Sync prompt from settings
-  useEffect(() => {
-    const settingsPrompt = (settings as any)?.ramble_prompt;
-    if (settingsPrompt) {
-      setPrompt(settingsPrompt);
-    }
-  }, [(settings as any)?.ramble_prompt]);
 
   // Sync category prompts from settings
   useEffect(() => {
@@ -125,33 +117,6 @@ export const RambleSettings: React.FC = () => {
       await refreshSettings();
     } catch (error) {
       console.error("Failed to change vision model:", error);
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-
-  const handlePromptBlur = async () => {
-    const currentPrompt = (settings as any)?.ramble_prompt ?? "";
-    if (prompt.trim() !== currentPrompt.trim()) {
-      try {
-        await commands.changeRamblePromptSetting(prompt);
-        await refreshSettings();
-      } catch (error) {
-        console.error("Failed to update ramble prompt:", error);
-      }
-    }
-  };
-
-  const handleResetPrompt = async () => {
-    setIsUpdating(true);
-    try {
-      const result = await commands.resetRamblePromptToDefault();
-      if (result.status === "ok") {
-        setPrompt(result.data);
-        await refreshSettings();
-      }
-    } catch (error) {
-      console.error("Failed to reset ramble prompt:", error);
     } finally {
       setIsUpdating(false);
     }
@@ -504,44 +469,8 @@ export const RambleSettings: React.FC = () => {
         ))}
       </SettingsGroup>
 
-      <SettingsGroup
-        title={t("settings.ramble.prompt.title", "Fallback Prompt")}
-      >
-        <SettingContainer
-          title={t(
-            "settings.ramble.prompt.instructions.title",
-            "Default Prompt",
-          )}
-          description={t(
-            "settings.ramble.prompt.instructions.description",
-            "Used when no category-specific prompt matches. This is also the prompt used for unknown applications in Dynamic mode.",
-          )}
-          descriptionMode="tooltip"
-          layout="stacked"
-          grouped={true}
-        >
-          <div className="space-y-2">
-            <textarea
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              onBlur={handlePromptBlur}
-              placeholder={t(
-                "settings.ramble.prompt.placeholder",
-                "Enter cleanup instructions...",
-              )}
-              className="w-full min-h-[200px] p-3 bg-background border border-mid-gray/30 rounded-lg text-sm focus:outline-none focus:border-logo-primary resize-y"
-            />
-            <button
-              onClick={handleResetPrompt}
-              disabled={isUpdating}
-              className="flex items-center gap-2 px-3 py-1.5 text-sm bg-mid-gray/10 hover:bg-mid-gray/20 rounded-lg transition-colors disabled:opacity-50"
-            >
-              <RotateCcw className="h-4 w-4" />
-              {t("settings.ramble.prompt.reset", "Restore Default Prompt")}
-            </button>
-          </div>
-        </SettingContainer>
-      </SettingsGroup>
+      {/* App Mappings Section (only visible when Dynamic mode is selected) */}
+      {settings?.prompt_mode === "dynamic" && <AppMappingsSettings />}
     </div>
   );
 };

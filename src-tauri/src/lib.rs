@@ -302,6 +302,7 @@ pub fn run() {
         shortcut::change_prompt_mode_setting,
         shortcut::update_prompt_category,
         shortcut::reset_prompt_category_to_default,
+        shortcut::change_default_category_setting,
         trigger_update_check,
         commands::cancel_operation,
         commands::pause_operation,
@@ -350,6 +351,12 @@ pub fn run() {
         commands::history::update_history_limit,
         commands::history::update_recording_retention_period,
         helpers::clamshell::is_laptop,
+        // App-to-prompt category mapping commands
+        commands::get_known_applications,
+        commands::get_installed_applications,
+        commands::get_app_category_mappings,
+        commands::set_app_category_mapping,
+        commands::remove_app_category_mapping,
     ]);
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds

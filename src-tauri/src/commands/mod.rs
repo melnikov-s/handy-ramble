@@ -153,3 +153,73 @@ pub fn trigger_vision_capture(app: AppHandle) {
         action.start(&app, "vision_capture", "");
     }
 }
+
+// === App-to-Prompt Category Mapping Commands ===
+
+/// Get the list of known applications with suggested categories
+#[tauri::command]
+#[specta::specta]
+pub fn get_known_applications() -> Vec<crate::known_apps::KnownApp> {
+    crate::known_apps::get_known_applications()
+}
+
+/// Get the list of installed applications on the system
+#[tauri::command]
+#[specta::specta]
+pub fn get_installed_applications() -> Vec<crate::app_detection::InstalledApp> {
+    crate::app_detection::get_installed_applications()
+}
+
+/// Get current user-defined app-to-category mappings
+#[tauri::command]
+#[specta::specta]
+pub fn get_app_category_mappings(app: AppHandle) -> Vec<crate::settings::AppCategoryMapping> {
+    let settings = get_settings(&app);
+    settings.app_category_mappings
+}
+
+/// Set or update an app-to-category mapping
+#[tauri::command]
+#[specta::specta]
+pub fn set_app_category_mapping(
+    app: AppHandle,
+    bundle_id: String,
+    display_name: String,
+    category_id: String,
+) -> Result<(), String> {
+    let mut settings = get_settings(&app);
+
+    // Check if mapping already exists for this bundle_id
+    if let Some(existing) = settings
+        .app_category_mappings
+        .iter_mut()
+        .find(|m| m.bundle_identifier == bundle_id)
+    {
+        existing.category_id = category_id;
+        existing.display_name = display_name;
+    } else {
+        // Add new mapping
+        settings
+            .app_category_mappings
+            .push(crate::settings::AppCategoryMapping {
+                bundle_identifier: bundle_id,
+                display_name,
+                category_id,
+            });
+    }
+
+    write_settings(&app, settings);
+    Ok(())
+}
+
+/// Remove an app-to-category mapping
+#[tauri::command]
+#[specta::specta]
+pub fn remove_app_category_mapping(app: AppHandle, bundle_id: String) -> Result<(), String> {
+    let mut settings = get_settings(&app);
+    settings
+        .app_category_mappings
+        .retain(|m| m.bundle_identifier != bundle_id);
+    write_settings(&app, settings);
+    Ok(())
+}
