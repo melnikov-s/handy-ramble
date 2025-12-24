@@ -362,14 +362,6 @@ const RecordingOverlay: React.FC = () => {
         <div className="overlay-middle">
           {(state === "recording" || state === "ramble_recording") && (
             <div className="stacked-content">
-              <div
-                className={`mode-label ${isQuickPressMode ? "refining-label" : "dictating-label"}`}
-                style={{ visibility: modeKnown ? "visible" : "hidden" }}
-              >
-                {isQuickPressMode
-                  ? t("overlay.refined", "Refined")
-                  : t("overlay.raw", "Raw")}
-              </div>
               <div className="bars-container">
                 {levels.map((v, i) => (
                   <div
