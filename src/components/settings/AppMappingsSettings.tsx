@@ -19,8 +19,8 @@ interface AppOption {
   suggestedCategory?: string;
 }
 
-// Category IDs must match the backend
-const CATEGORIES = [
+// Fallback categories in case settings haven't loaded yet
+const DEFAULT_CATEGORIES = [
   { id: "development", name: "Development", icon: "💻" },
   { id: "conversation", name: "Conversation", icon: "💬" },
   { id: "writing", name: "Writing", icon: "✍️" },
@@ -36,7 +36,7 @@ export const AppMappingsSettings: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedApp, setSelectedApp] = useState<AppOption | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState(CATEGORIES[0].id);
+  const [selectedCategory, setSelectedCategory] = useState("development");
   const [isAdding, setIsAdding] = useState(false);
 
   // Get current mappings from settings
@@ -188,10 +188,17 @@ export const AppMappingsSettings: React.FC = () => {
   });
 
   const getCategoryInfo = (categoryId: string) => {
-    const builtin = CATEGORIES.find((c) => c.id === categoryId);
+    // Check dynamic categories from settings first
+    const fromSettings = promptCategories.find((c) => c.id === categoryId);
+    if (fromSettings)
+      return {
+        id: fromSettings.id,
+        name: fromSettings.name,
+        icon: fromSettings.icon,
+      };
+    // Fallback to defaults
+    const builtin = DEFAULT_CATEGORIES.find((c) => c.id === categoryId);
     if (builtin) return builtin;
-    const custom = promptCategories.find((c) => c.id === categoryId);
-    if (custom) return { id: custom.id, name: custom.name, icon: custom.icon };
     return { id: categoryId, name: categoryId, icon: "📝" };
   };
 
@@ -245,7 +252,10 @@ export const AppMappingsSettings: React.FC = () => {
                 onChange={(e) => handleDefaultCategoryChange(e.target.value)}
                 className="px-3 py-1.5 bg-background border border-mid-gray/30 rounded-lg text-sm focus:outline-none focus:border-logo-primary"
               >
-                {CATEGORIES.map((cat) => (
+                {(promptCategories.length > 0
+                  ? promptCategories
+                  : DEFAULT_CATEGORIES
+                ).map((cat) => (
                   <option key={cat.id} value={cat.id}>
                     {cat.icon} {cat.name}
                   </option>
@@ -288,7 +298,10 @@ export const AppMappingsSettings: React.FC = () => {
                           }
                           className="text-sm px-2 py-1 bg-background border border-mid-gray/30 rounded focus:outline-none focus:border-logo-primary"
                         >
-                          {CATEGORIES.map((cat) => (
+                          {(promptCategories.length > 0
+                            ? promptCategories
+                            : DEFAULT_CATEGORIES
+                          ).map((cat) => (
                             <option key={cat.id} value={cat.id}>
                               {cat.icon} {cat.name}
                             </option>
@@ -375,7 +388,10 @@ export const AppMappingsSettings: React.FC = () => {
                 onChange={(e) => setSelectedCategory(e.target.value)}
                 className="px-3 py-2 bg-background border border-mid-gray/30 rounded-lg text-sm focus:outline-none focus:border-logo-primary"
               >
-                {CATEGORIES.map((cat) => (
+                {(promptCategories.length > 0
+                  ? promptCategories
+                  : DEFAULT_CATEGORIES
+                ).map((cat) => (
                   <option key={cat.id} value={cat.id}>
                     {cat.icon} {cat.name}
                   </option>

@@ -23,6 +23,7 @@ mod tray;
 mod tray_i18n;
 mod utils;
 mod vision;
+mod voice_commands;
 use specta_typescript::{BigIntExportBehavior, Typescript};
 use tauri_specta::{collect_commands, Builder};
 
@@ -291,6 +292,7 @@ pub fn run() {
         shortcut::change_append_trailing_space_setting,
         shortcut::change_app_language_setting,
         shortcut::change_ramble_enabled_setting,
+        shortcut::change_llm_provider_setting,
         shortcut::change_ramble_provider_setting,
         shortcut::change_ramble_model_setting,
         shortcut::change_ramble_prompt_setting,
@@ -303,6 +305,15 @@ pub fn run() {
         shortcut::update_prompt_category,
         shortcut::reset_prompt_category_to_default,
         shortcut::change_default_category_setting,
+        shortcut::add_prompt_category,
+        shortcut::delete_prompt_category,
+        shortcut::update_prompt_category_details,
+        shortcut::change_voice_commands_enabled_setting,
+        shortcut::change_voice_command_default_model_setting,
+        shortcut::reset_voice_commands_to_default,
+        shortcut::add_voice_command,
+        shortcut::update_voice_command,
+        shortcut::delete_voice_command,
         trigger_update_check,
         commands::cancel_operation,
         commands::pause_operation,

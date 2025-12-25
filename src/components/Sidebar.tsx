@@ -7,6 +7,7 @@ import {
   Info,
   Sparkles,
   MessageSquare,
+  Terminal,
 } from "lucide-react";
 import RambleTextLogo from "./icons/RambleTextLogo";
 import RambleHand from "./icons/RambleHand";
@@ -19,6 +20,7 @@ import {
   AboutSettings,
   PostProcessingSettings,
   RambleSettings,
+  VoiceCommandSettings,
 } from "./settings";
 
 export type SidebarSection = keyof typeof SECTIONS_CONFIG;
@@ -49,6 +51,12 @@ export const SECTIONS_CONFIG = {
     labelKey: "sidebar.ramble",
     icon: MessageSquare,
     component: RambleSettings,
+    enabled: () => true,
+  },
+  voiceCommands: {
+    labelKey: "sidebar.voiceCommands",
+    icon: Terminal,
+    component: VoiceCommandSettings,
     enabled: () => true,
   },
   advanced: {

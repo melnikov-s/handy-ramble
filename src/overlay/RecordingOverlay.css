@@ -29,6 +29,24 @@
   background: linear-gradient(135deg, #001515aa 0%, #001f1faa 100%);
 }
 
+/* Voice command mode - purple theme */
+.recording-overlay.voice-command-mode {
+  background: linear-gradient(135deg, #1a0026cc 0%, #260033cc 100%);
+  border: 1px solid #a855f744;
+}
+
+.recording-overlay.voice-command-mode .bar {
+  background: #c084fc;
+}
+
+.recording-overlay.voice-command-mode .refining-dot {
+  background: #a855f7;
+}
+
+.recording-overlay.voice-command-mode .mode-label {
+  color: #a855f7;
+}
+
 .overlay-left {
   display: flex;
   align-items: center;

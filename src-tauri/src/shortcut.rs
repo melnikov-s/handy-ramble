@@ -787,6 +787,25 @@ pub fn change_ramble_provider_setting(app: AppHandle, provider_id: String) -> Re
     Ok(())
 }
 
+// Centralized LLM provider settings
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_llm_provider_setting(app: AppHandle, provider_id: String) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    // Validate provider exists
+    if !settings
+        .post_process_providers
+        .iter()
+        .any(|p| p.id == provider_id)
+    {
+        return Err(format!("Provider '{}' not found", provider_id));
+    }
+    settings.llm_provider_id = provider_id;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn change_ramble_model_setting(app: AppHandle, model: String) -> Result<(), String> {
@@ -910,6 +929,181 @@ pub fn change_default_category_setting(app: AppHandle, category_id: String) -> R
     settings::write_settings(&app, settings);
     Ok(())
 }
+
+/// Create a new custom prompt category
+#[tauri::command]
+#[specta::specta]
+pub fn add_prompt_category(
+    app: AppHandle,
+    name: String,
+    icon: String,
+    prompt: String,
+) -> Result<settings::PromptCategory, String> {
+    let mut settings = settings::get_settings(&app);
+    
+    // Generate unique ID from name
+    let base_id = name.to_lowercase().replace(' ', "_");
+    let mut id = base_id.clone();
+    let mut counter = 1;
+    
+    // Ensure unique ID
+    while settings.prompt_categories.iter().any(|c| c.id == id) {
+        id = format!("{}_{}", base_id, counter);
+        counter += 1;
+    }
+    
+    let new_category = settings::PromptCategory {
+        id: id.clone(),
+        name,
+        icon,
+        prompt,
+        is_builtin: false,
+    };
+    
+    settings.prompt_categories.push(new_category.clone());
+    settings::write_settings(&app, settings);
+    
+    Ok(new_category)
+}
+
+/// Delete a custom prompt category
+#[tauri::command]
+#[specta::specta]
+pub fn delete_prompt_category(app: AppHandle, id: String) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    
+    // Find the category
+    let category = settings.prompt_categories.iter().find(|c| c.id == id);
+    
+    match category {
+        None => return Err(format!("Category with id '{}' not found", id)),
+        Some(cat) if cat.is_builtin => {
+            return Err("Cannot delete built-in categories".to_string())
+        }
+        _ => {}
+    }
+    
+    // Check if this category is the default
+    if settings.default_category_id == id {
+        // Reset default to "development"
+        settings.default_category_id = "development".to_string();
+    }
+    
+    // Remove any app mappings that use this category
+    settings.app_category_mappings.retain(|m| m.category_id != id);
+    
+    // Remove the category
+    settings.prompt_categories.retain(|c| c.id != id);
+    settings::write_settings(&app, settings);
+    
+    Ok(())
+}
+
+/// Update a category's name and icon (not prompt - use update_prompt_category for that)
+#[tauri::command]
+#[specta::specta]
+pub fn update_prompt_category_details(
+    app: AppHandle,
+    id: String,
+    name: String,
+    icon: String,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    
+    if let Some(category) = settings.prompt_categories.iter_mut().find(|c| c.id == id) {
+        category.name = name;
+        category.icon = icon;
+        settings::write_settings(&app, settings);
+        Ok(())
+    } else {
+        Err(format!("Category with id '{}' not found", id))
+    }
+}
+
+
+// Voice command settings commands
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_voice_commands_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.voice_commands_enabled = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_voice_command_default_model_setting(
+    app: AppHandle,
+    model: String,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.voice_command_default_model = model;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn reset_voice_commands_to_default(app: AppHandle) -> Result<Vec<settings::VoiceCommand>, String> {
+    let mut settings = settings::get_settings(&app);
+    settings.voice_commands = settings::get_default_settings().voice_commands;
+    let commands = settings.voice_commands.clone();
+    settings::write_settings(&app, settings);
+    Ok(commands)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn add_voice_command(app: AppHandle, command: settings::VoiceCommand) -> Result<Vec<settings::VoiceCommand>, String> {
+    let mut settings = settings::get_settings(&app);
+    
+    // Check for duplicate ID
+    if settings.voice_commands.iter().any(|c| c.id == command.id) {
+        return Err(format!("Command with ID '{}' already exists", command.id));
+    }
+    
+    settings.voice_commands.push(command);
+    let commands = settings.voice_commands.clone();
+    settings::write_settings(&app, settings);
+    Ok(commands)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn update_voice_command(app: AppHandle, command: settings::VoiceCommand) -> Result<Vec<settings::VoiceCommand>, String> {
+    let mut settings = settings::get_settings(&app);
+    
+    // Find and update the command
+    if let Some(existing) = settings.voice_commands.iter_mut().find(|c| c.id == command.id) {
+        *existing = command;
+    } else {
+        return Err(format!("Command with ID '{}' not found", command.id));
+    }
+    
+    let commands = settings.voice_commands.clone();
+    settings::write_settings(&app, settings);
+    Ok(commands)
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn delete_voice_command(app: AppHandle, command_id: String) -> Result<Vec<settings::VoiceCommand>, String> {
+    let mut settings = settings::get_settings(&app);
+    
+    let original_len = settings.voice_commands.len();
+    settings.voice_commands.retain(|c| c.id != command_id);
+    
+    if settings.voice_commands.len() == original_len {
+        return Err(format!("Command with ID '{}' not found", command_id));
+    }
+    
+    let commands = settings.voice_commands.clone();
+    settings::write_settings(&app, settings);
+    Ok(commands)
+}
+
 
 /// Determine whether a shortcut string contains at least one non-modifier key.
 /// We allow single non-modifier keys (e.g. "f5" or "space") but disallow
