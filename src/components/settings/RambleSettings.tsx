@@ -1,14 +1,19 @@
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { RefreshCcw, RotateCcw, ChevronDown, ChevronRight } from "lucide-react";
+import {
+  RefreshCcw,
+  RotateCcw,
+  ChevronDown,
+  ChevronRight,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import { commands, PromptMode, PromptCategory } from "@/bindings";
 
 import { SettingsGroup } from "../ui/SettingsGroup";
 import { SettingContainer } from "../ui/SettingContainer";
 import { ResetButton } from "../ui/ResetButton";
 
-import { ProviderSelect } from "./PostProcessingSettingsApi/ProviderSelect";
-import { ApiKeyField } from "./PostProcessingSettingsApi/ApiKeyField";
 import { ModelSelect } from "./PostProcessingSettingsApi/ModelSelect";
 import { useSettings } from "../../hooks/useSettings";
 import { ToggleSwitch } from "../ui/ToggleSwitch";
@@ -22,6 +27,9 @@ export const RambleSettings: React.FC = () => {
     Record<string, string>
   >({});
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null);
+  const [isAddingCategory, setIsAddingCategory] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [newCategoryIcon, setNewCategoryIcon] = useState("📝");
 
   // Default Gemini models for pre-population
   const defaultGeminiModels = [
@@ -44,17 +52,15 @@ export const RambleSettings: React.FC = () => {
   const [isFetchingModels, setIsFetchingModels] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
 
-  // Access settings with type safety - these fields will exist after bindings regenerate
-  const providerId = (settings as any)?.ramble_provider_id ?? "gemini";
+  // Use centralized LLM provider
+  const providerId = (settings as any)?.llm_provider_id ?? "gemini";
   const model = (settings as any)?.ramble_model ?? "";
   const providers = settings?.post_process_providers ?? [];
-  const apiKeys = settings?.post_process_api_keys ?? {};
 
   const useVisionModel = (settings as any)?.ramble_use_vision_model ?? false;
   const visionModel = (settings as any)?.ramble_vision_model ?? "";
 
   const selectedProvider = providers.find((p) => p.id === providerId);
-  const apiKey = apiKeys[providerId] || "";
 
   // Sync category prompts from settings
   useEffect(() => {
@@ -65,29 +71,6 @@ export const RambleSettings: React.FC = () => {
     });
     setCategoryPrompts(prompts);
   }, [settings?.prompt_categories]);
-
-  const handleProviderChange = async (newProviderId: string | null) => {
-    if (!newProviderId) return;
-    setIsUpdating(true);
-    try {
-      await commands.changeRambleProviderSetting(newProviderId);
-      await refreshSettings();
-      setModelOptions([]);
-    } catch (error) {
-      console.error("Failed to change ramble provider:", error);
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-
-  const handleApiKeyChange = async (newApiKey: string) => {
-    try {
-      await commands.changePostProcessApiKeySetting(providerId, newApiKey);
-      await refreshSettings();
-    } catch (error) {
-      console.error("Failed to change API key:", error);
-    }
-  };
 
   const handleModelChange = async (newModel: string) => {
     setIsUpdating(true);
@@ -183,10 +166,45 @@ export const RambleSettings: React.FC = () => {
     }
   };
 
-  const providerOptions = providers.map((p) => ({
-    value: p.id,
-    label: p.label,
-  }));
+  const handleAddCategory = async () => {
+    if (!newCategoryName.trim()) return;
+
+    setIsUpdating(true);
+    try {
+      const result = await (commands as any).addPromptCategory(
+        newCategoryName,
+        newCategoryIcon || "📝",
+        "Enter your custom prompt here.\n\n---\n\nSelected text (may be empty):\n${selection}\n\nInput transcript:\n${output}",
+      );
+      if (result.status === "ok") {
+        await refreshSettings();
+        setIsAddingCategory(false);
+        setNewCategoryName("");
+        setNewCategoryIcon("📝");
+        // Expand the newly created category
+        setExpandedCategory(result.data.id);
+      }
+    } catch (error) {
+      console.error("Failed to add category:", error);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleDeleteCategory = async (categoryId: string) => {
+    setIsUpdating(true);
+    try {
+      await (commands as any).deletePromptCategory(categoryId);
+      await refreshSettings();
+      if (expandedCategory === categoryId) {
+        setExpandedCategory(null);
+      }
+    } catch (error) {
+      console.error("Failed to delete category:", error);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
 
   return (
     <div className="max-w-3xl w-full mx-auto space-y-6">
@@ -214,46 +232,7 @@ export const RambleSettings: React.FC = () => {
         </div>
       </SettingsGroup>
 
-      <SettingsGroup title={t("settings.ramble.llm.title", "AI Provider")}>
-        <SettingContainer
-          title={t("settings.ramble.provider.title", "Provider")}
-          description={t(
-            "settings.ramble.provider.description",
-            "Select the AI provider for text cleanup.",
-          )}
-          descriptionMode="tooltip"
-          layout="horizontal"
-          grouped={true}
-        >
-          <ProviderSelect
-            options={providerOptions}
-            value={providerId}
-            onChange={handleProviderChange}
-          />
-        </SettingContainer>
-
-        <SettingContainer
-          title={t("settings.ramble.apiKey.title", "API Key")}
-          description={t(
-            "settings.ramble.apiKey.description",
-            "Your API key for the selected provider.",
-          )}
-          descriptionMode="tooltip"
-          layout="horizontal"
-          grouped={true}
-        >
-          <ApiKeyField
-            value={apiKey}
-            onBlur={handleApiKeyChange}
-            placeholder={t(
-              "settings.ramble.apiKey.placeholder",
-              "Enter API key",
-            )}
-            disabled={false}
-            className="min-w-[320px]"
-          />
-        </SettingContainer>
-
+      <SettingsGroup title={t("settings.ramble.llm.title", "AI Model")}>
         <SettingContainer
           title={t("settings.ramble.model.title", "Model")}
           description={t(
@@ -454,19 +433,101 @@ export const RambleSettings: React.FC = () => {
                       "Variables: ${output}, ${selection}, ${application}, ${category}",
                     )}
                   </span>
-                  <button
-                    onClick={() => handleResetCategoryPrompt(category.id)}
-                    disabled={isUpdating}
-                    className="flex items-center gap-1 px-2 py-1 bg-mid-gray/10 hover:bg-mid-gray/20 rounded transition-colors disabled:opacity-50"
-                  >
-                    <RotateCcw className="h-3 w-3" />
-                    {t("settings.ramble.categories.reset", "Reset")}
-                  </button>
+                  <div className="flex items-center gap-2">
+                    {category.is_builtin && (
+                      <button
+                        onClick={() => handleResetCategoryPrompt(category.id)}
+                        disabled={isUpdating}
+                        className="flex items-center gap-1 px-2 py-1 bg-mid-gray/10 hover:bg-mid-gray/20 rounded transition-colors disabled:opacity-50"
+                      >
+                        <RotateCcw className="h-3 w-3" />
+                        {t("settings.ramble.categories.reset", "Reset")}
+                      </button>
+                    )}
+                    {!category.is_builtin && (
+                      <button
+                        onClick={() => handleDeleteCategory(category.id)}
+                        disabled={isUpdating}
+                        className="flex items-center gap-1 px-2 py-1 text-red-500 bg-red-500/10 hover:bg-red-500/20 rounded transition-colors disabled:opacity-50"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                        {t("settings.ramble.categories.delete", "Delete")}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
           </div>
         ))}
+
+        {/* Add New Category */}
+        <div className="border-t border-mid-gray/10 px-4 py-3">
+          {isAddingCategory ? (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={newCategoryIcon}
+                  onChange={(e) => setNewCategoryIcon(e.target.value)}
+                  placeholder="📝"
+                  className="w-12 px-2 py-2 text-center text-lg bg-background border border-mid-gray/30 rounded-lg focus:outline-none focus:border-logo-primary"
+                  title={t(
+                    "settings.ramble.categories.iconHint",
+                    "Use Cmd+Ctrl+Space for emoji picker",
+                  )}
+                />
+                <input
+                  type="text"
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  placeholder={t(
+                    "settings.ramble.categories.namePlaceholder",
+                    "Category name...",
+                  )}
+                  className="flex-1 px-3 py-2 bg-background border border-mid-gray/30 rounded-lg text-sm focus:outline-none focus:border-logo-primary"
+                  autoFocus
+                />
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-mid-gray">
+                  {t(
+                    "settings.ramble.categories.emojiHint",
+                    "Tip: Press Cmd+Ctrl+Space to open emoji picker",
+                  )}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setIsAddingCategory(false);
+                      setNewCategoryName("");
+                      setNewCategoryIcon("📝");
+                    }}
+                    className="px-3 py-1.5 text-sm text-mid-gray hover:text-foreground transition-colors"
+                  >
+                    {t("common.cancel", "Cancel")}
+                  </button>
+                  <button
+                    onClick={handleAddCategory}
+                    disabled={!newCategoryName.trim() || isUpdating}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-logo-primary text-white rounded-lg text-sm hover:bg-logo-primary/90 transition-colors disabled:opacity-50"
+                  >
+                    <Plus className="h-4 w-4" />
+                    {t("settings.ramble.categories.create", "Create")}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setIsAddingCategory(true)}
+              className="flex items-center gap-2 text-sm text-logo-primary hover:text-logo-primary/80 transition-colors"
+            >
+              <Plus className="h-4 w-4" />
+              {t("settings.ramble.categories.addNew", "Add Custom Category")}
+            </button>
+          )}
+        </div>
       </SettingsGroup>
 
       {/* App Mappings Section (only visible when Dynamic mode is selected) */}

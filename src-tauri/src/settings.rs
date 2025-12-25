@@ -226,6 +226,54 @@ pub struct DetectedApp {
     pub last_seen: u64,
 }
 
+/// Type of voice command
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum VoiceCommandType {
+    /// LLM determines how to execute the command
+    #[default]
+    Inferable,
+    /// User-defined script that runs exactly as specified
+    Bespoke,
+}
+
+/// Script type for bespoke commands
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ScriptType {
+    #[default]
+    Shell,
+    AppleScript,
+}
+
+/// A voice command definition
+#[derive(Serialize, Deserialize, Debug, Clone, Type)]
+pub struct VoiceCommand {
+    /// Unique identifier for the command
+    pub id: String,
+    /// Human-readable name
+    pub name: String,
+    /// Trigger phrases that activate this command
+    pub phrases: Vec<String>,
+    /// Type of command (inferable or bespoke)
+    pub command_type: VoiceCommandType,
+    /// Description for LLM (inferable commands)
+    #[serde(default)]
+    pub description: Option<String>,
+    /// Script type (bespoke commands)
+    #[serde(default)]
+    pub script_type: ScriptType,
+    /// Script content (bespoke commands)
+    #[serde(default)]
+    pub script: Option<String>,
+    /// Model override (uses default if None)
+    #[serde(default)]
+    pub model_override: Option<String>,
+    /// Whether this is a built-in command
+    #[serde(default)]
+    pub is_builtin: bool,
+}
+
 impl Default for ModelUnloadTimeout {
     fn default() -> Self {
         ModelUnloadTimeout::Never
@@ -344,6 +392,10 @@ pub struct AppSettings {
     pub history_limit: usize,
     #[serde(default = "default_recording_retention_period")]
     pub recording_retention_period: RecordingRetentionPeriod,
+    // Centralized LLM provider configuration
+    /// The currently active LLM provider for all AI features
+    #[serde(default = "default_llm_provider_id")]
+    pub llm_provider_id: String,
     #[serde(default)]
     pub paste_method: PasteMethod,
     #[serde(default)]
@@ -400,6 +452,16 @@ pub struct AppSettings {
     /// Default category for apps not in known_apps or user mappings
     #[serde(default = "default_category_id")]
     pub default_category_id: String,
+    // Voice command settings
+    /// Whether voice commands are enabled
+    #[serde(default)]
+    pub voice_commands_enabled: bool,
+    /// Default model for voice command execution
+    #[serde(default = "default_voice_command_model")]
+    pub voice_command_default_model: String,
+    /// User-defined voice commands
+    #[serde(default = "default_voice_commands")]
+    pub voice_commands: Vec<VoiceCommand>,
 }
 
 fn default_model() -> String {
@@ -475,6 +537,10 @@ fn default_app_language() -> String {
         .unwrap_or_else(|| "en".to_string())
 }
 
+fn default_llm_provider_id() -> String {
+    "gemini".to_string()
+}
+
 fn default_post_process_provider_id() -> String {
     "openai".to_string()
 }
@@ -504,7 +570,7 @@ fn default_ramble_prompt() -> String {
 
 The input is unfiltered speech-to-text. Your job is to make it readable while preserving all meaning.
 
-IMPORTANT: You are the user's proxy. Speak AS the user, not TO the user. Formulate the response as if the user is typing it.
+IMPORTANT: You are the user's proxy. Speak AS the user, not TO the user. Formulate the response as if the user is typing it. Preserve the user's perspective: do not change pronouns or perspective. If the user addresses \"you\", keep it as \"you\".
 
 ---
 
@@ -577,6 +643,85 @@ fn default_category_id() -> String {
     "development".to_string()
 }
 
+fn default_voice_command_model() -> String {
+    "gpt-4o-mini".to_string()
+}
+
+fn default_voice_commands() -> Vec<VoiceCommand> {
+    vec![
+        VoiceCommand {
+            id: "open_app".to_string(),
+            name: "Open Application".to_string(),
+            phrases: vec![
+                "open".to_string(),
+                "launch".to_string(),
+                "start".to_string(),
+            ],
+            command_type: VoiceCommandType::Inferable,
+            description: Some(
+                "Opens an application by name. The user will specify which app to open."
+                    .to_string(),
+            ),
+            script_type: ScriptType::Shell,
+            script: None,
+            model_override: None,
+            is_builtin: true,
+        },
+        VoiceCommand {
+            id: "web_search".to_string(),
+            name: "Web Search".to_string(),
+            phrases: vec![
+                "search for".to_string(),
+                "look up".to_string(),
+                "google".to_string(),
+            ],
+            command_type: VoiceCommandType::Inferable,
+            description: Some("Opens a web browser with a search query.".to_string()),
+            script_type: ScriptType::Shell,
+            script: None,
+            model_override: None,
+            is_builtin: true,
+        },
+        VoiceCommand {
+            id: "refactor_code".to_string(),
+            name: "Refactor Code".to_string(),
+            phrases: vec![
+                "refactor".to_string(),
+                "rewrite".to_string(),
+                "improve this".to_string(),
+            ],
+            command_type: VoiceCommandType::Inferable,
+            description: Some(
+                "Refactors or rewrites the selected code based on the user's instruction."
+                    .to_string(),
+            ),
+            script_type: ScriptType::Shell,
+            script: None,
+            model_override: Some("gpt-4o".to_string()), // Needs reasoning capability
+            is_builtin: true,
+        },
+        VoiceCommand {
+            id: "print".to_string(),
+            name: "Print / Echo".to_string(),
+            phrases: vec![
+                "print".to_string(),
+                "echo".to_string(),
+                "say".to_string(),
+                "type".to_string(),
+            ],
+            command_type: VoiceCommandType::Inferable,
+            description: Some(
+                "Echoes back the text that follows the trigger word. Returns the text verbatim without any modifications. For example, 'print hello world' returns 'hello world'."
+                    .to_string(),
+            ),
+            script_type: ScriptType::Shell,
+            script: None,
+            model_override: None,
+            is_builtin: true,
+        },
+    ]
+}
+
 fn default_prompt_categories() -> Vec<PromptCategory> {
     vec![
         PromptCategory {
@@ -590,7 +735,7 @@ fn default_prompt_categories() -> Vec<PromptCategory> {
 
 The input is unfiltered speech-to-text. Your job is to make it readable while preserving all meaning.
 
-IMPORTANT: You are the user's proxy. Speak AS the user, not TO the user. Formulate the response as if the user is typing it.
+IMPORTANT: You are the user's proxy. Speak AS the user, not TO the user. Formulate the response as if the user is typing it. Preserve the user's perspective: do not change pronouns or perspective. If the user addresses \"you\", keep it as \"you\".
 
 ---
 
@@ -663,7 +808,7 @@ ${output}".to_string(),
 
 **Context:** The user is in ${application} (${category} mode). The output is a message to another human.
 
-IMPORTANT: You are the user's proxy. The message should sound exactly like the user would type it.
+IMPORTANT: You are the user's proxy. The message should sound exactly like the user would type it. Preserve the user's perspective: do not change pronouns or perspective. If the user addresses \"you\", keep it as \"you\".
 
 CRITICAL RULES:
 1. NEVER remove content unless the user explicitly instructs (\"hey Ramble, delete that\", \"scratch that\", \"never mind\")
@@ -708,7 +853,7 @@ ${output}".to_string(),
 
 **Context:** The user is in ${application} (${category} mode). The output is written content for human readers.
 
-IMPORTANT: You are the user's proxy. Write AS the user, not TO the user.
+IMPORTANT: You are the user's proxy. Write AS the user, not TO the user. Preserve the user's perspective: do not change pronouns or perspective. If the user addresses \"you\", keep it as \"you\".
 
 CRITICAL RULES:
 1. NO em dashes (—) ever. Use commas, periods, or restructure the sentence instead.
@@ -752,7 +897,7 @@ ${output}".to_string(),
 
 **Context:** The user is in ${application} (${category} mode). The output is an email to another human.
 
-IMPORTANT: You are the user's proxy. Write AS the user, not TO the user.
+IMPORTANT: You are the user's proxy. Write AS the user, not TO the user. Preserve the user's perspective: do not change pronouns or perspective. If the user addresses \"you\", keep it as \"you\".
 
 CRITICAL RULES:
 1. NO em dashes (—) ever. Use commas or periods instead.
@@ -881,12 +1026,12 @@ fn default_post_process_prompts() -> Vec<LLMPrompt> {
         LLMPrompt {
             id: "default_improve_transcriptions".to_string(),
             name: "Improve Transcriptions".to_string(),
-            prompt: "Clean this transcript:\n1. Fix spelling, capitalization, and punctuation errors\n2. Convert number words to digits (twenty-five → 25, ten percent → 10%, five dollars → $5)\n3. Replace spoken punctuation with symbols (period → ., comma → ,, question mark → ?)\n4. Remove filler words (um, uh, like as filler)\n5. Keep the language in the original version (if it was french, keep it in french for example)\n\nPreserve exact meaning and word order. Do not paraphrase or reorder content.\n\nReturn only the cleaned transcript.\n\nTranscript:\n${output}".to_string(),
+            prompt: "Clean this transcript:\n1. Fix spelling, capitalization, and punctuation errors\n2. Convert number words to digits (twenty-five → 25, ten percent → 10%, five dollars → $5)\n3. Replace spoken punctuation with symbols (period → ., comma → ,, question mark → ?)\n4. Remove filler words (um, uh, like as filler)\n5. Keep the language in the original version (if it was french, keep it in french for example)\n\nPreserve exact meaning, pronouns, perspective, and word order. Do not paraphrase or reorder content.\n\nReturn only the cleaned transcript.\n\nTranscript:\n${output}".to_string(),
         },
         LLMPrompt {
             id: "ramble_to_coherent".to_string(),
             name: "Ramble to Coherent".to_string(),
-            prompt: "You are transforming raw speech into clean, coherent text.\n\nThe input is unfiltered speech-to-text that contains:\n- Filler words (um, uh, like, you know, basically, so, I mean)\n- Thinking out loud and self-corrections\n- Backtracking (no wait, actually, I mean)\n- Repeated ideas phrased multiple ways\n- Run-on sentences and stream of consciousness\n\nYour task:\n1. Extract the core intent and requirements\n2. Remove ALL filler words and verbal tics\n3. When the speaker changes their mind, keep ONLY the final decision\n4. Consolidate repeated ideas into single clear statements\n5. Structure as clear, actionable points if appropriate\n6. Preserve technical terms and specific details exactly\n7. Keep the same language as input\n\nReturn ONLY the cleaned, structured text. No preamble or explanation.\n\nInput transcript:\n${output}".to_string(),
+            prompt: "You are transforming raw speech into clean, coherent text.\n\nThe input is unfiltered speech-to-text that contains:\n- Filler words (um, uh, like, you know, basically, so, I mean)\n- Thinking out loud and self-corrections\n- Backtracking (no wait, actually, I mean)\n- Repeated ideas phrased multiple ways\n- Run-on sentences and stream of consciousness\n\nYour task:\n1. Extract the core intent and requirements\n2. Remove ALL filler words and verbal tics\n3. When the speaker changes their mind, keep ONLY the final decision\n4. Consolidate repeated ideas into single clear statements\n5. Structure as clear, actionable points if appropriate\n6. Preserve technical terms and specific details exactly\n7. Keep the same language as input\n8. Preserve the user's perspective: do not change pronouns or perspective. If the user addresses \"you\", keep it as \"you\".\n\nReturn ONLY the cleaned, structured text. No preamble or explanation.\n\nInput transcript:\n${output}".to_string(),
         },
     ]
 }
@@ -1003,6 +1148,16 @@ pub fn get_default_settings() -> AppSettings {
             current_binding: "Option+Shift+P".to_string(),
         },
     );
+    bindings.insert(
+        "voice_command".to_string(),
+        ShortcutBinding {
+            id: "voice_command".to_string(),
+            name: "Voice Command".to_string(),
+            description: "Activates voice command mode to control your computer.".to_string(),
+            default_binding: "right_command".to_string(),
+            current_binding: "right_command".to_string(),
+        },
+    );
 
     // Note: ramble_to_coherent is no longer a separate binding.
     // Unified hotkey: hold transcribe key = raw, quick tap = coherent.
@@ -1031,6 +1186,7 @@ pub fn get_default_settings() -> AppSettings {
         word_correction_threshold: default_word_correction_threshold(),
         history_limit: default_history_limit(),
         recording_retention_period: default_recording_retention_period(),
+        llm_provider_id: default_llm_provider_id(),
         paste_method: PasteMethod::default(),
         clipboard_handling: ClipboardHandling::default(),
         post_process_enabled: default_post_process_enabled(),
@@ -1056,6 +1212,10 @@ pub fn get_default_settings() -> AppSettings {
         app_category_mappings: Vec::new(),
         detected_apps_history: Vec::new(),
         default_category_id: default_category_id(),
+        // Voice command settings
+        voice_commands_enabled: false,
+        voice_command_default_model: default_voice_command_model(),
+        voice_commands: default_voice_commands(),
     }
 }
 

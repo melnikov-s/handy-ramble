@@ -20,6 +20,7 @@ type OverlayState =
   | "transcribing"
   | "ramble_transcribing"
   | "making_coherent"
+  | "processing_command"
   | "paused"
   | "ramble_paused"
   | "error";
@@ -70,6 +71,8 @@ const RecordingOverlay: React.FC = () => {
   const [promptMode, setPromptMode] = useState<PromptMode>("dynamic");
   // Detected category in Dynamic mode (from backend when refinement starts)
   const [detectedCategory, setDetectedCategory] = useState<string | null>(null);
+  // Track if in voice command mode for different styling
+  const [isVoiceCommandMode, setIsVoiceCommandMode] = useState(false);
 
   // Track pending optimistic flashes to prevent duplicates from backend events
   const pendingOptimisticFlashesRef = useRef(0);
@@ -164,7 +167,14 @@ const RecordingOverlay: React.FC = () => {
         setIsQuickPressMode(false);
         setHasScreenshot(false);
         setDetectedCategory(null);
+        setIsVoiceCommandMode(false);
         pendingOptimisticFlashesRef.current = 0;
+      });
+
+      // Listen for voice command mode activation
+      await register<boolean>("voice-command-mode", (event) => {
+        console.log("[UI] voice-command-mode received:", event.payload);
+        setIsVoiceCommandMode(event.payload);
       });
 
       // Listen for mode-determined event from Rust
@@ -214,6 +224,12 @@ const RecordingOverlay: React.FC = () => {
 
         setFlashScreenshot(true);
         setTimeout(() => setFlashScreenshot(false), 500);
+      });
+
+      // Listen for processing command state (after transcription, before LLM response)
+      await register<string>("processing-command", (event) => {
+        console.log("[UI] processing-command received:", event.payload);
+        setState("processing_command");
       });
     };
 
@@ -274,6 +290,7 @@ const RecordingOverlay: React.FC = () => {
     state === "transcribing" ||
     state === "ramble_transcribing" ||
     state === "making_coherent" ||
+    state === "processing_command" ||
     state === "error";
 
   // Only show vision button when in "Refined" (quick press) mode, or if we already have a screenshot attached.
@@ -285,8 +302,12 @@ const RecordingOverlay: React.FC = () => {
     ((modeKnown && isQuickPressMode) || hasScreenshot);
 
   const getIcon = () => {
-    // Helper to get category icon
+    // Helper to get category icon (only for refiner mode, not voice commands)
     const getCategoryIcon = () => {
+      // In voice command mode, always use microphone - no category needed
+      if (isVoiceCommandMode) {
+        return <MicrophoneIcon color="#a855f7" />;
+      }
       // For explicit modes, use the mode's icon
       if (promptMode !== "dynamic") {
         return (
@@ -308,6 +329,10 @@ const RecordingOverlay: React.FC = () => {
     };
 
     if (state === "recording" || state === "ramble_recording") {
+      // In voice command mode, show microphone with purple color
+      if (isVoiceCommandMode) {
+        return <MicrophoneIcon color="#a855f7" />;
+      }
       // In Refined mode, show category icon
       if (modeKnown && isQuickPressMode) {
         return getCategoryIcon();
@@ -316,8 +341,13 @@ const RecordingOverlay: React.FC = () => {
     } else if (state === "making_coherent") {
       // While refining, show the detected category icon
       return getCategoryIcon();
+    } else if (state === "processing_command") {
+      // Processing voice command - purple microphone
+      return <MicrophoneIcon color="#a855f7" />;
     } else if (state === "ramble_transcribing" || state === "transcribing") {
-      return <TranscriptionIcon color="#1e40af" />;
+      return (
+        <TranscriptionIcon color={isVoiceCommandMode ? "#a855f7" : "#1e40af"} />
+      );
     } else if (state === "error") {
       return <AlertCircle size={16} style={{ color: "#ff6b6b" }} />;
     } else if (state === "paused" || state === "ramble_paused") {
@@ -334,7 +364,7 @@ const RecordingOverlay: React.FC = () => {
   return (
     <>
       <div
-        className={`recording-overlay ${isVisible ? "fade-in" : ""} ${state === "error" ? "error-state" : ""} ${isPaused ? "paused-state" : ""} ${flashScreenshot ? "screenshot-flash" : ""}`}
+        className={`recording-overlay ${isVisible ? "fade-in" : ""} ${state === "error" ? "error-state" : ""} ${isPaused ? "paused-state" : ""} ${flashScreenshot ? "screenshot-flash" : ""} ${isVoiceCommandMode ? "voice-command-mode" : ""}`}
       >
         <div className="overlay-left">
           {getIcon()}
@@ -397,6 +427,18 @@ const RecordingOverlay: React.FC = () => {
             <div className="stacked-content">
               <div className="mode-label refining-label">
                 {t("overlay.refining", "Refining")}
+              </div>
+              <div className="refining-indicator">
+                <div className="refining-dot"></div>
+                <div className="refining-dot"></div>
+                <div className="refining-dot"></div>
+              </div>
+            </div>
+          )}
+          {state === "processing_command" && (
+            <div className="stacked-content">
+              <div className="mode-label refining-label">
+                {t("overlay.processingCommand", "Processing...")}
               </div>
               <div className="refining-indicator">
                 <div className="refining-dot"></div>

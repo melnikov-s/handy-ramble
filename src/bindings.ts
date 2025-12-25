@@ -268,6 +268,14 @@ async changeRambleEnabledSetting(enabled: boolean) : Promise<Result<null, string
     else return { status: "error", error: e  as any };
 }
 },
+async changeLlmProviderSetting(providerId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_llm_provider_setting", { providerId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeRambleProviderSetting(providerId: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_ramble_provider_setting", { providerId }) };
@@ -351,6 +359,95 @@ async updatePromptCategory(id: string, prompt: string) : Promise<Result<null, st
 async resetPromptCategoryToDefault(id: string) : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("reset_prompt_category_to_default", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeDefaultCategorySetting(categoryId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_default_category_setting", { categoryId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Create a new custom prompt category
+ */
+async addPromptCategory(name: string, icon: string, prompt: string) : Promise<Result<PromptCategory, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("add_prompt_category", { name, icon, prompt }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Delete a custom prompt category
+ */
+async deletePromptCategory(id: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_prompt_category", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Update a category's name and icon (not prompt - use update_prompt_category for that)
+ */
+async updatePromptCategoryDetails(id: string, name: string, icon: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_prompt_category_details", { id, name, icon }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeVoiceCommandsEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_voice_commands_enabled_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeVoiceCommandDefaultModelSetting(model: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_voice_command_default_model_setting", { model }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async resetVoiceCommandsToDefault() : Promise<Result<VoiceCommand[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("reset_voice_commands_to_default") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async addVoiceCommand(command: VoiceCommand) : Promise<Result<VoiceCommand[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("add_voice_command", { command }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async updateVoiceCommand(command: VoiceCommand) : Promise<Result<VoiceCommand[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_voice_command", { command }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteVoiceCommand(commandId: string) : Promise<Result<VoiceCommand[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_voice_command", { commandId }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -762,7 +859,11 @@ async removeAppCategoryMapping(bundleId: string) : Promise<Result<null, string>>
  * Maps an application to a category
  */
 export type AppCategoryMapping = { bundle_identifier: string; display_name: string; category_id: string }
-export type AppSettings = { bindings: Partial<{ [key in string]: ShortcutBinding }>; push_to_talk: boolean; audio_feedback: boolean; audio_feedback_volume?: number; sound_theme?: SoundTheme; start_hidden?: boolean; autostart_enabled?: boolean; update_checks_enabled?: boolean; selected_model?: string; always_on_microphone?: boolean; selected_microphone?: string | null; clamshell_microphone?: string | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: Partial<{ [key in string]: string }>; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; append_trailing_space?: boolean; app_language?: string; ramble_enabled?: boolean; ramble_provider_id?: string; ramble_model?: string; ramble_prompt?: string; ramble_use_vision_model?: boolean; ramble_vision_model?: string; 
+export type AppSettings = { bindings: Partial<{ [key in string]: ShortcutBinding }>; push_to_talk: boolean; audio_feedback: boolean; audio_feedback_volume?: number; sound_theme?: SoundTheme; start_hidden?: boolean; autostart_enabled?: boolean; update_checks_enabled?: boolean; selected_model?: string; always_on_microphone?: boolean; selected_microphone?: string | null; clamshell_microphone?: string | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; 
+/**
+ * The currently active LLM provider for all AI features
+ */
+llm_provider_id?: string; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: Partial<{ [key in string]: string }>; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; append_trailing_space?: boolean; app_language?: string; ramble_enabled?: boolean; ramble_provider_id?: string; ramble_model?: string; ramble_prompt?: string; ramble_use_vision_model?: boolean; ramble_vision_model?: string; 
 /**
  * Threshold in milliseconds for tap vs hold detection (smart PTT)
  */
@@ -782,7 +883,23 @@ app_category_mappings?: AppCategoryMapping[];
 /**
  * History of detected applications (for dropdown suggestions)
  */
-detected_apps_history?: DetectedApp[] }
+detected_apps_history?: DetectedApp[]; 
+/**
+ * Default category for apps not in known_apps or user mappings
+ */
+default_category_id?: string; 
+/**
+ * Whether voice commands are enabled
+ */
+voice_commands_enabled?: boolean; 
+/**
+ * Default model for voice command execution
+ */
+voice_command_default_model?: string; 
+/**
+ * User-defined voice commands
+ */
+voice_commands?: VoiceCommand[] }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard"
@@ -818,8 +935,64 @@ export type PromptCategory = { id: string; name: string; icon: string; prompt: s
  */
 export type PromptMode = "dynamic" | "development" | "conversation" | "writing" | "email"
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days_3" | "weeks_2" | "months_3"
+/**
+ * Script type for bespoke commands
+ */
+export type ScriptType = "shell" | "apple_script"
 export type ShortcutBinding = { id: string; name: string; description: string; default_binding: string; current_binding: string }
 export type SoundTheme = "marimba" | "pop" | "custom"
+/**
+ * A voice command definition
+ */
+export type VoiceCommand = { 
+/**
+ * Unique identifier for the command
+ */
+id: string; 
+/**
+ * Human-readable name
+ */
+name: string; 
+/**
+ * Trigger phrases that activate this command
+ */
+phrases: string[]; 
+/**
+ * Type of command (inferable or bespoke)
+ */
+command_type: VoiceCommandType; 
+/**
+ * Description for LLM (inferable commands)
+ */
+description?: string | null; 
+/**
+ * Script type (bespoke commands)
+ */
+script_type?: ScriptType; 
+/**
+ * Script content (bespoke commands)
+ */
+script?: string | null; 
+/**
+ * Model override (uses default if None)
+ */
+model_override?: string | null; 
+/**
+ * Whether this is a built-in command
+ */
+is_builtin?: boolean }
+/**
+ * Type of voice command
+ */
+export type VoiceCommandType = 
+/**
+ * LLM determines how to execute the command
+ */
+"inferable" | 
+/**
+ * User-defined script that runs exactly as specified
+ */
+"bespoke"
 
 /** tauri-specta globals **/
 

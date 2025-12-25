@@ -1021,6 +1021,347 @@ impl ShortcutAction for VisionAction {
     fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {}
 }
 
+// Voice Command Action
+struct VoiceCommandAction;
+
+impl ShortcutAction for VoiceCommandAction {
+    fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) -> bool {
+        debug!(
+            "[ACTION] VoiceCommandAction::start called for binding: {}",
+            binding_id
+        );
+
+        // Check if we're resuming from a paused state
+        if is_operation_paused(app, binding_id) {
+            debug!("Resuming paused voice command for binding: {}", binding_id);
+            resume_current_operation(app);
+            return true;
+        }
+
+        // Load model in the background (for transcription)
+        let tm = app.state::<Arc<TranscriptionManager>>();
+        tm.initiate_model_load();
+
+        let binding_id = binding_id.to_string();
+        change_tray_icon(app, TrayIconState::Recording);
+
+        // Show a different overlay state for command mode
+        let _ = app.emit("voice-command-mode", true);
+        show_recording_overlay(app);
+
+        let rm = app.state::<Arc<AudioRecordingManager>>();
+        let _settings = get_settings(app);
+
+        // Play audio feedback
+        let rm_clone = Arc::clone(&rm);
+        let app_clone = app.clone();
+        std::thread::spawn(move || {
+            play_feedback_sound_blocking(&app_clone, SoundType::Start);
+            rm_clone.apply_mute();
+        });
+
+        rm.try_start_recording(&binding_id)
+    }
+
+    fn stop(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
+        // Reset toggle state
+        let toggle_state_manager = app.state::<ManagedToggleState>();
+        if let Ok(mut states) = toggle_state_manager.lock() {
+            states.active_toggles.insert(binding_id.to_string(), false);
+        }
+
+        debug!(
+            "VoiceCommandAction::stop called for binding: {}",
+            binding_id
+        );
+
+        let ah = app.clone();
+        let rm = Arc::clone(&app.state::<Arc<AudioRecordingManager>>());
+        let tm = Arc::clone(&app.state::<Arc<TranscriptionManager>>());
+
+        change_tray_icon(app, TrayIconState::Transcribing);
+        show_transcribing_overlay(app);
+
+        rm.remove_mute();
+        play_feedback_sound(app, SoundType::Stop);
+
+        let binding_id = binding_id.to_string();
+        let samples = rm.stop_recording(&binding_id);
+
+        tauri::async_runtime::spawn(async move {
+            if let Some(samples) = samples {
+                match tm.transcribe(samples) {
+                    Ok(transcription) => {
+                        if !transcription.is_empty() {
+                            debug!("Voice command transcription: '{}'", transcription);
+
+                            // Emit processing state to update overlay
+                            let _ = ah.emit("processing-command", transcription.clone());
+
+                            // Process voice command
+                            match process_voice_command(&ah, &transcription).await {
+                                Ok(result) => {
+                                    debug!("Voice command result: {:?}", result);
+                                    match result {
+                                        crate::voice_commands::CommandResult::PasteOutput(text) => {
+                                            let ah_clone = ah.clone();
+                                            ah.run_on_main_thread(move || {
+                                                match utils::paste(text, ah_clone.clone()) {
+                                                    Ok(()) => debug!("Command output pasted"),
+                                                    Err(e) => error!("Failed to paste: {}", e),
+                                                }
+                                                utils::hide_recording_overlay(&ah_clone);
+                                                change_tray_icon(&ah_clone, TrayIconState::Idle);
+                                            })
+                                            .unwrap_or_else(|e| {
+                                                error!("Failed to run on main thread: {:?}", e);
+                                            });
+                                        }
+                                        crate::voice_commands::CommandResult::Success => {
+                                            // Show brief feedback
+                                            utils::hide_recording_overlay(&ah);
+                                            change_tray_icon(&ah, TrayIconState::Idle);
+                                        }
+                                        crate::voice_commands::CommandResult::Error(msg) => {
+                                            utils::show_error_overlay(&ah, &msg);
+                                            change_tray_icon(&ah, TrayIconState::Idle);
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    error!("Voice command processing failed: {}", e);
+                                    utils::show_error_overlay(&ah, &e);
+                                    change_tray_icon(&ah, TrayIconState::Idle);
+                                }
+                            }
+                        } else {
+                            utils::hide_recording_overlay(&ah);
+                            change_tray_icon(&ah, TrayIconState::Idle);
+                        }
+                    }
+                    Err(err) => {
+                        error!("Voice command transcription error: {}", err);
+                        utils::hide_recording_overlay(&ah);
+                        change_tray_icon(&ah, TrayIconState::Idle);
+                    }
+                }
+            } else {
+                utils::hide_recording_overlay(&ah);
+                change_tray_icon(&ah, TrayIconState::Idle);
+            }
+        });
+    }
+}
+
+/// Process a voice command through LLM interpretation and execution
+async fn process_voice_command(
+    app: &AppHandle,
+    transcription: &str,
+) -> Result<crate::voice_commands::CommandResult, String> {
+    let settings = get_settings(app);
+
+    if !settings.voice_commands_enabled {
+        return Err("Voice commands are not enabled".to_string());
+    }
+
+    let commands = &settings.voice_commands;
+    if commands.is_empty() {
+        return Err("No voice commands configured".to_string());
+    }
+
+    // Get selection context if available
+    let audio_manager = app.state::<Arc<AudioRecordingManager>>();
+    let selection_context = audio_manager.get_selection_context();
+
+    // Let LLM interpret the command and determine what to execute
+    execute_via_llm(app, &settings, transcription, selection_context).await
+}
+
+fn execute_shell_command(cmd: &str) -> crate::voice_commands::CommandResult {
+    use std::process::Command;
+
+    match Command::new("sh").arg("-c").arg(cmd).output() {
+        Ok(output) => {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if stdout.is_empty() {
+                    crate::voice_commands::CommandResult::Success
+                } else {
+                    crate::voice_commands::CommandResult::PasteOutput(stdout)
+                }
+            } else {
+                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+                crate::voice_commands::CommandResult::Error(format!("Command failed: {}", stderr))
+            }
+        }
+        Err(e) => crate::voice_commands::CommandResult::Error(format!("Failed to run: {}", e)),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn execute_applescript_command(script: &str) -> crate::voice_commands::CommandResult {
+    use std::process::Command;
+
+    match Command::new("osascript").arg("-e").arg(script).output() {
+        Ok(output) => {
+            if output.status.success() {
+                let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                if stdout.is_empty() {
+                    crate::voice_commands::CommandResult::Success
+                } else {
+                    crate::voice_commands::CommandResult::PasteOutput(stdout)
+                }
+            } else {
+                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+                crate::voice_commands::CommandResult::Error(format!(
+                    "AppleScript failed: {}",
+                    stderr
+                ))
+            }
+        }
+        Err(e) => crate::voice_commands::CommandResult::Error(format!("Failed to run: {}", e)),
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn execute_applescript_command(_script: &str) -> crate::voice_commands::CommandResult {
+    crate::voice_commands::CommandResult::Error(
+        "AppleScript is only supported on macOS".to_string(),
+    )
+}
+
+/// Use LLM to interpret and execute an unknown command
+async fn execute_via_llm(
+    _app: &AppHandle,
+    settings: &AppSettings,
+    transcription: &str,
+    selection: Option<String>,
+) -> Result<crate::voice_commands::CommandResult, String> {
+    let model = &settings.voice_command_default_model;
+    if model.trim().is_empty() {
+        return Err("No default model configured for voice commands".to_string());
+    }
+
+    let provider_id = &settings.ramble_provider_id;
+    let provider = settings
+        .post_process_providers
+        .iter()
+        .find(|p| &p.id == provider_id)
+        .cloned()
+        .ok_or_else(|| format!("Provider '{}' not found", provider_id))?;
+
+    let api_key = settings
+        .post_process_api_keys
+        .get(provider_id)
+        .cloned()
+        .unwrap_or_default();
+
+    let client = crate::llm_client::create_client(&provider, api_key)
+        .map_err(|e| format!("Failed to create LLM client: {}", e))?;
+
+    // Build prompt with available commands
+    let prompt =
+        crate::voice_commands::build_command_prompt(&settings.voice_commands, selection.as_deref());
+
+    let user_message = ChatCompletionRequestUserMessageArgs::default()
+        .content(format!("User command: \"{}\"", transcription))
+        .build()
+        .map_err(|e| format!("Failed to build message: {}", e))?;
+
+    let system_message = ChatCompletionRequestSystemMessageArgs::default()
+        .content(prompt)
+        .build()
+        .map_err(|e| format!("Failed to build system message: {}", e))?;
+
+    let request = CreateChatCompletionRequestArgs::default()
+        .model(model)
+        .messages(vec![
+            ChatCompletionRequestMessage::System(system_message),
+            ChatCompletionRequestMessage::User(user_message),
+        ])
+        .build()
+        .map_err(|e| format!("Failed to build request: {}", e))?;
+
+    let response = client
+        .chat()
+        .create(request)
+        .await
+        .map_err(|e| extract_llm_error(&e, model))?;
+
+    let llm_response = response
+        .choices
+        .first()
+        .and_then(|c| c.message.content.as_ref())
+        .ok_or_else(|| "LLM returned empty response".to_string())?;
+
+    debug!("Voice command LLM response: {}", llm_response);
+
+    // Parse the JSON response
+    match serde_json::from_str::<serde_json::Value>(llm_response) {
+        Ok(json) => {
+            if json
+                .get("matched_command")
+                .and_then(|v| v.as_str())
+                .is_some()
+            {
+                // LLM matched a command, execute it
+                let exec_type = json
+                    .get("execution_type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("shell");
+                let command = json.get("command").and_then(|v| v.as_str()).unwrap_or("");
+
+                if command.is_empty() {
+                    // Check if it's a bespoke command
+                    let cmd_id = json
+                        .get("matched_command")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    if let Some(bespoke) = settings.voice_commands.iter().find(|c| c.id == cmd_id) {
+                        return Ok(crate::voice_commands::execute_bespoke_command(bespoke));
+                    }
+                }
+
+                debug!(
+                    "Executing voice command: type={}, command={}",
+                    exec_type, command
+                );
+
+                match exec_type {
+                    "applescript" => Ok(execute_applescript_command(command)),
+                    "paste" => {
+                        // Direct paste - output verbatim text
+                        let output = json
+                            .get("output")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(command); // Fall back to command field
+                        debug!("Paste output: {}", output);
+                        Ok(crate::voice_commands::CommandResult::PasteOutput(
+                            output.to_string(),
+                        ))
+                    }
+                    _ => Ok(execute_shell_command(command)),
+                }
+            } else {
+                // No match, return the explanation
+                let message = json
+                    .get("message")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Command not understood");
+                Ok(crate::voice_commands::CommandResult::PasteOutput(
+                    message.to_string(),
+                ))
+            }
+        }
+        Err(_) => {
+            // LLM didn't return valid JSON, treat response as the output
+            Ok(crate::voice_commands::CommandResult::PasteOutput(
+                llm_response.clone(),
+            ))
+        }
+    }
+}
+
 // Static Action Map
 pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::new(|| {
     let mut map = HashMap::new();
@@ -1041,6 +1382,10 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
     map.insert(
         "vision_capture".to_string(),
         Arc::new(VisionAction) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "voice_command".to_string(),
+        Arc::new(VoiceCommandAction) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "test".to_string(),
