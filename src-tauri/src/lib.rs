@@ -23,6 +23,8 @@ mod tray;
 mod tray_i18n;
 mod utils;
 mod vision;
+#[cfg(target_os = "macos")]
+mod vision_ocr;
 mod voice_commands;
 use specta_typescript::{BigIntExportBehavior, Typescript};
 use tauri_specta::{collect_commands, Builder};
@@ -314,11 +316,11 @@ pub fn run() {
         shortcut::add_voice_command,
         shortcut::update_voice_command,
         shortcut::delete_voice_command,
+        shortcut::change_filler_word_filter_setting,
         trigger_update_check,
         commands::cancel_operation,
         commands::pause_operation,
         commands::resume_operation,
-        commands::trigger_vision_capture,
         commands::get_app_dir_path,
         commands::get_app_settings,
         commands::get_default_settings,

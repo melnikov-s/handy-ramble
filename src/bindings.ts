@@ -453,6 +453,14 @@ async deleteVoiceCommand(commandId: string) : Promise<Result<VoiceCommand[], str
     else return { status: "error", error: e  as any };
 }
 },
+async changeFillerWordFilterSetting(pattern: string | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_filler_word_filter_setting", { pattern }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async triggerUpdateCheck() : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("trigger_update_check") };
@@ -469,9 +477,6 @@ async pauseOperation() : Promise<boolean> {
 },
 async resumeOperation() : Promise<boolean> {
     return await TAURI_INVOKE("resume_operation");
-},
-async triggerVisionCapture() : Promise<void> {
-    await TAURI_INVOKE("trigger_vision_capture");
 },
 async getAppDirPath() : Promise<Result<string, string>> {
     try {
@@ -899,7 +904,11 @@ voice_command_default_model?: string;
 /**
  * User-defined voice commands
  */
-voice_commands?: VoiceCommand[] }
+voice_commands?: VoiceCommand[]; 
+/**
+ * Optional regex pattern to filter out filler words from transcriptions (e.g., "um", "uh")
+ */
+filler_word_filter?: string | null }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard"

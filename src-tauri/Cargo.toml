@@ -76,6 +76,7 @@ tauri-specta = { version = "=2.0.0-rc.21", features = ["derive", "typescript"] }
 xcap = "0.8.0"
 base64 = "0.22.1"
 image = "0.25.9"
+regex = "1"
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.3"

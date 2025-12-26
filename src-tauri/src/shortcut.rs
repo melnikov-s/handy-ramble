@@ -1056,6 +1056,24 @@ pub fn reset_voice_commands_to_default(app: AppHandle) -> Result<Vec<settings::V
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_filler_word_filter_setting(
+    app: AppHandle,
+    pattern: Option<String>,
+) -> Result<(), String> {
+    // Validate regex if provided
+    if let Some(ref p) = pattern {
+        if !p.is_empty() {
+            regex::Regex::new(p).map_err(|e| format!("Invalid regex pattern: {}", e))?;
+        }
+    }
+    let mut settings = settings::get_settings(&app);
+    settings.filler_word_filter = pattern;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn add_voice_command(app: AppHandle, command: settings::VoiceCommand) -> Result<Vec<settings::VoiceCommand>, String> {
     let mut settings = settings::get_settings(&app);
     
