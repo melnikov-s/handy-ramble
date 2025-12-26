@@ -146,14 +146,6 @@ pub fn open_app_data_dir(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-#[tauri::command]
-#[specta::specta]
-pub fn trigger_vision_capture(app: AppHandle) {
-    if let Some(action) = crate::actions::ACTION_MAP.get("vision_capture") {
-        action.start(&app, "vision_capture", "");
-    }
-}
-
 // === App-to-Prompt Category Mapping Commands ===
 
 /// Get the list of known applications with suggested categories

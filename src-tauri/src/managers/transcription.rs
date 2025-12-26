@@ -398,6 +398,28 @@ impl TranscriptionManager {
             result.text
         };
 
+        // Apply filler word filter if configured
+        let filtered_result = if let Some(ref pattern) = settings.filler_word_filter {
+            if !pattern.is_empty() {
+                match regex::Regex::new(pattern) {
+                    Ok(re) => {
+                        let filtered = re.replace_all(&corrected_result, "").to_string();
+                        // Clean up any double spaces left behind
+                        let space_re = regex::Regex::new(r"  +").unwrap();
+                        space_re.replace_all(&filtered, " ").to_string()
+                    }
+                    Err(e) => {
+                        warn!("Invalid filler word filter regex: {}", e);
+                        corrected_result
+                    }
+                }
+            } else {
+                corrected_result
+            }
+        } else {
+            corrected_result
+        };
+
         let et = std::time::Instant::now();
         let translation_note = if settings.translate_to_english {
             " (translated)"
@@ -410,7 +432,7 @@ impl TranscriptionManager {
             translation_note
         );
 
-        let final_result = corrected_result.trim().to_string();
+        let final_result = filtered_result.trim().to_string();
 
         if final_result.is_empty() {
             info!("Transcription result is empty");

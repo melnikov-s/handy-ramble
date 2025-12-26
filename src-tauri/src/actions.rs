@@ -23,6 +23,7 @@ use async_openai::types::{
 use ferrous_opencc::{config::BuiltinConfig, OpenCC};
 use log::{debug, error, info, warn};
 use once_cell::sync::Lazy;
+use regex::Regex;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
@@ -496,10 +497,16 @@ impl ShortcutAction for TranscribeAction {
                                 show_making_coherent_overlay(&ah);
                                 post_process_prompt = Some(settings.ramble_prompt.clone());
 
+                                // Apply filler word filter before refinement
+                                let filtered_transcription = filter_filler_words(
+                                    &transcription,
+                                    settings.filler_word_filter.as_deref(),
+                                );
+
                                 match process_ramble_to_coherent(
                                     &ah,
                                     &settings,
-                                    &transcription,
+                                    &filtered_transcription,
                                     selection_context,
                                 )
                                 .await
@@ -521,9 +528,18 @@ impl ShortcutAction for TranscribeAction {
                                 }
                             } else {
                                 // Raw mode: standard processing path
+                                // Apply filler word filter to raw transcription
+                                let filtered_raw = filter_filler_words(
+                                    &transcription,
+                                    settings.filler_word_filter.as_deref(),
+                                );
+                                if filtered_raw != transcription {
+                                    final_text = filtered_raw.clone();
+                                }
+
                                 // First, check if Chinese variant conversion is needed
                                 if let Some(converted_text) =
-                                    maybe_convert_chinese_variant(&settings, &transcription).await
+                                    maybe_convert_chinese_variant(&settings, &filtered_raw).await
                                 {
                                     final_text = converted_text.clone();
                                     post_processed_text = Some(converted_text);
@@ -533,7 +549,7 @@ impl ShortcutAction for TranscribeAction {
                                     match maybe_post_process_transcription(
                                         &ah,
                                         &settings,
-                                        &transcription,
+                                        &filtered_raw,
                                     )
                                     .await
                                     {
@@ -631,6 +647,34 @@ impl ShortcutAction for TranscribeAction {
     }
 }
 
+/// Filter filler words from transcription using the configured regex pattern
+fn filter_filler_words(text: &str, pattern: Option<&str>) -> String {
+    match pattern {
+        Some(p) if !p.is_empty() => {
+            match Regex::new(p) {
+                Ok(re) => {
+                    let filtered = re.replace_all(text, "").to_string();
+                    // Clean up any double spaces created by removal
+                    let cleaned = filtered.split_whitespace().collect::<Vec<_>>().join(" ");
+                    if cleaned != text {
+                        debug!(
+                            "Filtered filler words: {} chars -> {} chars",
+                            text.len(),
+                            cleaned.len()
+                        );
+                    }
+                    cleaned
+                }
+                Err(e) => {
+                    warn!("Invalid filler word filter regex: {}", e);
+                    text.to_string()
+                }
+            }
+        }
+        _ => text.to_string(),
+    }
+}
+
 /// Process transcription through LLM using ramble-specific settings
 /// Returns Ok(Some(processed)) on success, Ok(None) if disabled/skipped, Err(msg) on error
 async fn process_ramble_to_coherent(
@@ -647,52 +691,7 @@ async fn process_ramble_to_coherent(
     );
     utils::log_to_frontend(app, "info", "Starting refinement...");
 
-    let provider_id = &settings.ramble_provider_id;
-    let provider = match settings
-        .post_process_providers
-        .iter()
-        .find(|p| &p.id == provider_id)
-        .cloned()
-    {
-        Some(provider) => provider,
-        None => {
-            let msg = format!("Provider '{}' not found", provider_id);
-            utils::log_to_frontend(app, "error", &msg);
-            return Err(msg);
-        }
-    };
-
-    // Check for screenshots context to determine model
-    let audio_manager = app.state::<Arc<AudioRecordingManager>>();
-    let vision_context = audio_manager.get_vision_context();
-    let has_screenshots = !vision_context.is_empty();
-
-    // Determine which model to use
-    let model = if settings.ramble_use_vision_model && has_screenshots {
-        if !settings.ramble_vision_model.trim().is_empty() {
-            debug!(
-                "Using specialized vision model for screenshots: {}",
-                settings.ramble_vision_model
-            );
-            &settings.ramble_vision_model
-        } else {
-            warn!("Vision model enabled but empty, falling back to standard model");
-            &settings.ramble_model
-        }
-    } else {
-        &settings.ramble_model
-    };
-
-    if model.trim().is_empty() {
-        let msg = "No model configured".to_string();
-        utils::log_to_frontend(app, "error", &msg);
-        return Err(msg);
-    }
-
-    // Log the model being used to the frontend
-    utils::log_to_frontend(app, "info", &format!("Using model: {}", model));
-
-    // === Application-aware prompt category selection ===
+    // === Determine prompt FIRST so we can check if OCR is needed ===
     // Determine which category to use based on prompt mode and frontmost app
     let (category_id, app_name) = match settings.prompt_mode {
         PromptMode::Dynamic => {
@@ -754,6 +753,65 @@ async fn process_ramble_to_coherent(
         return Err(msg);
     }
 
+    // === OCR: Only capture screen context if ${screen_context} is in the prompt ===
+    let screen_context = if prompt.contains("${screen_context}") {
+        debug!("Prompt contains ${{screen_context}}, capturing screen...");
+        utils::log_to_frontend(app, "info", "Analyzing screen...");
+        let ocr_text = crate::vision::capture_and_ocr_screen();
+        if !ocr_text.is_empty() {
+            debug!("OCR captured {} chars of screen context", ocr_text.len());
+        }
+        Some(ocr_text)
+    } else {
+        debug!("Prompt does not contain ${{screen_context}}, skipping OCR");
+        None
+    };
+
+    let provider_id = &settings.ramble_provider_id;
+    let provider = match settings
+        .post_process_providers
+        .iter()
+        .find(|p| &p.id == provider_id)
+        .cloned()
+    {
+        Some(provider) => provider,
+        None => {
+            let msg = format!("Provider '{}' not found", provider_id);
+            utils::log_to_frontend(app, "error", &msg);
+            return Err(msg);
+        }
+    };
+
+    // Check for screenshots context to determine model
+    let audio_manager = app.state::<Arc<AudioRecordingManager>>();
+    let vision_context = audio_manager.get_vision_context();
+    let has_screenshots = !vision_context.is_empty();
+
+    // Determine which model to use
+    let model = if settings.ramble_use_vision_model && has_screenshots {
+        if !settings.ramble_vision_model.trim().is_empty() {
+            debug!(
+                "Using specialized vision model for screenshots: {}",
+                settings.ramble_vision_model
+            );
+            &settings.ramble_vision_model
+        } else {
+            warn!("Vision model enabled but empty, falling back to standard model");
+            &settings.ramble_model
+        }
+    } else {
+        &settings.ramble_model
+    };
+
+    if model.trim().is_empty() {
+        let msg = "No model configured".to_string();
+        utils::log_to_frontend(app, "error", &msg);
+        return Err(msg);
+    }
+
+    // Log the model being used to the frontend
+    utils::log_to_frontend(app, "info", &format!("Using model: {}", model));
+
     info!(
         "Starting Ramble to Coherent with provider '{}' (model: {}), category: '{}', app: '{}'",
         provider.id, model, category_id, app_name
@@ -768,6 +826,9 @@ async fn process_ramble_to_coherent(
     // ${category} - The category name
     // ${selection} - Selected text captured before recording
     // ${output} - The transcribed speech
+    // ${screen_context} - OCR text from screen capture
+    let screen_text = screen_context.as_deref().unwrap_or("");
+
     let processed_prompt = if let Some(selection) = selection_context {
         if prompt.contains("${selection}") {
             // User has explicitly included ${selection} in their prompt
@@ -776,6 +837,7 @@ async fn process_ramble_to_coherent(
                 .replace("${category}", &category_id)
                 .replace("${output}", transcription)
                 .replace("${selection}", &selection)
+                .replace("${screen_context}", screen_text)
         } else {
             // User hasn't included ${selection}, so we ignore it to respect "not combined" requested by user unless explicit.
             warn!("Selection context available but ${{selection}} variable missing in prompt. Ignoring selection.");
@@ -783,6 +845,7 @@ async fn process_ramble_to_coherent(
                 .replace("${application}", &app_name)
                 .replace("${category}", &category_id)
                 .replace("${output}", transcription)
+                .replace("${screen_context}", screen_text)
         }
     } else {
         // No selection context, just clear the variable if it exists
@@ -791,6 +854,7 @@ async fn process_ramble_to_coherent(
             .replace("${category}", &category_id)
             .replace("${output}", transcription)
             .replace("${selection}", "")
+            .replace("${screen_context}", screen_text)
     };
 
     debug!(
@@ -983,38 +1047,6 @@ struct PauseAction;
 impl ShortcutAction for PauseAction {
     fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) -> bool {
         crate::utils::toggle_pause_operation(app);
-        true
-    }
-
-    fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {}
-}
-
-// Vision Action
-struct VisionAction;
-
-impl ShortcutAction for VisionAction {
-    fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) -> bool {
-        let app_clone = app.clone();
-        tauri::async_runtime::spawn(async move {
-            crate::utils::log_to_frontend(&app_clone, "info", "Capturing screenshot...");
-            match crate::vision::capture_screen() {
-                Ok(base64) => {
-                    info!("Vision capture successful ({} chars)", base64.len());
-                    crate::utils::log_to_frontend(&app_clone, "info", "Screenshot captured!");
-                    let audio_manager = app_clone.state::<Arc<AudioRecordingManager>>();
-                    audio_manager.add_vision_context(base64);
-                    let _ = app_clone.emit("vision-captured", ());
-                }
-                Err(e) => {
-                    error!("Vision capture failed: {}", e);
-                    crate::utils::log_to_frontend(
-                        &app_clone,
-                        "error",
-                        &format!("Screenshot failed: {}", e),
-                    );
-                }
-            }
-        });
         true
     }
 
@@ -1378,10 +1410,6 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
     map.insert(
         "pause_toggle".to_string(),
         Arc::new(PauseAction) as Arc<dyn ShortcutAction>,
-    );
-    map.insert(
-        "vision_capture".to_string(),
-        Arc::new(VisionAction) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "voice_command".to_string(),

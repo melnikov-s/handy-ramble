@@ -462,6 +462,9 @@ pub struct AppSettings {
     /// User-defined voice commands
     #[serde(default = "default_voice_commands")]
     pub voice_commands: Vec<VoiceCommand>,
+    /// Optional regex pattern to filter out filler words from transcriptions (e.g., "um", "uh")
+    #[serde(default)]
+    pub filler_word_filter: Option<String>,
 }
 
 fn default_model() -> String {
@@ -647,6 +650,12 @@ fn default_voice_command_model() -> String {
     "gpt-4o-mini".to_string()
 }
 
+fn default_filler_word_filter() -> Option<String> {
+    // Default pattern to filter common English filler words
+    // Matches: um, uh, hmm, mhm, mm, ah, er, erm (with variations like umm, uhh, etc.)
+    Some(r"\b(u+[hm]+|a+h+|e+r+m?|m+h?m+|h+m+)\b[,\s]*".to_string())
+}
+
 fn default_voice_commands() -> Vec<VoiceCommand> {
     vec![
         VoiceCommand {
@@ -795,6 +804,9 @@ Return ONLY the cleaned, formatted text. No preamble.
 
 Selected text (may be empty):
 ${selection}
+
+Screen context (OCR from current screen):
+${screen_context}
 
 Input transcript:
 ${output}".to_string(),
@@ -1129,16 +1141,6 @@ pub fn get_default_settings() -> AppSettings {
         },
     );
     bindings.insert(
-        "vision_capture".to_string(),
-        ShortcutBinding {
-            id: "vision_capture".to_string(),
-            name: "Vision Capture".to_string(),
-            description: "Captures screenshot during recording.".to_string(),
-            default_binding: "Option+Shift+S".to_string(),
-            current_binding: "Option+Shift+S".to_string(),
-        },
-    );
-    bindings.insert(
         "pause_toggle".to_string(),
         ShortcutBinding {
             id: "pause_toggle".to_string(),
@@ -1216,6 +1218,8 @@ pub fn get_default_settings() -> AppSettings {
         voice_commands_enabled: false,
         voice_command_default_model: default_voice_command_model(),
         voice_commands: default_voice_commands(),
+        // Filler word filter
+        filler_word_filter: default_filler_word_filter(),
     }
 }
 

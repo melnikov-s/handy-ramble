@@ -1,5 +1,4 @@
 import { listen } from "@tauri-apps/api/event";
-import { invoke } from "@tauri-apps/api/core";
 import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -9,7 +8,7 @@ import {
   PauseIcon,
   PlayIcon,
 } from "../components/icons";
-import { Sparkles, AlertCircle, X, Camera, FileText } from "lucide-react";
+import { Sparkles, AlertCircle, X, FileText } from "lucide-react";
 import "./RecordingOverlay.css";
 import { commands } from "@/bindings";
 import { syncLanguageFromSettings } from "@/i18n";
@@ -65,17 +64,13 @@ const RecordingOverlay: React.FC = () => {
   // Mode determination state - hide pause button until mode is known
   const [modeKnown, setModeKnown] = useState(false);
   const [isQuickPressMode, setIsQuickPressMode] = useState(false);
-  const [flashScreenshot, setFlashScreenshot] = useState(false);
-  const [hasScreenshot, setHasScreenshot] = useState(false);
+
   // Prompt mode state (from tray menu selection)
   const [promptMode, setPromptMode] = useState<PromptMode>("dynamic");
   // Detected category in Dynamic mode (from backend when refinement starts)
   const [detectedCategory, setDetectedCategory] = useState<string | null>(null);
   // Track if in voice command mode for different styling
   const [isVoiceCommandMode, setIsVoiceCommandMode] = useState(false);
-
-  // Track pending optimistic flashes to prevent duplicates from backend events
-  const pendingOptimisticFlashesRef = useRef(0);
 
   // Context params count (for badge)
   const [contextParamsCount, setContextParamsCount] = useState(0);
@@ -126,9 +121,7 @@ const RecordingOverlay: React.FC = () => {
         if (overlayState === "recording") {
           setModeKnown(false);
           setIsQuickPressMode(false);
-          setHasScreenshot(false);
           setDetectedCategory(null);
-          pendingOptimisticFlashesRef.current = 0;
         } else if (
           overlayState === "transcribing" ||
           overlayState === "ramble_transcribing" ||
@@ -165,10 +158,8 @@ const RecordingOverlay: React.FC = () => {
         setErrorMessage("");
         setModeKnown(false);
         setIsQuickPressMode(false);
-        setHasScreenshot(false);
         setDetectedCategory(null);
         setIsVoiceCommandMode(false);
-        pendingOptimisticFlashesRef.current = 0;
       });
 
       // Listen for voice command mode activation
@@ -209,23 +200,6 @@ const RecordingOverlay: React.FC = () => {
         },
       );
 
-      // Listen for vision capture feedback from Rust
-      await register<void>("vision-captured", () => {
-        console.log("[UI] vision-captured received");
-        setHasScreenshot(true);
-
-        if (pendingOptimisticFlashesRef.current > 0) {
-          console.log(
-            "[UI] Suppressing duplicate flash (handled optimistically)",
-          );
-          pendingOptimisticFlashesRef.current -= 1;
-          return;
-        }
-
-        setFlashScreenshot(true);
-        setTimeout(() => setFlashScreenshot(false), 500);
-      });
-
       // Listen for processing command state (after transcription, before LLM response)
       await register<string>("processing-command", (event) => {
         console.log("[UI] processing-command received:", event.payload);
@@ -257,20 +231,6 @@ const RecordingOverlay: React.FC = () => {
     setState("recording");
   };
 
-  const handleVisionCapture = () => {
-    // Optimistically trigger flash animation
-    // Increment counter so we ignore the subsequent backend confirmation
-    pendingOptimisticFlashesRef.current += 1;
-    setHasScreenshot(true);
-    setFlashScreenshot(true);
-    setTimeout(() => setFlashScreenshot(false), 500);
-
-    // Trigger backend command
-    invoke("trigger_vision_capture").catch((err) =>
-      console.error("Failed to trigger vision capture:", err),
-    );
-  };
-
   const handlePauseResume = () => {
     if (state === "paused" || state === "ramble_paused") {
       commands.resumeOperation();
@@ -284,22 +244,6 @@ const RecordingOverlay: React.FC = () => {
   // Show pause button only when: mode is known AND in quick press mode (refining), OR already paused
   const showPauseButton =
     isPaused || (isRecording && modeKnown && isQuickPressMode);
-
-  // Show vision indicator if: recording or paused, preventing it from showing during processing
-  const isProcessing =
-    state === "transcribing" ||
-    state === "ramble_transcribing" ||
-    state === "making_coherent" ||
-    state === "processing_command" ||
-    state === "error";
-
-  // Only show vision button when in "Refined" (quick press) mode, or if we already have a screenshot attached.
-  // In "Raw" mode (hold), screenshots are not used, so we hide the button to avoid confusion.
-  // We also check modeKnown to avoid showing it prematurely before we know if it's Raw or Refined.
-  const showVisionButton =
-    !isProcessing &&
-    (isRecording || isPaused) &&
-    ((modeKnown && isQuickPressMode) || hasScreenshot);
 
   const getIcon = () => {
     // Helper to get category icon (only for refiner mode, not voice commands)
@@ -364,30 +308,9 @@ const RecordingOverlay: React.FC = () => {
   return (
     <>
       <div
-        className={`recording-overlay ${isVisible ? "fade-in" : ""} ${state === "error" ? "error-state" : ""} ${isPaused ? "paused-state" : ""} ${flashScreenshot ? "screenshot-flash" : ""} ${isVoiceCommandMode ? "voice-command-mode" : ""}`}
+        className={`recording-overlay ${isVisible ? "fade-in" : ""} ${state === "error" ? "error-state" : ""} ${isPaused ? "paused-state" : ""} ${isVoiceCommandMode ? "voice-command-mode" : ""}`}
       >
-        <div className="overlay-left">
-          {getIcon()}
-          {/* Show vision indicator if enabled */}
-          {showVisionButton && (
-            <div
-              className={`vision-indicator ${hasScreenshot ? "has-vision" : ""}`}
-              style={{
-                opacity: isQuickPressMode ? 1 : 0.4,
-                cursor: "pointer",
-                pointerEvents: "auto",
-              }}
-              onClick={handleVisionCapture}
-              title={
-                hasScreenshot
-                  ? t("overlay.visionCaptured", "Screenshot taken")
-                  : t("overlay.takeVision", "Click or Press S for screenshot")
-              }
-            >
-              <Camera size={14} />
-            </div>
-          )}
-        </div>
+        <div className="overlay-left">{getIcon()}</div>
 
         <div className="overlay-middle">
           {(state === "recording" || state === "ramble_recording") && (
