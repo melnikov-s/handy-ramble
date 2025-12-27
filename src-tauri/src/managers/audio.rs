@@ -3,6 +3,7 @@ use crate::helpers::clamshell;
 use crate::settings::{get_settings, AppSettings};
 use crate::utils;
 use log::{debug, error, info};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -162,6 +163,10 @@ pub struct AudioRecordingManager {
     coherent_mode: Arc<Mutex<bool>>,
     /// Stores the Base64 representation of screenshots captured during the session.
     vision_context: Arc<Mutex<Vec<String>>>,
+    /// Stores OCR text from screen captured at recording start (for ${screen_context} variable)
+    screen_ocr_context: Arc<Mutex<Option<String>>>,
+    /// Stop signal for computer use agent - when set to true, the agent loop should stop
+    computer_use_stop: Arc<AtomicBool>,
 }
 
 impl AudioRecordingManager {
@@ -189,6 +194,8 @@ impl AudioRecordingManager {
             selection_context: Arc::new(Mutex::new(None)),
             coherent_mode: Arc::new(Mutex::new(false)),
             vision_context: Arc::new(Mutex::new(Vec::new())),
+            screen_ocr_context: Arc::new(Mutex::new(None)),
+            computer_use_stop: Arc::new(AtomicBool::new(false)),
         };
 
         // Always-on?  Open immediately.
@@ -374,6 +381,8 @@ impl AudioRecordingManager {
                 *self.selection_context.lock().unwrap() = None;
                 // Clear any previous vision context
                 self.vision_context.lock().unwrap().clear();
+                // Clear any previous screen OCR context (will be populated async if needed)
+                *self.screen_ocr_context.lock().unwrap() = None;
 
                 // Ensure microphone is open in on-demand mode
                 if matches!(*self.mode.lock().unwrap(), MicrophoneMode::OnDemand) {
@@ -631,5 +640,38 @@ impl AudioRecordingManager {
         let ctx = self.vision_context.lock().unwrap().clone();
         debug!("Retrieved vision context ({} images)", ctx.len());
         ctx
+    }
+
+    /// Get the stop signal for computer use agent
+    pub fn get_computer_use_stop_signal(&self) -> Arc<AtomicBool> {
+        self.computer_use_stop.clone()
+    }
+
+    /// Request the computer use agent to stop
+    pub fn request_computer_use_stop(&self) {
+        self.computer_use_stop.store(true, Ordering::SeqCst);
+        debug!("Computer use stop requested");
+    }
+
+    /// Clear the computer use stop signal (call before starting agent)
+    pub fn clear_computer_use_stop(&self) {
+        self.computer_use_stop.store(false, Ordering::SeqCst);
+        debug!("Computer use stop signal cleared");
+    }
+
+    /// Sets the screen OCR context (captured at recording start for ${screen_context} variable)
+    pub fn set_screen_ocr_context(&self, text: String) {
+        debug!("Setting screen OCR context ({} chars)", text.len());
+        *self.screen_ocr_context.lock().unwrap() = Some(text);
+    }
+
+    /// Retrieves the screen OCR context, if any.
+    pub fn get_screen_ocr_context(&self) -> Option<String> {
+        self.screen_ocr_context.lock().unwrap().clone()
+    }
+
+    /// Clears the screen OCR context
+    pub fn clear_screen_ocr_context(&self) {
+        *self.screen_ocr_context.lock().unwrap() = None;
     }
 }

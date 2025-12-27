@@ -335,6 +335,73 @@ async fn maybe_convert_chinese_variant(
     }
 }
 
+/// Captures screen OCR in background if the current prompt uses ${screen_context}.
+/// This runs at recording start so OCR is ready by the time transcription finishes.
+fn maybe_capture_screen_ocr_background(app: &AppHandle) {
+    let settings = get_settings(app);
+
+    // Determine which category/prompt will be used based on current app
+    let category_id = match settings.prompt_mode {
+        PromptMode::Dynamic => {
+            // Detect frontmost app
+            let app_info = app_detection::get_frontmost_application();
+            let bundle_id = app_info
+                .map(|info| info.bundle_identifier)
+                .unwrap_or_default();
+
+            // Look up category: user mappings first, then known_apps, then default
+            settings
+                .app_category_mappings
+                .iter()
+                .find(|m| m.bundle_identifier == bundle_id)
+                .map(|m| m.category_id.clone())
+                .or_else(|| {
+                    known_apps::find_known_app(&bundle_id).map(|k| k.suggested_category.clone())
+                })
+                .unwrap_or_else(|| settings.default_category_id.clone())
+        }
+        PromptMode::Development => "development".to_string(),
+        PromptMode::Conversation => "conversation".to_string(),
+        PromptMode::Writing => "writing".to_string(),
+        PromptMode::Email => "email".to_string(),
+    };
+
+    // Get the prompt for this category
+    let prompt = settings
+        .prompt_categories
+        .iter()
+        .find(|c| c.id == category_id)
+        .or_else(|| {
+            settings
+                .prompt_categories
+                .iter()
+                .find(|c| c.id == settings.default_category_id)
+        })
+        .map(|c| c.prompt.clone())
+        .unwrap_or_default();
+
+    // Check if prompt uses ${screen_context}
+    if !prompt.contains("${screen_context}") {
+        debug!("Prompt does not use ${{screen_context}}, skipping background OCR");
+        return;
+    }
+
+    debug!("Prompt uses ${{screen_context}}, starting background OCR capture...");
+
+    // Capture and OCR the screen
+    let ocr_text = crate::vision::capture_and_ocr_screen();
+
+    if !ocr_text.is_empty() {
+        debug!("Background OCR captured {} chars", ocr_text.len());
+
+        // Store in audio manager for later use
+        let audio_manager = app.state::<Arc<AudioRecordingManager>>();
+        audio_manager.set_screen_ocr_context(ocr_text);
+    } else {
+        debug!("Background OCR returned empty result");
+    }
+}
+
 impl ShortcutAction for TranscribeAction {
     fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) -> bool {
         let start_time = Instant::now();
@@ -412,6 +479,14 @@ impl ShortcutAction for TranscribeAction {
             start_time.elapsed(),
             recording_started
         );
+
+        // If recording started, check if we should capture screen OCR in background
+        if recording_started {
+            let app_clone = app.clone();
+            std::thread::spawn(move || {
+                maybe_capture_screen_ocr_background(&app_clone);
+            });
+        }
 
         recording_started
     }
@@ -753,15 +828,26 @@ async fn process_ramble_to_coherent(
         return Err(msg);
     }
 
-    // === OCR: Only capture screen context if ${screen_context} is in the prompt ===
+    // === OCR: Use pre-captured screen context from recording start ===
     let screen_context = if prompt.contains("${screen_context}") {
-        debug!("Prompt contains ${{screen_context}}, capturing screen...");
-        utils::log_to_frontend(app, "info", "Analyzing screen...");
-        let ocr_text = crate::vision::capture_and_ocr_screen();
-        if !ocr_text.is_empty() {
-            debug!("OCR captured {} chars of screen context", ocr_text.len());
+        // Get the cached OCR result that was captured in background when recording started
+        let audio_manager = app.state::<Arc<AudioRecordingManager>>();
+        match audio_manager.get_screen_ocr_context() {
+            Some(ocr_text) => {
+                debug!("Using cached OCR result ({} chars)", ocr_text.len());
+                Some(ocr_text)
+            }
+            None => {
+                // Fallback: capture synchronously if background capture didn't complete
+                debug!("No cached OCR, falling back to synchronous capture...");
+                utils::log_to_frontend(app, "info", "Analyzing screen...");
+                let ocr_text = crate::vision::capture_and_ocr_screen();
+                if !ocr_text.is_empty() {
+                    debug!("Fallback OCR captured {} chars", ocr_text.len());
+                }
+                Some(ocr_text)
+            }
         }
-        Some(ocr_text)
     } else {
         debug!("Prompt does not contain ${{screen_context}}, skipping OCR");
         None
@@ -1264,7 +1350,7 @@ fn execute_applescript_command(_script: &str) -> crate::voice_commands::CommandR
 
 /// Use LLM to interpret and execute an unknown command
 async fn execute_via_llm(
-    _app: &AppHandle,
+    app: &AppHandle,
     settings: &AppSettings,
     transcription: &str,
     selection: Option<String>,
@@ -1288,7 +1374,7 @@ async fn execute_via_llm(
         .cloned()
         .unwrap_or_default();
 
-    let client = crate::llm_client::create_client(&provider, api_key)
+    let client = crate::llm_client::create_client(&provider, api_key.clone())
         .map_err(|e| format!("Failed to create LLM client: {}", e))?;
 
     // Build prompt with available commands
@@ -1331,17 +1417,49 @@ async fn execute_via_llm(
     // Parse the JSON response
     match serde_json::from_str::<serde_json::Value>(llm_response) {
         Ok(json) => {
+            let exec_type = json
+                .get("execution_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+
+            // Check for computer_use FIRST - this can be triggered even without a matched command
+            // Also treat invalid types that suggest web interaction as computer_use
+            let is_computer_use = exec_type == "computer_use"
+                || exec_type == "web_search"
+                || exec_type == "browse"
+                || exec_type == "web"
+                || exec_type == "search";
+
+            if is_computer_use {
+                let task_description = json
+                    .get("task_description")
+                    .and_then(|v| v.as_str())
+                    // Fallback to command field if task_description missing
+                    .or_else(|| json.get("command").and_then(|v| v.as_str()))
+                    .unwrap_or(transcription);
+
+                return execute_computer_use_command(app, task_description, &api_key).await;
+            }
+
             if json
                 .get("matched_command")
                 .and_then(|v| v.as_str())
                 .is_some()
             {
                 // LLM matched a command, execute it
-                let exec_type = json
-                    .get("execution_type")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("shell");
                 let command = json.get("command").and_then(|v| v.as_str()).unwrap_or("");
+
+                // Check for paste execution type first (used by print/echo commands)
+                if exec_type == "paste" {
+                    let output = json
+                        .get("output")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(command);
+                    debug!("Paste output: {}", output);
+                    return Ok(crate::voice_commands::CommandResult::PasteOutput(
+                        output.to_string(),
+                    ));
+                }
 
                 if command.is_empty() {
                     // Check if it's a bespoke command
@@ -1361,28 +1479,27 @@ async fn execute_via_llm(
 
                 match exec_type {
                     "applescript" => Ok(execute_applescript_command(command)),
-                    "paste" => {
-                        // Direct paste - output verbatim text
-                        let output = json
-                            .get("output")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or(command); // Fall back to command field
-                        debug!("Paste output: {}", output);
-                        Ok(crate::voice_commands::CommandResult::PasteOutput(
-                            output.to_string(),
-                        ))
-                    }
                     _ => Ok(execute_shell_command(command)),
                 }
             } else {
-                // No match, return the explanation
-                let message = json
-                    .get("message")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Command not understood");
-                Ok(crate::voice_commands::CommandResult::PasteOutput(
-                    message.to_string(),
-                ))
+                // No match, return the explanation or paste output
+                if exec_type == "paste" {
+                    let output = json
+                        .get("output")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("No output");
+                    Ok(crate::voice_commands::CommandResult::PasteOutput(
+                        output.to_string(),
+                    ))
+                } else {
+                    let message = json
+                        .get("message")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Command not understood");
+                    Ok(crate::voice_commands::CommandResult::PasteOutput(
+                        message.to_string(),
+                    ))
+                }
             }
         }
         Err(_) => {
@@ -1391,6 +1508,36 @@ async fn execute_via_llm(
                 llm_response.clone(),
             ))
         }
+    }
+}
+
+/// Execute a computer use command via the Gemini agent
+async fn execute_computer_use_command(
+    app: &AppHandle,
+    task: &str,
+    api_key: &str,
+) -> Result<crate::voice_commands::CommandResult, String> {
+    use crate::computer_use::ComputerUseAgent;
+
+    info!("Starting Computer Use agent for task: {}", task);
+
+    // Get the stop signal from the audio manager
+    let audio_manager = app.state::<Arc<AudioRecordingManager>>();
+    audio_manager.clear_computer_use_stop();
+    let stop_signal = audio_manager.get_computer_use_stop_signal();
+
+    // Create and run the agent
+    let agent = ComputerUseAgent::new(app.clone(), stop_signal)
+        .map_err(|e| format!("Failed to create agent: {}", e))?;
+
+    let result = agent.run(task, api_key).await;
+
+    if result.success {
+        // Don't paste the output - the toast notification is shown via emit_end event
+        Ok(crate::voice_commands::CommandResult::Success)
+    } else {
+        let error_msg = result.error.unwrap_or_else(|| "Unknown error".to_string());
+        Ok(crate::voice_commands::CommandResult::Error(error_msg))
     }
 }
 
