@@ -114,9 +114,9 @@ const settingUpdaters: {
   clipboard_handling: (value) =>
     commands.changeClipboardHandlingSetting(value as string),
   history_limit: (value) => commands.updateHistoryLimit(value as number),
-  post_process_enabled: (value) =>
+  coherent_enabled: (value) =>
     commands.changePostProcessEnabledSetting(value as boolean),
-  post_process_selected_prompt_id: (value) =>
+  coherent_selected_prompt_id: (value) =>
     commands.setPostProcessSelectedPrompt(value as string),
   mute_while_recording: (value) =>
     commands.changeMuteWhileRecordingSetting(value as boolean),
@@ -350,32 +350,17 @@ export const useSettingsStore = create<SettingsStore>()(
     },
 
     setPostProcessProvider: async (providerId) => {
-      const { settings, setUpdating, refreshSettings } = get();
+      // Deprecated: Using unified provider system now
+      // This function is kept for API compatibility but does nothing meaningful
+      const { setUpdating } = get();
       const updateKey = "post_process_provider_id";
-      const previousId = settings?.post_process_provider_id ?? null;
 
       setUpdating(updateKey, true);
 
-      if (settings) {
-        set((state) => ({
-          settings: state.settings
-            ? { ...state.settings, post_process_provider_id: providerId }
-            : null,
-        }));
-      }
-
       try {
         await commands.setPostProcessProvider(providerId);
-        await refreshSettings();
       } catch (error) {
         console.error("Failed to set post-process provider:", error);
-        if (previousId !== null) {
-          set((state) => ({
-            settings: state.settings
-              ? { ...state.settings, post_process_provider_id: previousId }
-              : null,
-          }));
-        }
       } finally {
         setUpdating(updateKey, false);
       }

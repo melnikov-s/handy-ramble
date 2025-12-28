@@ -87,8 +87,7 @@ const PostProcessingSettingsApiComponent: React.FC = () => {
                   "settings.postProcessing.api.baseUrl.placeholder",
                 )}
                 disabled={
-                  !state.selectedProvider?.allow_base_url_edit ||
-                  state.isBaseUrlUpdating
+                  !state.selectedProvider?.is_custom || state.isBaseUrlUpdating
                 }
                 className="min-w-[380px]"
               />
@@ -174,9 +173,14 @@ const PostProcessingSettingsPromptsComponent: React.FC = () => {
   const [draftName, setDraftName] = useState("");
   const [draftText, setDraftText] = useState("");
 
-  const enabled = getSetting("post_process_enabled") || false;
-  const prompts = getSetting("post_process_prompts") || [];
-  const selectedPromptId = getSetting("post_process_selected_prompt_id") || "";
+  const enabled = getSetting("coherent_enabled") || false;
+  const prompts = (getSetting("coherent_prompts") || []) as {
+    id: string;
+    name: string;
+    prompt: string;
+  }[];
+  const selectedPromptId = (getSetting("coherent_selected_prompt_id") ||
+    "") as string;
   const selectedPrompt =
     prompts.find((prompt) => prompt.id === selectedPromptId) || null;
 
@@ -199,7 +203,7 @@ const PostProcessingSettingsPromptsComponent: React.FC = () => {
 
   const handlePromptSelect = (promptId: string | null) => {
     if (!promptId) return;
-    updateSetting("post_process_selected_prompt_id", promptId);
+    updateSetting("coherent_selected_prompt_id", promptId);
     setIsCreating(false);
   };
 
@@ -213,7 +217,7 @@ const PostProcessingSettingsPromptsComponent: React.FC = () => {
       );
       if (result.status === "ok") {
         await refreshSettings();
-        updateSetting("post_process_selected_prompt_id", result.data.id);
+        updateSetting("coherent_selected_prompt_id", result.data.id);
         setIsCreating(false);
       }
     } catch (error) {
@@ -303,9 +307,7 @@ const PostProcessingSettingsPromptsComponent: React.FC = () => {
                 ? t("settings.postProcessing.prompts.noPrompts")
                 : t("settings.postProcessing.prompts.selectPrompt")
             }
-            disabled={
-              isUpdating("post_process_selected_prompt_id") || isCreating
-            }
+            disabled={isUpdating("coherent_selected_prompt_id") || isCreating}
             className="flex-1"
           />
           <Button

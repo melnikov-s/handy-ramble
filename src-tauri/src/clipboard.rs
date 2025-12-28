@@ -222,14 +222,12 @@ pub fn get_selected_text(app_handle: &AppHandle) -> Result<Option<String>, Strin
 
     // 6. Read new content
     let selected_text = clipboard.read_text().unwrap_or_default();
+    // Safely truncate for debug logging (UTF-8 safe)
+    let preview: String = selected_text.chars().take(100).collect();
     debug!(
         "[SELECTION] Clipboard after copy: {} chars, content: '{}'",
         selected_text.len(),
-        if selected_text.len() > 100 {
-            &selected_text[..100]
-        } else {
-            &selected_text
-        }
+        preview
     );
 
     // 7. Restore previous content

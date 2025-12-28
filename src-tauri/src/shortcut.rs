@@ -396,7 +396,7 @@ pub fn change_clipboard_handling_setting(app: AppHandle, handling: String) -> Re
 #[specta::specta]
 pub fn change_post_process_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
-    settings.post_process_enabled = enabled;
+    settings.coherent_enabled = enabled;
     settings::write_settings(&app, settings);
     Ok(())
 }
@@ -409,19 +409,19 @@ pub fn change_post_process_base_url_setting(
     base_url: String,
 ) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
-    let label = settings
-        .post_process_provider(&provider_id)
-        .map(|provider| provider.label.clone())
-        .ok_or_else(|| format!("Provider '{}' not found", provider_id))?;
-
+    
+    // Find the provider in llm_providers
     let provider = settings
-        .post_process_provider_mut(&provider_id)
-        .expect("Provider looked up above must exist");
-
-    if !provider.allow_base_url_edit {
+        .llm_providers
+        .iter_mut()
+        .find(|p| p.id == provider_id)
+        .ok_or_else(|| format!("Provider '{}' not found", provider_id))?;
+    
+    // Only allow editing custom providers
+    if !provider.is_custom {
         return Err(format!(
             "Provider '{}' does not allow editing the base URL",
-            label
+            provider.name
         ));
     }
 
@@ -436,7 +436,7 @@ fn validate_provider_exists(
     provider_id: &str,
 ) -> Result<(), String> {
     if !settings
-        .post_process_providers
+        .llm_providers
         .iter()
         .any(|provider| provider.id == provider_id)
     {
@@ -453,8 +453,15 @@ pub fn change_post_process_api_key_setting(
     api_key: String,
 ) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
-    validate_provider_exists(&settings, &provider_id)?;
-    settings.post_process_api_keys.insert(provider_id, api_key);
+    
+    // Find the provider in llm_providers and update its API key
+    let provider = settings
+        .llm_providers
+        .iter_mut()
+        .find(|p| p.id == provider_id)
+        .ok_or_else(|| format!("Provider '{}' not found", provider_id))?;
+    
+    provider.api_key = api_key;
     settings::write_settings(&app, settings);
     Ok(())
 }
@@ -462,24 +469,20 @@ pub fn change_post_process_api_key_setting(
 #[tauri::command]
 #[specta::specta]
 pub fn change_post_process_model_setting(
-    app: AppHandle,
-    provider_id: String,
-    model: String,
+    _app: AppHandle,
+    _provider_id: String,
+    _model: String,
 ) -> Result<(), String> {
-    let mut settings = settings::get_settings(&app);
-    validate_provider_exists(&settings, &provider_id)?;
-    settings.post_process_models.insert(provider_id, model);
-    settings::write_settings(&app, settings);
+    // Deprecated: Model is now set via llm_models and default_*_model_id
+    // This command is kept for API compatibility but does nothing
     Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn set_post_process_provider(app: AppHandle, provider_id: String) -> Result<(), String> {
-    let mut settings = settings::get_settings(&app);
-    validate_provider_exists(&settings, &provider_id)?;
-    settings.post_process_provider_id = provider_id;
-    settings::write_settings(&app, settings);
+pub fn set_post_process_provider(_app: AppHandle, _provider_id: String) -> Result<(), String> {
+    // Deprecated: Provider is now selected via model selection (models link to providers)
+    // This command is kept for API compatibility but does nothing
     Ok(())
 }
 
@@ -501,7 +504,7 @@ pub fn add_post_process_prompt(
         prompt,
     };
 
-    settings.post_process_prompts.push(new_prompt.clone());
+    settings.coherent_prompts.push(new_prompt.clone());
     settings::write_settings(&app, settings);
 
     Ok(new_prompt)
@@ -518,7 +521,7 @@ pub fn update_post_process_prompt(
     let mut settings = settings::get_settings(&app);
 
     if let Some(existing_prompt) = settings
-        .post_process_prompts
+        .coherent_prompts
         .iter_mut()
         .find(|p| p.id == id)
     {
@@ -537,22 +540,22 @@ pub fn delete_post_process_prompt(app: AppHandle, id: String) -> Result<(), Stri
     let mut settings = settings::get_settings(&app);
 
     // Don't allow deleting the last prompt
-    if settings.post_process_prompts.len() <= 1 {
+    if settings.coherent_prompts.len() <= 1 {
         return Err("Cannot delete the last prompt".to_string());
     }
 
     // Find and remove the prompt
-    let original_len = settings.post_process_prompts.len();
-    settings.post_process_prompts.retain(|p| p.id != id);
+    let original_len = settings.coherent_prompts.len();
+    settings.coherent_prompts.retain(|p| p.id != id);
 
-    if settings.post_process_prompts.len() == original_len {
+    if settings.coherent_prompts.len() == original_len {
         return Err(format!("Prompt with id '{}' not found", id));
     }
 
     // If the deleted prompt was selected, select the first one or None
-    if settings.post_process_selected_prompt_id.as_ref() == Some(&id) {
-        settings.post_process_selected_prompt_id =
-            settings.post_process_prompts.first().map(|p| p.id.clone());
+    if settings.coherent_selected_prompt_id.as_ref() == Some(&id) {
+        settings.coherent_selected_prompt_id =
+            settings.coherent_prompts.first().map(|p| p.id.clone());
     }
 
     settings::write_settings(&app, settings);
@@ -567,9 +570,9 @@ pub async fn fetch_post_process_models(
 ) -> Result<Vec<String>, String> {
     let settings = settings::get_settings(&app);
 
-    // Find the provider
+    // Find the provider in unified llm_providers
     let provider = settings
-        .post_process_providers
+        .llm_providers
         .iter()
         .find(|p| p.id == provider_id)
         .ok_or_else(|| format!("Provider '{}' not found", provider_id))?;
@@ -586,25 +589,16 @@ pub async fn fetch_post_process_models(
         }
     }
 
-    // Get API key
-    let api_key = settings
-        .post_process_api_keys
-        .get(&provider_id)
-        .cloned()
-        .unwrap_or_default();
+    // Get API key from provider
+    let api_key = provider.api_key.clone();
 
     // Skip fetching if no API key for providers that typically need one
-    if api_key.trim().is_empty() && provider.id != "custom" {
+    if api_key.trim().is_empty() && !provider.is_custom {
         return Err(format!(
             "API key is required for {}. Please add an API key to list available models.",
-            provider.label
+            provider.name
         ));
     }
-
-    // TODO: In the future, we can use async-openai's models API:
-    // let client = crate::llm_client::create_client(provider, api_key)?;
-    // let response = client.models().list().await?;
-    // return Ok(response.data.iter().map(|m| m.id.clone()).collect());
 
     // For now, use manual HTTP request to have more control over the endpoint
     fetch_models_manual(provider, api_key).await
@@ -613,16 +607,12 @@ pub async fn fetch_post_process_models(
 /// Fetch models using manual HTTP request
 /// This gives us more control and avoids issues with non-standard endpoints
 async fn fetch_models_manual(
-    provider: &crate::settings::PostProcessProvider,
+    provider: &crate::settings::LLMProvider,
     api_key: String,
 ) -> Result<Vec<String>, String> {
-    // Build the endpoint URL
+    // Build the endpoint URL - use standard /models for most providers
     let base_url = provider.base_url.trim_end_matches('/');
-    let models_endpoint = provider
-        .models_endpoint
-        .as_ref()
-        .map(|s| s.trim_start_matches('/'))
-        .unwrap_or("models");
+    let models_endpoint = "models";
     let endpoint = format!("{}/{}", base_url, models_endpoint);
 
     // Create HTTP client with headers
@@ -717,11 +707,11 @@ pub fn set_post_process_selected_prompt(app: AppHandle, id: String) -> Result<()
     let mut settings = settings::get_settings(&app);
 
     // Verify the prompt exists
-    if !settings.post_process_prompts.iter().any(|p| p.id == id) {
+    if !settings.coherent_prompts.iter().any(|p| p.id == id) {
         return Err(format!("Prompt with id '{}' not found", id));
     }
 
-    settings.post_process_selected_prompt_id = Some(id);
+    settings.coherent_selected_prompt_id = Some(id);
     settings::write_settings(&app, settings);
     Ok(())
 }
@@ -765,25 +755,15 @@ pub fn change_app_language_setting(app: AppHandle, language: String) -> Result<(
 #[specta::specta]
 pub fn change_ramble_enabled_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
-    settings.ramble_enabled = enabled;
+    settings.coherent_enabled = enabled;
     settings::write_settings(&app, settings);
     Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn change_ramble_provider_setting(app: AppHandle, provider_id: String) -> Result<(), String> {
-    let mut settings = settings::get_settings(&app);
-    // Validate provider exists
-    if !settings
-        .post_process_providers
-        .iter()
-        .any(|p| p.id == provider_id)
-    {
-        return Err(format!("Provider '{}' not found", provider_id));
-    }
-    settings.ramble_provider_id = provider_id;
-    settings::write_settings(&app, settings);
+pub fn change_ramble_provider_setting(_app: AppHandle, _provider_id: String) -> Result<(), String> {
+    // Deprecated: Provider is now selected via default_coherent_model_id
     Ok(())
 }
 
@@ -791,27 +771,15 @@ pub fn change_ramble_provider_setting(app: AppHandle, provider_id: String) -> Re
 
 #[tauri::command]
 #[specta::specta]
-pub fn change_llm_provider_setting(app: AppHandle, provider_id: String) -> Result<(), String> {
-    let mut settings = settings::get_settings(&app);
-    // Validate provider exists
-    if !settings
-        .post_process_providers
-        .iter()
-        .any(|p| p.id == provider_id)
-    {
-        return Err(format!("Provider '{}' not found", provider_id));
-    }
-    settings.llm_provider_id = provider_id;
-    settings::write_settings(&app, settings);
+pub fn change_llm_provider_setting(_app: AppHandle, _provider_id: String) -> Result<(), String> {
+    // Deprecated: Provider is now selected via model selection
     Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn change_ramble_model_setting(app: AppHandle, model: String) -> Result<(), String> {
-    let mut settings = settings::get_settings(&app);
-    settings.ramble_model = model;
-    settings::write_settings(&app, settings);
+pub fn change_ramble_model_setting(_app: AppHandle, _model: String) -> Result<(), String> {
+    // Deprecated: Model is now set via default_coherent_model_id
     Ok(())
 }
 
@@ -819,37 +787,30 @@ pub fn change_ramble_model_setting(app: AppHandle, model: String) -> Result<(), 
 #[specta::specta]
 pub fn change_ramble_use_vision_model_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
-    settings.ramble_use_vision_model = enabled;
+    settings.coherent_use_vision = enabled;
     settings::write_settings(&app, settings);
     Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn change_ramble_vision_model_setting(app: AppHandle, model: String) -> Result<(), String> {
-    let mut settings = settings::get_settings(&app);
-    settings.ramble_vision_model = model;
-    settings::write_settings(&app, settings);
+pub fn change_ramble_vision_model_setting(_app: AppHandle, _model: String) -> Result<(), String> {
+    // Deprecated: Vision model is now the same as coherent model (supports_vision flag)
     Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn change_ramble_prompt_setting(app: AppHandle, prompt: String) -> Result<(), String> {
-    let mut settings = settings::get_settings(&app);
-    settings.ramble_prompt = prompt;
-    settings::write_settings(&app, settings);
+pub fn change_ramble_prompt_setting(_app: AppHandle, _prompt: String) -> Result<(), String> {
+    // Deprecated: Prompts are now managed via coherent_prompts
     Ok(())
 }
 
 #[tauri::command]
 #[specta::specta]
-pub fn reset_ramble_prompt_to_default(app: AppHandle) -> Result<String, String> {
-    let mut settings = settings::get_settings(&app);
-    let default_prompt = settings::get_default_settings().ramble_prompt;
-    settings.ramble_prompt = default_prompt.clone();
-    settings::write_settings(&app, settings);
-    Ok(default_prompt)
+pub fn reset_ramble_prompt_to_default(_app: AppHandle) -> Result<String, String> {
+    // Deprecated: Prompts are now managed via coherent_prompts
+    Ok(String::new())
 }
 
 #[tauri::command]

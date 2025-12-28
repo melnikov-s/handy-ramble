@@ -32,6 +32,48 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use crate::ManagedToggleState;
 
+/// Resolved LLM configuration for making API calls
+pub struct ResolvedLLMConfig {
+    pub provider: crate::settings::LLMProvider,
+    pub model: crate::settings::LLMModel,
+    pub api_key: String,
+}
+
+/// Resolve LLM configuration from a model ID
+/// Returns the provider, model, and API key needed to make an LLM call
+pub fn resolve_llm_config(
+    settings: &AppSettings,
+    model_id: &str,
+) -> Result<ResolvedLLMConfig, String> {
+    let model = settings
+        .get_model(model_id)
+        .cloned()
+        .ok_or_else(|| format!("Model '{}' not found", model_id))?;
+
+    let provider = settings
+        .get_provider(&model.provider_id)
+        .cloned()
+        .ok_or_else(|| {
+            format!(
+                "Provider '{}' not found for model '{}'",
+                model.provider_id, model_id
+            )
+        })?;
+
+    if provider.api_key.is_empty() {
+        return Err(format!(
+            "No API key configured for provider '{}'",
+            provider.name
+        ));
+    }
+
+    Ok(ResolvedLLMConfig {
+        api_key: provider.api_key.clone(),
+        provider,
+        model,
+    })
+}
+
 // Shortcut Action Trait
 pub trait ShortcutAction: Send + Sync {
     /// Start the action. Returns true if the action started successfully, false otherwise.
@@ -117,40 +159,41 @@ async fn maybe_post_process_transcription(
     );
     utils::log_to_frontend(app, "info", "Starting post-processing...");
 
-    let provider = match settings.active_post_process_provider().cloned() {
-        Some(provider) => provider,
+    // Get the model ID to use for coherent mode
+    let model_id = match settings.default_coherent_model_id.as_ref() {
+        Some(id) => id,
         None => {
-            let msg = "Post-processing enabled but no provider is selected";
+            let msg = "No coherent model configured";
             utils::log_to_frontend(app, "error", msg);
             debug!("{}", msg);
             return Err(msg.to_string());
         }
     };
 
-    let model = settings
-        .post_process_models
-        .get(&provider.id)
-        .cloned()
-        .unwrap_or_default();
+    // Resolve the LLM config using the unified helper
+    let llm_config = match resolve_llm_config(settings, model_id) {
+        Ok(config) => config,
+        Err(e) => {
+            utils::log_to_frontend(app, "error", &e);
+            debug!("{}", e);
+            return Err(e);
+        }
+    };
 
-    if model.trim().is_empty() {
-        let msg = format!("Provider '{}' has no model configured", provider.id);
-        utils::log_to_frontend(app, "error", &msg);
-        debug!("{}", msg);
-        return Err(msg.to_string());
-    }
+    let provider = llm_config.provider.clone();
+    let model = llm_config.model.model_id.clone();
 
-    let selected_prompt_id = match &settings.post_process_selected_prompt_id {
+    let selected_prompt_id = match &settings.coherent_selected_prompt_id {
         Some(id) => id.clone(),
         None => {
-            let msg = "No post-processing prompt is selected";
+            let msg = "No coherent prompt is selected";
             debug!("{}", msg);
             return Err(msg.to_string());
         }
     };
 
     let prompt = match settings
-        .post_process_prompts
+        .coherent_prompts
         .iter()
         .find(|prompt| prompt.id == selected_prompt_id)
     {
@@ -218,14 +261,8 @@ async fn maybe_post_process_transcription(
         }
     }
 
-    let api_key = settings
-        .post_process_api_keys
-        .get(&provider.id)
-        .cloned()
-        .unwrap_or_default();
-
     // Create OpenAI-compatible client
-    let client = match crate::llm_client::create_client(&provider, api_key) {
+    let client = match crate::llm_client::create_client(&provider, llm_config.api_key.clone()) {
         Ok(client) => client,
         Err(e) => {
             let msg = format!("Failed to create LLM client: {}", e);
@@ -571,7 +608,16 @@ impl ShortcutAction for TranscribeAction {
                                 // Coherent mode: route through LLM refinement
                                 debug!("Coherent mode enabled - routing through ramble processing");
                                 show_making_coherent_overlay(&ah);
-                                post_process_prompt = Some(settings.ramble_prompt.clone());
+                                // Get prompt from coherent_prompts based on selected ID
+                                if let Some(prompt_id) = &settings.coherent_selected_prompt_id {
+                                    if let Some(p) = settings
+                                        .coherent_prompts
+                                        .iter()
+                                        .find(|p| &p.id == prompt_id)
+                                    {
+                                        post_process_prompt = Some(p.prompt.clone());
+                                    }
+                                }
 
                                 // Apply filler word filter before refinement
                                 let filtered_transcription = filter_filler_words(
@@ -595,15 +641,16 @@ impl ShortcutAction for TranscribeAction {
                                         // Ramble processing skipped, use original
                                     }
                                     Err(error_msg) => {
-                                        // Show error overlay and return without pasting
+                                        // Show error overlay but fall back to raw text output
                                         error!("Coherent processing failed: {}", error_msg);
                                         utils::show_error_overlay(&ah, &error_msg);
-                                        change_tray_icon(&ah, TrayIconState::Idle);
-                                        return;
+                                        // Continue with raw text - final_text already contains the original
+                                        // filtered transcription, so we just let the code continue to paste it
                                     }
                                 }
                             } else {
                                 // Raw mode: standard processing path
+                                // Raw mode NEVER does LLM post-processing - that's the whole point
                                 // Apply filler word filter to raw transcription
                                 let filtered_raw = filter_filler_words(
                                     &transcription,
@@ -613,52 +660,14 @@ impl ShortcutAction for TranscribeAction {
                                     final_text = filtered_raw.clone();
                                 }
 
-                                // First, check if Chinese variant conversion is needed
+                                // Chinese variant conversion is allowed in raw mode
                                 if let Some(converted_text) =
                                     maybe_convert_chinese_variant(&settings, &filtered_raw).await
                                 {
                                     final_text = converted_text.clone();
                                     post_processed_text = Some(converted_text);
                                 }
-                                // Then apply regular post-processing if enabled
-                                else if settings.post_process_enabled {
-                                    match maybe_post_process_transcription(
-                                        &ah,
-                                        &settings,
-                                        &filtered_raw,
-                                    )
-                                    .await
-                                    {
-                                        Ok(Some(processed_text)) => {
-                                            final_text = processed_text.clone();
-                                            post_processed_text = Some(processed_text);
-
-                                            // Get the prompt that was used
-                                            if let Some(prompt_id) =
-                                                &settings.post_process_selected_prompt_id
-                                            {
-                                                if let Some(prompt) = settings
-                                                    .post_process_prompts
-                                                    .iter()
-                                                    .find(|p| &p.id == prompt_id)
-                                                {
-                                                    post_process_prompt =
-                                                        Some(prompt.prompt.clone());
-                                                }
-                                            }
-                                        }
-                                        Ok(None) => {
-                                            // Post-processing disabled, use original
-                                        }
-                                        Err(error_msg) => {
-                                            // Show error overlay and return without pasting
-                                            error!("Post-processing failed: {}", error_msg);
-                                            utils::show_error_overlay(&ah, &error_msg);
-                                            change_tray_icon(&ah, TrayIconState::Idle);
-                                            return;
-                                        }
-                                    }
-                                }
+                                // No LLM post-processing in raw mode - just use the filtered text
                             }
 
                             // Save to history with post-processed text and prompt
@@ -854,54 +863,36 @@ async fn process_ramble_to_coherent(
         None
     };
 
-    let provider_id = &settings.ramble_provider_id;
-    let provider = match settings
-        .post_process_providers
-        .iter()
-        .find(|p| &p.id == provider_id)
-        .cloned()
-    {
-        Some(provider) => provider,
-        None => {
-            let msg = format!("Provider '{}' not found", provider_id);
-            utils::log_to_frontend(app, "error", &msg);
-            return Err(msg);
-        }
-    };
-
-    // Check for screenshots context to determine model
+    // Get the model ID to use - check for vision model if screenshots are present
     let audio_manager = app.state::<Arc<AudioRecordingManager>>();
     let vision_context = audio_manager.get_vision_context();
     let has_screenshots = !vision_context.is_empty();
 
-    // Determine which model to use
-    let model = if settings.ramble_use_vision_model && has_screenshots {
-        if !settings.ramble_vision_model.trim().is_empty() {
-            debug!(
-                "Using specialized vision model for screenshots: {}",
-                settings.ramble_vision_model
-            );
-            &settings.ramble_vision_model
-        } else {
-            warn!("Vision model enabled but empty, falling back to standard model");
-            &settings.ramble_model
-        }
+    // Use vision-compatible model if screenshots present and vision is enabled
+    let model_id = if has_screenshots && settings.coherent_use_vision {
+        // Use the same default model but ensure it supports vision
+        settings
+            .default_coherent_model_id
+            .as_ref()
+            .ok_or_else(|| "No coherent model configured".to_string())?
     } else {
-        &settings.ramble_model
+        settings
+            .default_coherent_model_id
+            .as_ref()
+            .ok_or_else(|| "No coherent model configured".to_string())?
     };
 
-    if model.trim().is_empty() {
-        let msg = "No model configured".to_string();
-        utils::log_to_frontend(app, "error", &msg);
-        return Err(msg);
-    }
+    // Resolve the LLM config using the unified helper
+    let llm_config = resolve_llm_config(settings, model_id)?;
+    let provider = llm_config.provider.clone();
+    let model = llm_config.model.model_id.clone();
 
     // Log the model being used to the frontend
     utils::log_to_frontend(app, "info", &format!("Using model: {}", model));
 
     info!(
         "Starting Ramble to Coherent with provider '{}' (model: {}), category: '{}', app: '{}'",
-        provider.id, model, category_id, app_name
+        provider.name, model, category_id, app_name
     );
     utils::log_to_frontend(app, "info", &format!("Using {} mode", category_id));
 
@@ -950,21 +941,8 @@ async fn process_ramble_to_coherent(
         processed_prompt
     );
 
-    // Get API key from post_process_api_keys (reuses same keys)
-    let api_key = settings
-        .post_process_api_keys
-        .get(provider_id)
-        .cloned()
-        .unwrap_or_default();
-
-    if api_key.is_empty() {
-        let msg = "API key not configured".to_string();
-        utils::log_to_frontend(app, "error", &msg);
-        return Err(msg);
-    }
-
-    // Create OpenAI-compatible client
-    let client = match crate::llm_client::create_client(&provider, api_key) {
+    // Create OpenAI-compatible client using the resolved config
+    let client = match crate::llm_client::create_client(&provider, llm_config.api_key) {
         Ok(client) => client,
         Err(e) => {
             return Err(format!("Failed to create client: {}", e));
@@ -1058,7 +1036,7 @@ async fn process_ramble_to_coherent(
         .map_err(|e| format!("Request error (system message): {}", e))?;
 
     let request = match CreateChatCompletionRequestArgs::default()
-        .model(model)
+        .model(&model)
         .messages(vec![
             ChatCompletionRequestMessage::System(system_message),
             message,
@@ -1086,7 +1064,7 @@ async fn process_ramble_to_coherent(
             }
             Err("No response from AI".to_string())
         }
-        Err(e) => Err(extract_llm_error(&e, model)),
+        Err(e) => Err(extract_llm_error(&e, &model)),
     }
 }
 
@@ -1244,6 +1222,29 @@ impl ShortcutAction for VoiceCommandAction {
                                             utils::show_error_overlay(&ah, &msg);
                                             change_tray_icon(&ah, TrayIconState::Idle);
                                         }
+                                        crate::voice_commands::CommandResult::InternalCommand(
+                                            cmd,
+                                        ) => {
+                                            if cmd == "open_chat_window" {
+                                                // Open chat window with selection context
+                                                let selection_context = rm.get_selection_context();
+                                                match crate::commands::open_chat_window(
+                                                    ah.clone(),
+                                                    selection_context,
+                                                ) {
+                                                    Ok(label) => {
+                                                        debug!("Opened chat window: {}", label)
+                                                    }
+                                                    Err(e) => {
+                                                        error!("Failed to open chat window: {}", e)
+                                                    }
+                                                }
+                                            } else {
+                                                warn!("Unknown internal command: {}", cmd);
+                                            }
+                                            utils::hide_recording_overlay(&ah);
+                                            change_tray_icon(&ah, TrayIconState::Idle);
+                                        }
                                     }
                                 }
                                 Err(e) => {
@@ -1355,24 +1356,33 @@ async fn execute_via_llm(
     transcription: &str,
     selection: Option<String>,
 ) -> Result<crate::voice_commands::CommandResult, String> {
+    let transcription_lower = transcription.to_lowercase();
+
+    // Pre-check: For bespoke commands, try direct phrase matching first
+    // This avoids LLM misinterpreting commands like "open chat" as "open app"
+    for cmd in &settings.voice_commands {
+        if cmd.command_type == crate::settings::VoiceCommandType::Bespoke {
+            for phrase in &cmd.phrases {
+                if transcription_lower.contains(&phrase.to_lowercase()) {
+                    debug!(
+                        "Direct phrase match for bespoke command '{}' (phrase: '{}')",
+                        cmd.name, phrase
+                    );
+                    return Ok(crate::voice_commands::execute_bespoke_command(cmd));
+                }
+            }
+        }
+    }
+
     let model = &settings.voice_command_default_model;
     if model.trim().is_empty() {
         return Err("No default model configured for voice commands".to_string());
     }
 
-    let provider_id = &settings.ramble_provider_id;
-    let provider = settings
-        .post_process_providers
-        .iter()
-        .find(|p| &p.id == provider_id)
-        .cloned()
-        .ok_or_else(|| format!("Provider '{}' not found", provider_id))?;
-
-    let api_key = settings
-        .post_process_api_keys
-        .get(provider_id)
-        .cloned()
-        .unwrap_or_default();
+    // Resolve the LLM config using the voice command default model
+    let llm_config = resolve_llm_config(settings, model)?;
+    let provider = llm_config.provider.clone();
+    let api_key = llm_config.api_key.clone();
 
     let client = crate::llm_client::create_client(&provider, api_key.clone())
         .map_err(|e| format!("Failed to create LLM client: {}", e))?;
@@ -1414,8 +1424,19 @@ async fn execute_via_llm(
 
     debug!("Voice command LLM response: {}", llm_response);
 
+    // Strip markdown code blocks if present (LLM sometimes wraps JSON in ```json ... ```)
+    let json_str = llm_response
+        .trim()
+        .strip_prefix("```json")
+        .or_else(|| llm_response.trim().strip_prefix("```"))
+        .unwrap_or(llm_response)
+        .trim()
+        .strip_suffix("```")
+        .unwrap_or(llm_response)
+        .trim();
+
     // Parse the JSON response
-    match serde_json::from_str::<serde_json::Value>(llm_response) {
+    match serde_json::from_str::<serde_json::Value>(json_str) {
         Ok(json) => {
             let exec_type = json
                 .get("execution_type")
@@ -1441,11 +1462,7 @@ async fn execute_via_llm(
                 return execute_computer_use_command(app, task_description, &api_key).await;
             }
 
-            if json
-                .get("matched_command")
-                .and_then(|v| v.as_str())
-                .is_some()
-            {
+            if let Some(matched_id) = json.get("matched_command").and_then(|v| v.as_str()) {
                 // LLM matched a command, execute it
                 let command = json.get("command").and_then(|v| v.as_str()).unwrap_or("");
 
@@ -1461,13 +1478,20 @@ async fn execute_via_llm(
                     ));
                 }
 
+                // Check for specific internal/bespoke commands by ID
+                // This handles cases where LLM might return a command string but we want to use our bespoke handler
+                if let Some(bespoke) = settings.voice_commands.iter().find(|c| c.id == matched_id) {
+                    if bespoke.command_type == crate::settings::VoiceCommandType::Bespoke {
+                        debug!("Executing bespoke command by ID: {}", matched_id);
+                        return Ok(crate::voice_commands::execute_bespoke_command(bespoke));
+                    }
+                }
+
+                // Fallback: if command is empty, try to find bespoke by ID
                 if command.is_empty() {
-                    // Check if it's a bespoke command
-                    let cmd_id = json
-                        .get("matched_command")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    if let Some(bespoke) = settings.voice_commands.iter().find(|c| c.id == cmd_id) {
+                    if let Some(bespoke) =
+                        settings.voice_commands.iter().find(|c| c.id == matched_id)
+                    {
                         return Ok(crate::voice_commands::execute_bespoke_command(bespoke));
                     }
                 }
