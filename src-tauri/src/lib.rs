@@ -6,6 +6,7 @@ mod audio_feedback;
 pub mod audio_toolkit;
 mod clipboard;
 mod commands;
+mod computer_use;
 mod helpers;
 mod input;
 #[cfg(target_os = "macos")]
