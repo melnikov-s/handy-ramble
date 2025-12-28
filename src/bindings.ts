@@ -847,6 +847,115 @@ async removeAppCategoryMapping(bundleId: string) : Promise<Result<null, string>>
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Send a chat completion request to the configured LLM provider
+ * 
+ * # Arguments
+ * * `model_id` - Optional model ID to use. Falls back to `default_chat_model_id` if not provided.
+ */
+async chatCompletion(messages: ChatMessage[], modelId: string | null) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("chat_completion", { messages, modelId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Opens a new chat window, optionally with initial context
+ */
+async openChatWindow(context: string | null) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("open_chat_window", { context }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Get all configured LLM providers, deduplicated by ID
+ */
+async getLlmProviders() : Promise<LLMProvider[]> {
+    return await TAURI_INVOKE("get_llm_providers");
+},
+/**
+ * Get all configured LLM models with their provider info, deduplicated by (provider_id, model_id)
+ */
+async getLlmModels() : Promise<LLMModel[]> {
+    return await TAURI_INVOKE("get_llm_models");
+},
+/**
+ * Update an LLM provider's API key
+ */
+async updateProviderApiKey(providerId: string, apiKey: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_provider_api_key", { providerId, apiKey }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Save (create or update) an LLM provider
+ */
+async saveLlmProvider(provider: LLMProvider) : Promise<Result<LLMProvider, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_llm_provider", { provider }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Delete an LLM provider (any provider can be deleted)
+ */
+async deleteLlmProvider(providerId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_llm_provider", { providerId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Save (create or update) an LLM model
+ */
+async saveLlmModel(model: LLMModel) : Promise<Result<LLMModel, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_llm_model", { model }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Delete an LLM model
+ */
+async deleteLlmModel(modelId: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_llm_model", { modelId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Set the default model for a specific feature
+ */
+async setDefaultModel(feature: string, modelId: string | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_default_model", { feature, modelId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Get default model IDs for all features
+ */
+async getDefaultModels() : Promise<DefaultModels> {
+    return await TAURI_INVOKE("get_default_models");
 }
 }
 
@@ -866,9 +975,37 @@ async removeAppCategoryMapping(bundleId: string) : Promise<Result<null, string>>
 export type AppCategoryMapping = { bundle_identifier: string; display_name: string; category_id: string }
 export type AppSettings = { bindings: Partial<{ [key in string]: ShortcutBinding }>; push_to_talk: boolean; audio_feedback: boolean; audio_feedback_volume?: number; sound_theme?: SoundTheme; start_hidden?: boolean; autostart_enabled?: boolean; update_checks_enabled?: boolean; selected_model?: string; always_on_microphone?: boolean; selected_microphone?: string | null; clamshell_microphone?: string | null; selected_output_device?: string | null; translate_to_english?: boolean; selected_language?: string; overlay_position?: OverlayPosition; debug_mode?: boolean; log_level?: LogLevel; custom_words?: string[]; model_unload_timeout?: ModelUnloadTimeout; word_correction_threshold?: number; history_limit?: number; recording_retention_period?: RecordingRetentionPeriod; 
 /**
- * The currently active LLM provider for all AI features
+ * All configured LLM providers (OpenAI, Anthropic, OpenRouter, custom)
  */
-llm_provider_id?: string; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; post_process_enabled?: boolean; post_process_provider_id?: string; post_process_providers?: PostProcessProvider[]; post_process_api_keys?: Partial<{ [key in string]: string }>; post_process_models?: Partial<{ [key in string]: string }>; post_process_prompts?: LLMPrompt[]; post_process_selected_prompt_id?: string | null; mute_while_recording?: boolean; append_trailing_space?: boolean; app_language?: string; ramble_enabled?: boolean; ramble_provider_id?: string; ramble_model?: string; ramble_prompt?: string; ramble_use_vision_model?: boolean; ramble_vision_model?: string; 
+llm_providers?: LLMProvider[]; 
+/**
+ * All configured models across all providers
+ */
+llm_models?: LLMModel[]; 
+/**
+ * Default model ID for chat windows
+ */
+default_chat_model_id?: string | null; 
+/**
+ * Default model ID for coherent/ramble mode
+ */
+default_coherent_model_id?: string | null; 
+/**
+ * Default model ID for voice commands
+ */
+default_voice_model_id?: string | null; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; 
+/**
+ * Prompts for coherent mode (transforms rambling speech to clean text)
+ */
+coherent_prompts?: LLMPrompt[]; coherent_selected_prompt_id?: string | null; mute_while_recording?: boolean; append_trailing_space?: boolean; app_language?: string; 
+/**
+ * Whether coherent mode (LLM refinement) is enabled
+ */
+coherent_enabled?: boolean; 
+/**
+ * Whether to use vision model when screenshots are available
+ */
+coherent_use_vision?: boolean; 
 /**
  * Threshold in milliseconds for tap vs hold detection (smart PTT)
  */
@@ -919,8 +1056,10 @@ computer_use_model?: string;
 computer_use_max_steps?: number }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
+export type ChatMessage = { role: string; content: string }
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard"
 export type CustomSounds = { start: boolean; stop: boolean }
+export type DefaultModels = { chat: string | null; coherent: string | null; voice: string | null }
 /**
  * Detected app info (for tracking history)
  */
@@ -935,14 +1074,70 @@ export type InstalledApp = { bundle_id: string; name: string }
  * A known application with suggested category
  */
 export type KnownApp = { bundle_id: string; name: string; suggested_category: string }
+/**
+ * Model configuration for a specific provider
+ */
+export type LLMModel = { 
+/**
+ * Unique identifier (UUID string)
+ */
+id: string; 
+/**
+ * Provider ID this model belongs to
+ */
+provider_id: string; 
+/**
+ * Model identifier sent to API (e.g., "gpt-4o", "anthropic/claude-3-opus")
+ */
+model_id: string; 
+/**
+ * User-friendly display name
+ */
+display_name: string; 
+/**
+ * Whether this model supports vision/image inputs
+ */
+supports_vision?: boolean; 
+/**
+ * Whether this model is enabled and should appear in model selectors
+ */
+enabled?: boolean }
 export type LLMPrompt = { id: string; name: string; prompt: string }
+/**
+ * Unified LLM provider configuration
+ * Supports OpenAI, Anthropic, Gemini, OpenRouter, and custom enterprise proxies
+ */
+export type LLMProvider = { 
+/**
+ * Unique identifier (UUID string)
+ */
+id: string; 
+/**
+ * Display name (e.g., "OpenAI", "OpenRouter", "My Proxy")
+ */
+name: string; 
+/**
+ * API base URL (editable for custom endpoints)
+ */
+base_url: string; 
+/**
+ * User's API key for this provider
+ */
+api_key?: string; 
+/**
+ * Whether this provider supports vision/image inputs
+ */
+supports_vision?: boolean; 
+/**
+ * Whether this is a user-added custom provider vs preset
+ */
+is_custom?: boolean }
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
 export type ModelInfo = { id: string; name: string; description: string; filename: string; url: string | null; size_mb: number; is_downloaded: boolean; is_downloading: boolean; partial_size: number; is_directory: boolean; engine_type: EngineType; accuracy_score: number; speed_score: number }
 export type ModelLoadStatus = { is_loaded: boolean; current_model: string | null }
 export type ModelUnloadTimeout = "never" | "immediately" | "min_2" | "min_5" | "min_10" | "min_15" | "hour_1" | "sec_5"
 export type OverlayPosition = "none" | "top" | "bottom"
 export type PasteMethod = "ctrl_v" | "direct" | "none" | "shift_insert" | "ctrl_shift_v"
-export type PostProcessProvider = { id: string; label: string; base_url: string; allow_base_url_edit?: boolean; models_endpoint?: string | null; supports_vision?: boolean }
 /**
  * A prompt category that groups applications and defines processing style
  */

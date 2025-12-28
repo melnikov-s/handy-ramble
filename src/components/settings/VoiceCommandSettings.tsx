@@ -1,94 +1,56 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import {
-  Terminal,
-  Mic,
-  RefreshCcw,
-  RotateCcw,
-  Plus,
-  Pencil,
-  Trash2,
-} from "lucide-react";
+import { Terminal, Mic, RotateCcw, Plus, Pencil, Trash2 } from "lucide-react";
 
 import { SettingsGroup } from "../ui/SettingsGroup";
 import { SettingContainer } from "../ui/SettingContainer";
-import { ModelSelect } from "./PostProcessingSettingsApi/ModelSelect";
-import { ResetButton } from "../ui/ResetButton";
+import { ModelsDropdown } from "../ui/ModelsDropdown";
 import { useSettings } from "../../hooks/useSettings";
 import { CommandEditorModal } from "./CommandEditorModal";
-import { VoiceCommand } from "@/bindings";
-
-// Define a local type for the commands we need until bindings regenerate
-interface VoiceCommandCommands {
-  changeVoiceCommandDefaultModelSetting: (model: string) => Promise<any>;
-  resetVoiceCommandsToDefault: () => Promise<any>;
-  deleteVoiceCommand: (commandId: string) => Promise<any>;
-}
-
-// Import commands with type assertion
-import { commands as rawCommands } from "@/bindings";
-const commands = rawCommands as unknown as VoiceCommandCommands &
-  typeof rawCommands;
+import { VoiceCommand, commands, DefaultModels } from "@/bindings";
 
 export const VoiceCommandSettings: React.FC = () => {
   const { t } = useTranslation();
   const { settings, refreshSettings } = useSettings();
 
   const [isUpdating, setIsUpdating] = useState(false);
-  const [isFetchingModels, setIsFetchingModels] = useState(false);
 
-  // Access settings with type safety
-  const defaultModel =
-    (settings as any)?.voice_command_default_model ?? "gemini-2.0-flash";
+  // Default models state for current selection
+  const [defaultModels, setDefaultModels] = useState<DefaultModels | null>(
+    null,
+  );
+
+  // Load defaults on mount
+  useEffect(() => {
+    const loadDefaults = async () => {
+      try {
+        const defaults = await commands.getDefaultModels();
+        setDefaultModels(defaults);
+      } catch (error) {
+        console.error("Failed to load default models:", error);
+      }
+    };
+    loadDefaults();
+  }, []);
+
+  // Current selected voice command model
+  const selectedModelId = defaultModels?.voice || null;
+
   const voiceCommands = (settings as any)?.voice_commands ?? [];
   const voiceCommandBinding =
     settings?.bindings?.["voice_command"]?.current_binding ?? "right_command";
 
-  // Use centralized LLM provider
-  const providerId = (settings as any)?.llm_provider_id ?? "gemini";
-
-  // Default Gemini models for pre-population
-  const defaultGeminiModels = [
-    {
-      value: "gemini-2.5-flash-lite",
-      label: "Gemini 2.5 Flash Lite (Fastest)",
-    },
-    { value: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
-    { value: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash Lite" },
-    {
-      value: "gemini-3-flash-preview",
-      label: "Gemini 3 Flash Preview (Thinking)",
-    },
-    { value: "gemini-1.5-flash", label: "Gemini 1.5 Flash" },
-    { value: "gemini-1.5-pro", label: "Gemini 1.5 Pro" },
-  ];
-
-  const [modelOptions, setModelOptions] =
-    useState<{ value: string; label: string }[]>(defaultGeminiModels);
-
-  const handleModelChange = async (newModel: string) => {
+  const handleModelChange = async (modelId: string | null) => {
+    if (!modelId) return;
     setIsUpdating(true);
     try {
-      await commands.changeVoiceCommandDefaultModelSetting(newModel);
-      await refreshSettings();
+      await commands.setDefaultModel("voice", modelId);
+      const defaults = await commands.getDefaultModels();
+      setDefaultModels(defaults);
     } catch (error) {
       console.error("Failed to change voice command model:", error);
     } finally {
       setIsUpdating(false);
-    }
-  };
-
-  const handleRefreshModels = async () => {
-    setIsFetchingModels(true);
-    try {
-      const result = await commands.fetchPostProcessModels(providerId);
-      if (result.status === "ok") {
-        setModelOptions(result.data.map((m) => ({ value: m, label: m })));
-      }
-    } catch (error) {
-      console.error("Failed to fetch models:", error);
-    } finally {
-      setIsFetchingModels(false);
     }
   };
 
@@ -198,34 +160,12 @@ export const VoiceCommandSettings: React.FC = () => {
             layout="stacked"
             grouped={true}
           >
-            <div className="flex items-center gap-2">
-              <ModelSelect
-                value={defaultModel}
-                options={modelOptions}
-                disabled={isUpdating}
-                isLoading={isFetchingModels}
-                placeholder={t(
-                  "settings.voiceCommands.model.placeholder",
-                  "Select a model",
-                )}
-                onSelect={handleModelChange}
-                onCreate={handleModelChange}
-                onBlur={() => {}}
-                className="flex-1 min-w-[380px]"
-              />
-              <ResetButton
-                onClick={handleRefreshModels}
-                disabled={isFetchingModels}
-                ariaLabel={t(
-                  "settings.voiceCommands.model.refresh",
-                  "Refresh models",
-                )}
-              >
-                <RefreshCcw
-                  className={`h-4 w-4 ${isFetchingModels ? "animate-spin" : ""}`}
-                />
-              </ResetButton>
-            </div>
+            <ModelsDropdown
+              selectedValue={selectedModelId}
+              onSelect={handleModelChange}
+              disabled={isUpdating}
+              className="min-w-[380px]"
+            />
           </SettingContainer>
 
           <div className="px-4 py-3 text-xs text-mid-gray bg-mid-gray/5 rounded-lg mx-4 mb-4">

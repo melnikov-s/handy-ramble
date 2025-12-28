@@ -1,12 +1,53 @@
 pub mod audio;
+pub mod chat;
 pub mod history;
 pub mod models;
+pub mod providers;
 pub mod transcription;
 
 use crate::settings::{get_settings, write_settings, AppSettings, LogLevel};
 use crate::utils::{cancel_current_operation, resume_current_operation};
-use tauri::{AppHandle, Manager};
+use std::sync::atomic::{AtomicU32, Ordering};
+use tauri::{AppHandle, Manager, WebviewWindowBuilder};
 use tauri_plugin_opener::OpenerExt;
+
+// Counter for unique chat window labels
+static CHAT_WINDOW_COUNTER: AtomicU32 = AtomicU32::new(0);
+
+/// Opens a new chat window, optionally with initial context
+#[tauri::command]
+#[specta::specta]
+pub fn open_chat_window(app: AppHandle, context: Option<String>) -> Result<String, String> {
+    let window_id = CHAT_WINDOW_COUNTER.fetch_add(1, Ordering::SeqCst);
+    let window_label = format!("chat_{}", window_id);
+
+    // Build the URL with optional context parameter
+    let url = if let Some(ctx) = &context {
+        let encoded_context = urlencoding::encode(ctx);
+        format!("src/chat/index.html?context={}", encoded_context)
+    } else {
+        "src/chat/index.html".to_string()
+    };
+
+    match WebviewWindowBuilder::new(&app, &window_label, tauri::WebviewUrl::App(url.into()))
+        .title("Ramble Chat")
+        .inner_size(500.0, 600.0)
+        .min_inner_size(400.0, 400.0)
+        .resizable(true)
+        .visible(true)
+        .focused(true)
+        .build()
+    {
+        Ok(_window) => {
+            log::info!("Chat window '{}' created successfully", window_label);
+            Ok(window_label)
+        }
+        Err(e) => {
+            log::error!("Failed to create chat window: {}", e);
+            Err(format!("Failed to create chat window: {}", e))
+        }
+    }
+}
 
 #[tauri::command]
 #[specta::specta]

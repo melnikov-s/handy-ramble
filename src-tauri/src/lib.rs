@@ -371,6 +371,19 @@ pub fn run() {
         commands::get_app_category_mappings,
         commands::set_app_category_mapping,
         commands::remove_app_category_mapping,
+        // Chat commands
+        commands::chat::chat_completion,
+        commands::open_chat_window,
+        // Unified provider/model commands
+        commands::providers::get_llm_providers,
+        commands::providers::get_llm_models,
+        commands::providers::update_provider_api_key,
+        commands::providers::save_llm_provider,
+        commands::providers::delete_llm_provider,
+        commands::providers::save_llm_model,
+        commands::providers::delete_llm_model,
+        commands::providers::set_default_model,
+        commands::providers::get_default_models,
     ]);
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds

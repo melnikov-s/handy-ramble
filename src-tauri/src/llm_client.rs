@@ -1,9 +1,9 @@
-use crate::settings::PostProcessProvider;
+use crate::settings::LLMProvider;
 use async_openai::{config::OpenAIConfig, Client};
 
 /// Create an OpenAI-compatible client configured for the given provider
 pub fn create_client(
-    provider: &PostProcessProvider,
+    provider: &LLMProvider,
     api_key: String,
 ) -> Result<Client<OpenAIConfig>, String> {
     let base_url = provider.base_url.trim_end_matches('/');

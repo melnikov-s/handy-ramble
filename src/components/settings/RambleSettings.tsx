@@ -1,20 +1,23 @@
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  RefreshCcw,
   RotateCcw,
   ChevronDown,
   ChevronRight,
   Plus,
   Trash2,
 } from "lucide-react";
-import { commands, PromptMode, PromptCategory } from "@/bindings";
+import {
+  commands,
+  PromptMode,
+  PromptCategory,
+  DefaultModels,
+} from "@/bindings";
 
 import { SettingsGroup } from "../ui/SettingsGroup";
 import { SettingContainer } from "../ui/SettingContainer";
-import { ResetButton } from "../ui/ResetButton";
+import { ModelsDropdown } from "../ui/ModelsDropdown";
 
-import { ModelSelect } from "./PostProcessingSettingsApi/ModelSelect";
 import { useSettings } from "../../hooks/useSettings";
 import { ToggleSwitch } from "../ui/ToggleSwitch";
 import { AppMappingsSettings } from "./AppMappingsSettings";
@@ -31,36 +34,24 @@ export const RambleSettings: React.FC = () => {
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newCategoryIcon, setNewCategoryIcon] = useState("📝");
 
-  // Default Gemini models for pre-population
-  const defaultGeminiModels = [
-    {
-      value: "gemini-2.5-flash-lite",
-      label: "Gemini 2.5 Flash Lite (Fastest)",
-    },
-    { value: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
-    { value: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash Lite" },
-    {
-      value: "gemini-3-flash-preview",
-      label: "Gemini 3 Flash Preview (Thinking)",
-    },
-    { value: "gemini-1.5-flash", label: "Gemini 1.5 Flash" },
-    { value: "gemini-1.5-pro", label: "Gemini 1.5 Pro" },
-  ];
-
-  const [modelOptions, setModelOptions] =
-    useState<{ value: string; label: string }[]>(defaultGeminiModels);
-  const [isFetchingModels, setIsFetchingModels] = useState(false);
+  // Default models state for current selection
+  const [defaultModels, setDefaultModels] = useState<DefaultModels | null>(
+    null,
+  );
   const [isUpdating, setIsUpdating] = useState(false);
 
-  // Use centralized LLM provider
-  const providerId = (settings as any)?.llm_provider_id ?? "gemini";
-  const model = (settings as any)?.ramble_model ?? "";
-  const providers = settings?.post_process_providers ?? [];
-
-  const useVisionModel = (settings as any)?.ramble_use_vision_model ?? false;
-  const visionModel = (settings as any)?.ramble_vision_model ?? "";
-
-  const selectedProvider = providers.find((p) => p.id === providerId);
+  // Load defaults on mount
+  useEffect(() => {
+    const loadDefaults = async () => {
+      try {
+        const defaults = await commands.getDefaultModels();
+        setDefaultModels(defaults);
+      } catch (error) {
+        console.error("Failed to load default models:", error);
+      }
+    };
+    loadDefaults();
+  }, []);
 
   // Sync category prompts from settings
   useEffect(() => {
@@ -72,34 +63,15 @@ export const RambleSettings: React.FC = () => {
     setCategoryPrompts(prompts);
   }, [settings?.prompt_categories]);
 
-  const handleModelChange = async (newModel: string) => {
+  const handleModelChange = async (modelId: string) => {
     setIsUpdating(true);
     try {
-      await commands.changeRambleModelSetting(newModel);
-      await refreshSettings();
+      await commands.setDefaultModel("coherent", modelId);
+      // Reload defaults
+      const defaults = await commands.getDefaultModels();
+      setDefaultModels(defaults);
     } catch (error) {
-      console.error("Failed to change ramble model:", error);
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-
-  const handleUseVisionModelChange = async (enabled: boolean) => {
-    try {
-      await commands.changeRambleUseVisionModelSetting(enabled);
-      await refreshSettings();
-    } catch (error) {
-      console.error("Failed to change use vision model setting:", error);
-    }
-  };
-
-  const handleVisionModelChange = async (newModel: string) => {
-    setIsUpdating(true);
-    try {
-      await commands.changeRambleVisionModelSetting(newModel);
-      await refreshSettings();
-    } catch (error) {
-      console.error("Failed to change vision model:", error);
+      console.error("Failed to change coherent model:", error);
     } finally {
       setIsUpdating(false);
     }
@@ -149,20 +121,6 @@ export const RambleSettings: React.FC = () => {
       console.error("Failed to reset category prompt:", error);
     } finally {
       setIsUpdating(false);
-    }
-  };
-
-  const handleRefreshModels = async () => {
-    setIsFetchingModels(true);
-    try {
-      const result = await commands.fetchPostProcessModels(providerId);
-      if (result.status === "ok") {
-        setModelOptions(result.data.map((m) => ({ value: m, label: m })));
-      }
-    } catch (error) {
-      console.error("Failed to fetch models:", error);
-    } finally {
-      setIsFetchingModels(false);
     }
   };
 
@@ -234,109 +192,31 @@ export const RambleSettings: React.FC = () => {
 
       <SettingsGroup title={t("settings.ramble.llm.title", "AI Model")}>
         <SettingContainer
-          title={t("settings.ramble.model.title", "Model")}
+          title={t("settings.ramble.aiModel.title", "AI Model")}
           description={t(
-            "settings.ramble.model.description",
-            "Select or enter the model to use.",
+            "settings.ramble.aiModel.description",
+            "Select the AI model to use for Ramble to Coherent transformation.",
           )}
           descriptionMode="tooltip"
-          layout="stacked"
+          layout="horizontal"
           grouped={true}
         >
-          <div className="flex items-center gap-2">
-            <ModelSelect
-              value={model}
-              options={modelOptions}
-              disabled={false}
-              isLoading={isFetchingModels}
-              placeholder={
-                modelOptions.length > 0
-                  ? t(
-                      "settings.ramble.model.placeholderWithOptions",
-                      "Select a model",
-                    )
-                  : t(
-                      "settings.ramble.model.placeholderNoOptions",
-                      "Enter model name",
-                    )
-              }
-              onSelect={handleModelChange}
-              onCreate={handleModelChange}
-              onBlur={() => {}}
-              className="flex-1 min-w-[380px]"
-            />
-            <ResetButton
-              onClick={handleRefreshModels}
-              disabled={isFetchingModels}
-              ariaLabel={t("settings.ramble.model.refresh", "Refresh models")}
-            >
-              <RefreshCcw
-                className={`h-4 w-4 ${isFetchingModels ? "animate-spin" : ""}`}
-              />
-            </ResetButton>
-          </div>
+          <ModelsDropdown
+            selectedValue={defaultModels?.coherent || null}
+            onSelect={handleModelChange}
+            disabled={isUpdating}
+            className="min-w-[280px]"
+          />
         </SettingContainer>
 
-        <ToggleSwitch
-          checked={useVisionModel}
-          onChange={handleUseVisionModelChange}
-          label={t(
-            "settings.ramble.vision.useSpecialized.label",
-            "Use different model for screenshots",
-          )}
-          description={t(
-            "settings.ramble.vision.useSpecialized.description",
-            "Route requests with screenshots to a more capable (or slower) model.",
-          )}
-          descriptionMode="tooltip"
-          grouped={true}
-        />
-
-        {useVisionModel && (
-          <SettingContainer
-            title={t("settings.ramble.vision.model.title", "Screenshot Model")}
-            description={t(
-              "settings.ramble.vision.model.description",
-              "Select the model to use when screenshots are attached.",
+        <div className="px-4 py-2 text-xs text-mid-gray">
+          <p>
+            {t(
+              "settings.ramble.model.hint",
+              "Models can be enabled in Settings → AI Providers. Only enabled models appear here.",
             )}
-            descriptionMode="tooltip"
-            layout="stacked"
-            grouped={true}
-          >
-            <div className="flex items-center gap-2">
-              <ModelSelect
-                value={visionModel}
-                options={modelOptions}
-                disabled={false}
-                isLoading={isFetchingModels}
-                placeholder={
-                  modelOptions.length > 0
-                    ? t(
-                        "settings.ramble.model.placeholderWithOptions",
-                        "Select a model",
-                      )
-                    : t(
-                        "settings.ramble.model.placeholderNoOptions",
-                        "Enter model name",
-                      )
-                }
-                onSelect={handleVisionModelChange}
-                onCreate={handleVisionModelChange}
-                onBlur={() => {}}
-                className="flex-1 min-w-[380px]"
-              />
-              <ResetButton
-                onClick={handleRefreshModels}
-                disabled={isFetchingModels}
-                ariaLabel={t("settings.ramble.model.refresh", "Refresh models")}
-              >
-                <RefreshCcw
-                  className={`h-4 w-4 ${isFetchingModels ? "animate-spin" : ""}`}
-                />
-              </ResetButton>
-            </div>
-          </SettingContainer>
-        )}
+          </p>
+        </div>
       </SettingsGroup>
 
       <SettingsGroup

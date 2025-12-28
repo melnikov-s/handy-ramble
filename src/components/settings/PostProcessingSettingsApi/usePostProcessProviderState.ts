@@ -1,15 +1,15 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSettings } from "../../../hooks/useSettings";
-import { useSettingsStore } from "../../../stores/settingsStore";
-import type { PostProcessProvider } from "@/bindings";
+import type { LLMProvider, LLMModel } from "@/bindings";
 import type { ModelOption } from "./types";
 import type { DropdownOption } from "../../ui/Dropdown";
+import { commands } from "@/bindings";
 
 type PostProcessProviderState = {
   enabled: boolean;
   providerOptions: DropdownOption[];
   selectedProviderId: string;
-  selectedProvider: PostProcessProvider | undefined;
+  selectedProvider: LLMProvider | undefined;
   isCustomProvider: boolean;
   isAppleProvider: boolean;
   baseUrl: string;
@@ -32,109 +32,177 @@ type PostProcessProviderState = {
 const APPLE_PROVIDER_ID = "apple_intelligence";
 
 export const usePostProcessProviderState = (): PostProcessProviderState => {
-  const {
-    settings,
-    isUpdating,
-    setPostProcessProvider,
-    updatePostProcessBaseUrl,
-    updatePostProcessApiKey,
-    updatePostProcessModel,
-    fetchPostProcessModels,
-    postProcessModelOptions,
-  } = useSettings();
+  const { settings, isUpdating } = useSettings();
+  const [fetchedModels, setFetchedModels] = useState<Record<string, string[]>>(
+    {},
+  );
+  const [selectedProviderId, setSelectedProviderId] = useState<string>("");
 
-  const enabled = settings?.post_process_enabled || false;
+  // Use unified llm_providers instead of deprecated post_process_providers
+  const providers = settings?.llm_providers || [];
 
-  // Settings are guaranteed to have providers after migration
-  const providers = settings?.post_process_providers || [];
+  // Enable state now uses coherent_enabled
+  const enabled = settings?.coherent_enabled || false;
 
-  const selectedProviderId = useMemo(() => {
-    return settings?.post_process_provider_id || providers[0]?.id || "openai";
-  }, [providers, settings?.post_process_provider_id]);
+  // Initialize selected provider from default_coherent_model
+  useEffect(() => {
+    if (!selectedProviderId && settings?.default_coherent_model_id) {
+      const defaultModel = (settings?.llm_models || []).find(
+        (m) => m.id === settings.default_coherent_model_id,
+      );
+      if (defaultModel) {
+        setSelectedProviderId(defaultModel.provider_id);
+      } else if (providers.length > 0) {
+        setSelectedProviderId(providers[0].id);
+      }
+    } else if (!selectedProviderId && providers.length > 0) {
+      setSelectedProviderId(providers[0].id);
+    }
+  }, [settings, providers, selectedProviderId]);
 
   const selectedProvider = useMemo(() => {
-    return (
-      providers.find((provider) => provider.id === selectedProviderId) ||
-      providers[0]
-    );
+    return providers.find((p) => p.id === selectedProviderId) || providers[0];
   }, [providers, selectedProviderId]);
 
   const isAppleProvider = selectedProvider?.id === APPLE_PROVIDER_ID;
+  const isCustomProvider = selectedProvider?.is_custom || false;
 
-  // Use settings directly as single source of truth
+  // Use API key from provider directly
   const baseUrl = selectedProvider?.base_url ?? "";
-  const apiKey = settings?.post_process_api_keys?.[selectedProviderId] ?? "";
-  const model = settings?.post_process_models?.[selectedProviderId] ?? "";
+  const apiKey = selectedProvider?.api_key ?? "";
+
+  // Get model from default_coherent_model_id
+  const selectedModel = useMemo(() => {
+    const models = settings?.llm_models || [];
+    const defaultModelId = settings?.default_coherent_model_id;
+    if (defaultModelId) {
+      const model = models.find((m) => m.id === defaultModelId);
+      if (model && model.provider_id === selectedProviderId) {
+        return model;
+      }
+    }
+    // Fall back to first model for this provider
+    return models.find((m) => m.provider_id === selectedProviderId);
+  }, [settings, selectedProviderId]);
+
+  const model = selectedModel?.model_id ?? "";
 
   const providerOptions = useMemo<DropdownOption[]>(() => {
     return providers.map((provider) => ({
       value: provider.id,
-      label: provider.label,
+      label: provider.name,
     }));
   }, [providers]);
 
-  const handleProviderSelect = useCallback(
-    (providerId: string) => {
-      if (providerId !== selectedProviderId) {
-        void setPostProcessProvider(providerId);
-      }
-    },
-    [selectedProviderId, setPostProcessProvider],
-  );
+  const handleProviderSelect = useCallback((providerId: string) => {
+    setSelectedProviderId(providerId);
+  }, []);
 
   const handleBaseUrlChange = useCallback(
-    (value: string) => {
-      if (!selectedProvider || !selectedProvider.allow_base_url_edit) {
-        return;
-      }
+    async (value: string) => {
+      if (!selectedProvider || !selectedProvider.is_custom) return;
       const trimmed = value.trim();
       if (trimmed && trimmed !== baseUrl) {
-        void updatePostProcessBaseUrl(selectedProvider.id, trimmed);
+        try {
+          const updatedProvider = { ...selectedProvider, base_url: trimmed };
+          await commands.saveLlmProvider(updatedProvider);
+        } catch (error) {
+          console.error("Failed to update base URL:", error);
+        }
       }
     },
-    [selectedProvider, baseUrl, updatePostProcessBaseUrl],
+    [selectedProvider, baseUrl],
   );
 
   const handleApiKeyChange = useCallback(
-    (value: string) => {
+    async (value: string) => {
       const trimmed = value.trim();
       if (trimmed !== apiKey) {
-        void updatePostProcessApiKey(selectedProviderId, trimmed);
+        try {
+          await commands.updateProviderApiKey(selectedProviderId, trimmed);
+        } catch (error) {
+          console.error("Failed to update API key:", error);
+        }
       }
     },
-    [apiKey, selectedProviderId, updatePostProcessApiKey],
+    [apiKey, selectedProviderId],
   );
 
   const handleModelChange = useCallback(
-    (value: string) => {
+    async (value: string) => {
+      // For model changes, we need to find or create a model entry
       const trimmed = value.trim();
       if (trimmed !== model) {
-        void updatePostProcessModel(selectedProviderId, trimmed);
+        try {
+          // Set as default coherent model
+          await commands.setDefaultModel("coherent", trimmed);
+        } catch (error) {
+          console.error("Failed to update model:", error);
+        }
       }
     },
-    [model, selectedProviderId, updatePostProcessModel],
+    [model],
   );
 
   const handleModelSelect = useCallback(
-    (value: string) => {
-      void updatePostProcessModel(selectedProviderId, value.trim());
+    async (value: string) => {
+      const trimmed = value.trim();
+      try {
+        // Find or create model and set as default
+        const models = settings?.llm_models || [];
+        let modelEntry = models.find(
+          (m) => m.model_id === trimmed && m.provider_id === selectedProviderId,
+        );
+
+        if (!modelEntry) {
+          // Create new model entry
+          const newModel: LLMModel = {
+            id: `${selectedProviderId}-${trimmed.replace(/\//g, "-")}`,
+            provider_id: selectedProviderId,
+            model_id: trimmed,
+            display_name: trimmed,
+            supports_vision: false,
+            enabled: true,
+          };
+          const result = await commands.saveLlmModel(newModel);
+          if (result.status === "ok") {
+            modelEntry = result.data;
+          }
+        }
+
+        if (modelEntry) {
+          await commands.setDefaultModel("coherent", modelEntry.id);
+        }
+      } catch (error) {
+        console.error("Failed to select model:", error);
+      }
     },
-    [selectedProviderId, updatePostProcessModel],
+    [settings, selectedProviderId],
   );
 
   const handleModelCreate = useCallback(
-    (value: string) => {
-      void updatePostProcessModel(selectedProviderId, value);
+    async (value: string) => {
+      await handleModelSelect(value);
     },
-    [selectedProviderId, updatePostProcessModel],
+    [handleModelSelect],
   );
 
-  const handleRefreshModels = useCallback(() => {
+  const handleRefreshModels = useCallback(async () => {
     if (isAppleProvider) return;
-    void fetchPostProcessModels(selectedProviderId);
-  }, [fetchPostProcessModels, isAppleProvider, selectedProviderId]);
+    try {
+      const result = await commands.fetchPostProcessModels(selectedProviderId);
+      if (result.status === "ok") {
+        setFetchedModels((prev) => ({
+          ...prev,
+          [selectedProviderId]: result.data,
+        }));
+      }
+    } catch (error) {
+      console.error("Failed to fetch models:", error);
+    }
+  }, [isAppleProvider, selectedProviderId]);
 
-  const availableModelsRaw = postProcessModelOptions[selectedProviderId] || [];
+  const availableModelsRaw = fetchedModels[selectedProviderId] || [];
 
   const modelOptions = useMemo<ModelOption[]>(() => {
     const seen = new Set<string>();
@@ -147,33 +215,29 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
       options.push({ value: trimmed, label: trimmed });
     };
 
-    // Add available models from API
+    // Add available models from API fetch
     for (const candidate of availableModelsRaw) {
       upsert(candidate);
+    }
+
+    // Add models from settings for this provider
+    const settingsModels = settings?.llm_models || [];
+    for (const m of settingsModels) {
+      if (m.provider_id === selectedProviderId) {
+        upsert(m.model_id);
+      }
     }
 
     // Ensure current model is in the list
     upsert(model);
 
     return options;
-  }, [availableModelsRaw, model]);
+  }, [availableModelsRaw, settings, selectedProviderId, model]);
 
-  const isBaseUrlUpdating = isUpdating(
-    `post_process_base_url:${selectedProviderId}`,
-  );
-  const isApiKeyUpdating = isUpdating(
-    `post_process_api_key:${selectedProviderId}`,
-  );
-  const isModelUpdating = isUpdating(
-    `post_process_model:${selectedProviderId}`,
-  );
-  const isFetchingModels = isUpdating(
-    `post_process_models_fetch:${selectedProviderId}`,
-  );
-
-  const isCustomProvider = selectedProvider?.id === "custom";
-
-  // No automatic fetching - user must click refresh button
+  const isBaseUrlUpdating = isUpdating(`llm_provider:${selectedProviderId}`);
+  const isApiKeyUpdating = isUpdating(`provider_api_key:${selectedProviderId}`);
+  const isModelUpdating = isUpdating(`default_model:coherent`);
+  const isFetchingModels = isUpdating(`fetch_models:${selectedProviderId}`);
 
   return {
     enabled,

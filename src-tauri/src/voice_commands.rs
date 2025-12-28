@@ -18,6 +18,8 @@ pub enum CommandResult {
     Success,
     /// Command failed with an error message
     Error(String),
+    /// Internal command that should be handled by the caller
+    InternalCommand(String),
 }
 
 /// Execute a bespoke (user-defined script) command
@@ -36,6 +38,12 @@ pub fn execute_bespoke_command(command: &VoiceCommand) -> CommandResult {
         "Executing bespoke command '{}' with script type {:?}",
         command.name, command.script_type
     );
+
+    // Check for internal commands (not actual shell/applescript)
+    if script == "open_chat_window" {
+        // This is handled specially by the caller
+        return CommandResult::InternalCommand("open_chat_window".to_string());
+    }
 
     match command.script_type {
         ScriptType::Shell => execute_shell_script(script),

@@ -92,17 +92,48 @@ pub struct LLMPrompt {
     pub prompt: String,
 }
 
+/// Unified LLM provider configuration
+/// Supports OpenAI, Anthropic, Gemini, OpenRouter, and custom enterprise proxies
 #[derive(Serialize, Deserialize, Debug, Clone, Type)]
-pub struct PostProcessProvider {
+pub struct LLMProvider {
+    /// Unique identifier (UUID string)
     pub id: String,
-    pub label: String,
+    /// Display name (e.g., "OpenAI", "OpenRouter", "My Proxy")
+    pub name: String,
+    /// API base URL (editable for custom endpoints)
     pub base_url: String,
+    /// User's API key for this provider
     #[serde(default)]
-    pub allow_base_url_edit: bool,
-    #[serde(default)]
-    pub models_endpoint: Option<String>,
+    pub api_key: String,
+    /// Whether this provider supports vision/image inputs
     #[serde(default)]
     pub supports_vision: bool,
+    /// Whether this is a user-added custom provider vs preset
+    #[serde(default)]
+    pub is_custom: bool,
+}
+
+/// Model configuration for a specific provider
+#[derive(Serialize, Deserialize, Debug, Clone, Type)]
+pub struct LLMModel {
+    /// Unique identifier (UUID string)
+    pub id: String,
+    /// Provider ID this model belongs to
+    pub provider_id: String,
+    /// Model identifier sent to API (e.g., "gpt-4o", "anthropic/claude-3-opus")
+    pub model_id: String,
+    /// User-friendly display name
+    pub display_name: String,
+    /// Whether this model supports vision/image inputs
+    #[serde(default)]
+    pub supports_vision: bool,
+    /// Whether this model is enabled and should appear in model selectors
+    #[serde(default = "default_model_enabled")]
+    pub enabled: bool,
+}
+
+fn default_model_enabled() -> bool {
+    true
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type)]
@@ -394,47 +425,46 @@ pub struct AppSettings {
     pub history_limit: usize,
     #[serde(default = "default_recording_retention_period")]
     pub recording_retention_period: RecordingRetentionPeriod,
-    // Centralized LLM provider configuration
-    /// The currently active LLM provider for all AI features
-    #[serde(default = "default_llm_provider_id")]
-    pub llm_provider_id: String,
+
+    // === Unified LLM Provider Configuration ===
+    /// All configured LLM providers (OpenAI, Anthropic, OpenRouter, custom)
+    #[serde(default = "default_llm_providers")]
+    pub llm_providers: Vec<LLMProvider>,
+    /// All configured models across all providers
+    #[serde(default = "default_llm_models")]
+    pub llm_models: Vec<LLMModel>,
+    /// Default model ID for chat windows
+    #[serde(default)]
+    pub default_chat_model_id: Option<String>,
+    /// Default model ID for coherent/ramble mode
+    #[serde(default)]
+    pub default_coherent_model_id: Option<String>,
+    /// Default model ID for voice commands
+    #[serde(default)]
+    pub default_voice_model_id: Option<String>,
+
+    // === Other settings ===
     #[serde(default)]
     pub paste_method: PasteMethod,
     #[serde(default)]
     pub clipboard_handling: ClipboardHandling,
-    #[serde(default = "default_post_process_enabled")]
-    pub post_process_enabled: bool,
-    #[serde(default = "default_post_process_provider_id")]
-    pub post_process_provider_id: String,
-    #[serde(default = "default_post_process_providers")]
-    pub post_process_providers: Vec<PostProcessProvider>,
-    #[serde(default = "default_post_process_api_keys")]
-    pub post_process_api_keys: HashMap<String, String>,
-    #[serde(default = "default_post_process_models")]
-    pub post_process_models: HashMap<String, String>,
-    #[serde(default = "default_post_process_prompts")]
-    pub post_process_prompts: Vec<LLMPrompt>,
+    /// Prompts for coherent mode (transforms rambling speech to clean text)
+    #[serde(default = "default_coherent_prompts")]
+    pub coherent_prompts: Vec<LLMPrompt>,
     #[serde(default)]
-    pub post_process_selected_prompt_id: Option<String>,
+    pub coherent_selected_prompt_id: Option<String>,
     #[serde(default)]
     pub mute_while_recording: bool,
     #[serde(default)]
     pub append_trailing_space: bool,
     #[serde(default = "default_app_language")]
     pub app_language: String,
-    // Ramble to Coherent settings (separate from post-processing)
-    #[serde(default = "default_ramble_enabled")]
-    pub ramble_enabled: bool,
-    #[serde(default = "default_ramble_provider_id")]
-    pub ramble_provider_id: String,
+    /// Whether coherent mode (LLM refinement) is enabled
+    #[serde(default = "default_coherent_enabled")]
+    pub coherent_enabled: bool,
+    /// Whether to use vision model when screenshots are available
     #[serde(default)]
-    pub ramble_model: String,
-    #[serde(default = "default_ramble_prompt")]
-    pub ramble_prompt: String,
-    #[serde(default = "default_ramble_use_vision_model")]
-    pub ramble_use_vision_model: bool,
-    #[serde(default = "default_ramble_vision_model")]
-    pub ramble_vision_model: String,
+    pub coherent_use_vision: bool,
     /// Threshold in milliseconds for tap vs hold detection (smart PTT)
     #[serde(default = "default_hold_threshold_ms")]
     pub hold_threshold_ms: u64,
@@ -747,6 +777,29 @@ fn default_voice_commands() -> Vec<VoiceCommand> {
             model_override: None,
             is_builtin: true,
         },
+        VoiceCommand {
+            id: "open_chat".to_string(),
+            name: "Open Chat Window".to_string(),
+            phrases: vec![
+                "chat".to_string(),
+                "chart".to_string(),  // Common mishearing by Whisper
+                "chat window".to_string(),
+                "open chat".to_string(),
+                "open chart".to_string(),  // Common mishearing
+                "start chat".to_string(),
+                "ask question".to_string(),
+                "ask about".to_string(),
+            ],
+            command_type: VoiceCommandType::Bespoke,
+            description: Some(
+                "Opens the Ramble AI chat window for conversation. IMPORTANT: If user says 'chat', 'open chat', or anything about asking questions to AI, this is the command to use - NOT open_app. This is an internal command, not a regular app."
+                    .to_string(),
+            ),
+            script_type: ScriptType::Shell,
+            script: Some("open_chat_window".to_string()), // Special internal command
+            model_override: None,
+            is_builtin: true,
+        },
     ]
 }
 
@@ -974,60 +1027,52 @@ ${output}
     ]
 }
 
-fn default_post_process_providers() -> Vec<PostProcessProvider> {
+fn default_llm_providers() -> Vec<LLMProvider> {
     let mut providers = vec![
-        PostProcessProvider {
+        LLMProvider {
             id: "openai".to_string(),
-            label: "OpenAI".to_string(),
+            name: "OpenAI".to_string(),
             base_url: "https://api.openai.com/v1".to_string(),
-            allow_base_url_edit: false,
-            models_endpoint: Some("/models".to_string()),
+            api_key: String::new(),
             supports_vision: true,
+            is_custom: false,
         },
-        PostProcessProvider {
+        LLMProvider {
             id: "openrouter".to_string(),
-            label: "OpenRouter".to_string(),
+            name: "OpenRouter".to_string(),
             base_url: "https://openrouter.ai/api/v1".to_string(),
-            allow_base_url_edit: false,
-            models_endpoint: Some("/models".to_string()),
+            api_key: String::new(),
             supports_vision: true,
+            is_custom: false,
         },
-        PostProcessProvider {
+        LLMProvider {
             id: "anthropic".to_string(),
-            label: "Anthropic".to_string(),
+            name: "Anthropic".to_string(),
             base_url: "https://api.anthropic.com/v1".to_string(),
-            allow_base_url_edit: false,
-            models_endpoint: Some("/models".to_string()),
+            api_key: String::new(),
             supports_vision: true,
+            is_custom: false,
         },
-        PostProcessProvider {
+        LLMProvider {
             id: "gemini".to_string(),
-            label: "Google Gemini".to_string(),
+            name: "Google Gemini".to_string(),
             base_url: "https://generativelanguage.googleapis.com/v1beta/openai".to_string(),
-            allow_base_url_edit: false,
-            models_endpoint: Some("/models".to_string()),
+            api_key: String::new(),
             supports_vision: true,
-        },
-        PostProcessProvider {
-            id: "custom".to_string(),
-            label: "Custom".to_string(),
-            base_url: "http://localhost:11434/v1".to_string(),
-            allow_base_url_edit: true,
-            models_endpoint: Some("/models".to_string()),
-            supports_vision: true,
+            is_custom: false,
         },
     ];
 
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     {
         if crate::apple_intelligence::check_apple_intelligence_availability() {
-            providers.push(PostProcessProvider {
+            providers.push(LLMProvider {
                 id: APPLE_INTELLIGENCE_PROVIDER_ID.to_string(),
-                label: "Apple Intelligence".to_string(),
+                name: "Apple Intelligence".to_string(),
                 base_url: "apple-intelligence://local".to_string(),
-                allow_base_url_edit: false,
-                models_endpoint: None,
+                api_key: String::new(),
                 supports_vision: false,
+                is_custom: false,
             });
         }
     }
@@ -1035,33 +1080,188 @@ fn default_post_process_providers() -> Vec<PostProcessProvider> {
     providers
 }
 
-fn default_post_process_api_keys() -> HashMap<String, String> {
-    let mut map = HashMap::new();
-    for provider in default_post_process_providers() {
-        map.insert(provider.id, String::new());
-    }
-    map
+fn default_llm_models() -> Vec<LLMModel> {
+    vec![
+        // ===== OpenAI models =====
+        LLMModel {
+            id: "openai-gpt-4o".to_string(),
+            provider_id: "openai".to_string(),
+            model_id: "gpt-4o".to_string(),
+            display_name: "GPT-4o".to_string(),
+            supports_vision: true,
+            enabled: true,
+        },
+        LLMModel {
+            id: "openai-gpt-4o-mini".to_string(),
+            provider_id: "openai".to_string(),
+            model_id: "gpt-4o-mini".to_string(),
+            display_name: "GPT-4o Mini".to_string(),
+            supports_vision: true,
+            enabled: true,
+        },
+        LLMModel {
+            id: "openai-gpt-4-turbo".to_string(),
+            provider_id: "openai".to_string(),
+            model_id: "gpt-4-turbo".to_string(),
+            display_name: "GPT-4 Turbo".to_string(),
+            supports_vision: true,
+            enabled: false,
+        },
+        LLMModel {
+            id: "openai-o1".to_string(),
+            provider_id: "openai".to_string(),
+            model_id: "o1".to_string(),
+            display_name: "O1".to_string(),
+            supports_vision: true,
+            enabled: false,
+        },
+        LLMModel {
+            id: "openai-o1-mini".to_string(),
+            provider_id: "openai".to_string(),
+            model_id: "o1-mini".to_string(),
+            display_name: "O1 Mini".to_string(),
+            supports_vision: false,
+            enabled: false,
+        },
+        LLMModel {
+            id: "openai-o3-mini".to_string(),
+            provider_id: "openai".to_string(),
+            model_id: "o3-mini".to_string(),
+            display_name: "O3 Mini".to_string(),
+            supports_vision: false,
+            enabled: false,
+        },
+        // ===== Anthropic models =====
+        LLMModel {
+            id: "anthropic-claude-sonnet-4".to_string(),
+            provider_id: "anthropic".to_string(),
+            model_id: "claude-sonnet-4-20250514".to_string(),
+            display_name: "Claude Sonnet 4".to_string(),
+            supports_vision: true,
+            enabled: true,
+        },
+        LLMModel {
+            id: "anthropic-claude-3-5-sonnet".to_string(),
+            provider_id: "anthropic".to_string(),
+            model_id: "claude-3-5-sonnet-latest".to_string(),
+            display_name: "Claude 3.5 Sonnet".to_string(),
+            supports_vision: true,
+            enabled: false,
+        },
+        LLMModel {
+            id: "anthropic-claude-3-5-haiku".to_string(),
+            provider_id: "anthropic".to_string(),
+            model_id: "claude-3-5-haiku-latest".to_string(),
+            display_name: "Claude 3.5 Haiku".to_string(),
+            supports_vision: true,
+            enabled: false,
+        },
+        LLMModel {
+            id: "anthropic-claude-3-opus".to_string(),
+            provider_id: "anthropic".to_string(),
+            model_id: "claude-3-opus-latest".to_string(),
+            display_name: "Claude 3 Opus".to_string(),
+            supports_vision: true,
+            enabled: false,
+        },
+        // ===== Gemini models =====
+        LLMModel {
+            id: "gemini-2-0-flash".to_string(),
+            provider_id: "gemini".to_string(),
+            model_id: "gemini-2.0-flash".to_string(),
+            display_name: "Gemini 2.0 Flash".to_string(),
+            supports_vision: true,
+            enabled: true,
+        },
+        LLMModel {
+            id: "gemini-2-0-flash-lite".to_string(),
+            provider_id: "gemini".to_string(),
+            model_id: "gemini-2.0-flash-lite".to_string(),
+            display_name: "Gemini 2.0 Flash Lite".to_string(),
+            supports_vision: true,
+            enabled: false,
+        },
+        LLMModel {
+            id: "gemini-2-5-pro".to_string(),
+            provider_id: "gemini".to_string(),
+            model_id: "gemini-2.5-pro-preview-06-05".to_string(),
+            display_name: "Gemini 2.5 Pro".to_string(),
+            supports_vision: true,
+            enabled: false,
+        },
+        LLMModel {
+            id: "gemini-2-5-flash".to_string(),
+            provider_id: "gemini".to_string(),
+            model_id: "gemini-2.5-flash-preview-05-20".to_string(),
+            display_name: "Gemini 2.5 Flash".to_string(),
+            supports_vision: true,
+            enabled: false,
+        },
+        LLMModel {
+            id: "gemini-1-5-flash".to_string(),
+            provider_id: "gemini".to_string(),
+            model_id: "gemini-1.5-flash".to_string(),
+            display_name: "Gemini 1.5 Flash".to_string(),
+            supports_vision: true,
+            enabled: false,
+        },
+        LLMModel {
+            id: "gemini-1-5-pro".to_string(),
+            provider_id: "gemini".to_string(),
+            model_id: "gemini-1.5-pro".to_string(),
+            display_name: "Gemini 1.5 Pro".to_string(),
+            supports_vision: true,
+            enabled: false,
+        },
+        // ===== OpenRouter models =====
+        LLMModel {
+            id: "openrouter-claude-sonnet-4".to_string(),
+            provider_id: "openrouter".to_string(),
+            model_id: "anthropic/claude-sonnet-4".to_string(),
+            display_name: "Claude Sonnet 4 (via OR)".to_string(),
+            supports_vision: true,
+            enabled: false,
+        },
+        LLMModel {
+            id: "openrouter-gpt-4o".to_string(),
+            provider_id: "openrouter".to_string(),
+            model_id: "openai/gpt-4o".to_string(),
+            display_name: "GPT-4o (via OR)".to_string(),
+            supports_vision: true,
+            enabled: false,
+        },
+        LLMModel {
+            id: "openrouter-gemini-2-0-flash".to_string(),
+            provider_id: "openrouter".to_string(),
+            model_id: "google/gemini-2.0-flash-001".to_string(),
+            display_name: "Gemini 2.0 Flash (via OR)".to_string(),
+            supports_vision: true,
+            enabled: false,
+        },
+        LLMModel {
+            id: "openrouter-deepseek-r1".to_string(),
+            provider_id: "openrouter".to_string(),
+            model_id: "deepseek/deepseek-r1".to_string(),
+            display_name: "DeepSeek R1 (via OR)".to_string(),
+            supports_vision: false,
+            enabled: false,
+        },
+        LLMModel {
+            id: "openrouter-llama-3-3-70b".to_string(),
+            provider_id: "openrouter".to_string(),
+            model_id: "meta-llama/llama-3.3-70b-instruct".to_string(),
+            display_name: "Llama 3.3 70B (via OR)".to_string(),
+            supports_vision: false,
+            enabled: false,
+        },
+    ]
 }
 
-fn default_model_for_provider(provider_id: &str) -> String {
-    if provider_id == APPLE_INTELLIGENCE_PROVIDER_ID {
-        return APPLE_INTELLIGENCE_DEFAULT_MODEL_ID.to_string();
-    }
-    String::new()
+fn default_coherent_enabled() -> bool {
+    true
 }
 
-fn default_post_process_models() -> HashMap<String, String> {
-    let mut map = HashMap::new();
-    for provider in default_post_process_providers() {
-        map.insert(
-            provider.id.clone(),
-            default_model_for_provider(&provider.id),
-        );
-    }
-    map
-}
-
-fn default_post_process_prompts() -> Vec<LLMPrompt> {
+fn default_coherent_prompts() -> Vec<LLMPrompt> {
     vec![
         LLMPrompt {
             id: "default_improve_transcriptions".to_string(),
@@ -1076,62 +1276,32 @@ fn default_post_process_prompts() -> Vec<LLMPrompt> {
     ]
 }
 
-fn ensure_post_process_defaults(settings: &mut AppSettings) -> bool {
+/// Previously ensured default providers/models were present.
+/// Now disabled - users add providers via the UI dialog.
+fn ensure_llm_defaults(_settings: &mut AppSettings) -> bool {
+    // No longer auto-populate providers and models
+    // Users add them via Settings > AI Providers > Add Provider
+    false
+}
+
+/// Ensures that all built-in default voice commands are present in settings.
+/// This adds new built-in commands without overwriting user-defined commands.
+fn ensure_voice_command_defaults(settings: &mut AppSettings) -> bool {
     let mut changed = false;
-    for provider in default_post_process_providers() {
-        // 1. Add missing providers
-        if settings
-            .post_process_providers
-            .iter()
-            .all(|existing| existing.id != provider.id)
-        {
-            settings.post_process_providers.push(provider.clone());
-            changed = true;
-        }
-
-        // 2. Ensure API key entry exists
-        if !settings.post_process_api_keys.contains_key(&provider.id) {
-            settings
-                .post_process_api_keys
-                .insert(provider.id.clone(), String::new());
-            changed = true;
-        }
-
-        // 3. Ensure Model entry exists
-        let default_model = default_model_for_provider(&provider.id);
-        match settings.post_process_models.get_mut(&provider.id) {
-            Some(existing) => {
-                if existing.is_empty() && !default_model.is_empty() {
-                    *existing = default_model.clone();
-                    changed = true;
-                }
-            }
-            None => {
-                settings
-                    .post_process_models
-                    .insert(provider.id.clone(), default_model);
-                changed = true;
-            }
-        }
-
-        // 4. Sync capability flags (supports_vision) for default providers
-        // This ensures existing users get the new capability enabled automatically
-        if let Some(existing) = settings
-            .post_process_providers
-            .iter_mut()
-            .find(|p| p.id == provider.id)
-        {
-            if existing.supports_vision != provider.supports_vision {
-                debug!(
-                    "Updating supports_vision for provider '{}': {} -> {}",
-                    existing.id, existing.supports_vision, provider.supports_vision
-                );
-                existing.supports_vision = provider.supports_vision;
+    for default_cmd in default_voice_commands() {
+        if default_cmd.is_builtin {
+            // Check if this built-in command already exists
+            let exists = settings
+                .voice_commands
+                .iter()
+                .any(|c| c.id == default_cmd.id);
+            if !exists {
+                log::debug!("Adding missing built-in voice command: {}", default_cmd.id);
+                settings.voice_commands.push(default_cmd);
                 changed = true;
             }
         }
     }
-
     changed
 }
 
@@ -1216,25 +1386,22 @@ pub fn get_default_settings() -> AppSettings {
         word_correction_threshold: default_word_correction_threshold(),
         history_limit: default_history_limit(),
         recording_retention_period: default_recording_retention_period(),
-        llm_provider_id: default_llm_provider_id(),
+        // Unified LLM Provider Configuration
+        llm_providers: default_llm_providers(),
+        llm_models: default_llm_models(),
+        default_chat_model_id: Some("gemini-flash".to_string()),
+        default_coherent_model_id: Some("gemini-flash".to_string()),
+        default_voice_model_id: Some("gemini-flash".to_string()),
+        // Other settings
         paste_method: PasteMethod::default(),
         clipboard_handling: ClipboardHandling::default(),
-        post_process_enabled: default_post_process_enabled(),
-        post_process_provider_id: default_post_process_provider_id(),
-        post_process_providers: default_post_process_providers(),
-        post_process_api_keys: default_post_process_api_keys(),
-        post_process_models: default_post_process_models(),
-        post_process_prompts: default_post_process_prompts(),
-        post_process_selected_prompt_id: None,
+        coherent_prompts: default_coherent_prompts(),
+        coherent_selected_prompt_id: Some("ramble_to_coherent".to_string()),
         mute_while_recording: false,
         append_trailing_space: false,
         app_language: default_app_language(),
-        ramble_enabled: default_ramble_enabled(),
-        ramble_provider_id: default_ramble_provider_id(),
-        ramble_model: default_ramble_model(),
-        ramble_prompt: default_ramble_prompt(),
-        ramble_use_vision_model: default_ramble_use_vision_model(),
-        ramble_vision_model: default_ramble_vision_model(),
+        coherent_enabled: default_coherent_enabled(),
+        coherent_use_vision: false,
         hold_threshold_ms: default_hold_threshold_ms(),
         // App-aware prompt settings
         prompt_mode: PromptMode::default(),
@@ -1255,25 +1422,22 @@ pub fn get_default_settings() -> AppSettings {
 }
 
 impl AppSettings {
-    pub fn active_post_process_provider(&self) -> Option<&PostProcessProvider> {
-        self.post_process_providers
-            .iter()
-            .find(|provider| provider.id == self.post_process_provider_id)
-    }
-
-    pub fn post_process_provider(&self, provider_id: &str) -> Option<&PostProcessProvider> {
-        self.post_process_providers
+    /// Get a provider by ID
+    pub fn get_provider(&self, provider_id: &str) -> Option<&LLMProvider> {
+        self.llm_providers
             .iter()
             .find(|provider| provider.id == provider_id)
     }
 
-    pub fn post_process_provider_mut(
-        &mut self,
-        provider_id: &str,
-    ) -> Option<&mut PostProcessProvider> {
-        self.post_process_providers
-            .iter_mut()
-            .find(|provider| provider.id == provider_id)
+    /// Get a model by ID
+    pub fn get_model(&self, model_id: &str) -> Option<&LLMModel> {
+        self.llm_models.iter().find(|model| model.id == model_id)
+    }
+
+    /// Get provider for a model
+    pub fn get_provider_for_model(&self, model_id: &str) -> Option<&LLMProvider> {
+        self.get_model(model_id)
+            .and_then(|model| self.get_provider(&model.provider_id))
     }
 }
 
@@ -1328,7 +1492,11 @@ pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
         default_settings
     };
 
-    if ensure_post_process_defaults(&mut settings) {
+    if ensure_llm_defaults(&mut settings) {
+        store.set("settings", serde_json::to_value(&settings).unwrap());
+    }
+
+    if ensure_voice_command_defaults(&mut settings) {
         store.set("settings", serde_json::to_value(&settings).unwrap());
     }
 
@@ -1352,7 +1520,11 @@ pub fn get_settings(app: &AppHandle) -> AppSettings {
         default_settings
     };
 
-    if ensure_post_process_defaults(&mut settings) {
+    if ensure_llm_defaults(&mut settings) {
+        store.set("settings", serde_json::to_value(&settings).unwrap());
+    }
+
+    if ensure_voice_command_defaults(&mut settings) {
         store.set("settings", serde_json::to_value(&settings).unwrap());
     }
 
