@@ -235,6 +235,8 @@ pub enum VoiceCommandType {
     Inferable,
     /// User-defined script that runs exactly as specified
     Bespoke,
+    /// Gemini Computer Use agent for multi-step UI automation
+    ComputerUse,
 }
 
 /// Script type for bespoke commands
@@ -465,6 +467,13 @@ pub struct AppSettings {
     /// Optional regex pattern to filter out filler words from transcriptions (e.g., "um", "uh")
     #[serde(default)]
     pub filler_word_filter: Option<String>,
+    // Computer Use settings
+    /// Model for computer use commands (requires Gemini Computer Use model)
+    #[serde(default = "default_computer_use_model")]
+    pub computer_use_model: String,
+    /// Maximum steps for computer use agent loop
+    #[serde(default = "default_computer_use_max_steps")]
+    pub computer_use_max_steps: usize,
 }
 
 fn default_model() -> String {
@@ -631,11 +640,13 @@ Return ONLY the cleaned, formatted text. No preamble.
 
 ---
 
-Selected text (may be empty):
+<selection>
 ${selection}
+</selection>
 
-Input transcript:
-${output}".to_string()
+<transcript>
+${output}
+</transcript>".to_string()
 }
 
 fn default_hold_threshold_ms() -> u64 {
@@ -654,6 +665,14 @@ fn default_filler_word_filter() -> Option<String> {
     // Default pattern to filter common English filler words
     // Matches: um, uh, hmm, mhm, mm, ah, er, erm (with variations like umm, uhh, etc.)
     Some(r"\b(u+[hm]+|a+h+|e+r+m?|m+h?m+|h+m+)\b[,\s]*".to_string())
+}
+
+fn default_computer_use_model() -> String {
+    "gemini-2.5-computer-use-preview-10-2025".to_string()
+}
+
+fn default_computer_use_max_steps() -> usize {
+    100 // High safeguard limit, user-configurable
 }
 
 fn default_voice_commands() -> Vec<VoiceCommand> {
@@ -802,14 +821,17 @@ Return ONLY the cleaned, formatted text. No preamble.
 
 ---
 
-Selected text (may be empty):
+<selection>
 ${selection}
+</selection>
 
-Screen context (OCR from current screen):
+<screen_context>
 ${screen_context}
+</screen_context>
 
-Input transcript:
-${output}".to_string(),
+<transcript>
+${output}
+</transcript>".to_string(),
         },
         PromptCategory {
             id: "conversation".to_string(),
@@ -850,11 +872,13 @@ Return ONLY the cleaned text. No preamble.
 
 ---
 
-Selected text (may be empty):
+<selection>
 ${selection}
+</selection>
 
-Input transcript:
-${output}".to_string(),
+<transcript>
+${output}
+</transcript>".to_string(),
         },
         PromptCategory {
             id: "writing".to_string(),
@@ -894,11 +918,13 @@ Return ONLY the cleaned text. No preamble.
 
 ---
 
-Selected text (may be empty):
+<selection>
 ${selection}
+</selection>
 
-Input transcript:
-${output}".to_string(),
+<transcript>
+${output}
+</transcript>".to_string(),
         },
         PromptCategory {
             id: "email".to_string(),
@@ -937,11 +963,13 @@ Return ONLY the email body text. No preamble.
 
 ---
 
-Selected text (may be empty):
+<selection>
 ${selection}
+</selection>
 
-Input transcript:
-${output}".to_string(),
+<transcript>
+${output}
+</transcript>".to_string(),
         },
     ]
 }
@@ -1038,12 +1066,12 @@ fn default_post_process_prompts() -> Vec<LLMPrompt> {
         LLMPrompt {
             id: "default_improve_transcriptions".to_string(),
             name: "Improve Transcriptions".to_string(),
-            prompt: "Clean this transcript:\n1. Fix spelling, capitalization, and punctuation errors\n2. Convert number words to digits (twenty-five → 25, ten percent → 10%, five dollars → $5)\n3. Replace spoken punctuation with symbols (period → ., comma → ,, question mark → ?)\n4. Remove filler words (um, uh, like as filler)\n5. Keep the language in the original version (if it was french, keep it in french for example)\n\nPreserve exact meaning, pronouns, perspective, and word order. Do not paraphrase or reorder content.\n\nReturn only the cleaned transcript.\n\nTranscript:\n${output}".to_string(),
+            prompt: "Clean this transcript:\n1. Fix spelling, capitalization, and punctuation errors\n2. Convert number words to digits (twenty-five → 25, ten percent → 10%, five dollars → $5)\n3. Replace spoken punctuation with symbols (period → ., comma → ,, question mark → ?)\n4. Remove filler words (um, uh, like as filler)\n5. Keep the language in the original version (if it was french, keep it in french for example)\n\nPreserve exact meaning, pronouns, perspective, and word order. Do not paraphrase or reorder content.\n\nReturn only the cleaned transcript.\n\n<transcript>\n${output}\n</transcript>".to_string(),
         },
         LLMPrompt {
             id: "ramble_to_coherent".to_string(),
             name: "Ramble to Coherent".to_string(),
-            prompt: "You are transforming raw speech into clean, coherent text.\n\nThe input is unfiltered speech-to-text that contains:\n- Filler words (um, uh, like, you know, basically, so, I mean)\n- Thinking out loud and self-corrections\n- Backtracking (no wait, actually, I mean)\n- Repeated ideas phrased multiple ways\n- Run-on sentences and stream of consciousness\n\nYour task:\n1. Extract the core intent and requirements\n2. Remove ALL filler words and verbal tics\n3. When the speaker changes their mind, keep ONLY the final decision\n4. Consolidate repeated ideas into single clear statements\n5. Structure as clear, actionable points if appropriate\n6. Preserve technical terms and specific details exactly\n7. Keep the same language as input\n8. Preserve the user's perspective: do not change pronouns or perspective. If the user addresses \"you\", keep it as \"you\".\n\nReturn ONLY the cleaned, structured text. No preamble or explanation.\n\nInput transcript:\n${output}".to_string(),
+            prompt: "You are transforming raw speech into clean, coherent text.\n\nThe input is unfiltered speech-to-text that contains:\n- Filler words (um, uh, like, you know, basically, so, I mean)\n- Thinking out loud and self-corrections\n- Backtracking (no wait, actually, I mean)\n- Repeated ideas phrased multiple ways\n- Run-on sentences and stream of consciousness\n\nYour task:\n1. Extract the core intent and requirements\n2. Remove ALL filler words and verbal tics\n3. When the speaker changes their mind, keep ONLY the final decision\n4. Consolidate repeated ideas into single clear statements\n5. Structure as clear, actionable points if appropriate\n6. Preserve technical terms and specific details exactly\n7. Keep the same language as input\n8. Preserve the user's perspective: do not change pronouns or perspective. If the user addresses \"you\", keep it as \"you\".\n\nReturn ONLY the cleaned, structured text. No preamble or explanation.\n\n<transcript>\n${output}\n</transcript>".to_string(),
         },
     ]
 }
@@ -1220,6 +1248,9 @@ pub fn get_default_settings() -> AppSettings {
         voice_commands: default_voice_commands(),
         // Filler word filter
         filler_word_filter: default_filler_word_filter(),
+        // Computer Use settings
+        computer_use_model: default_computer_use_model(),
+        computer_use_max_steps: default_computer_use_max_steps(),
     }
 }
 

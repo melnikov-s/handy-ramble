@@ -11,7 +11,8 @@ use crate::settings::{
 use crate::tray::{change_tray_icon, TrayIconState};
 use crate::utils::{
     self, is_operation_paused, resume_current_operation, show_making_coherent_overlay,
-    show_recording_overlay, show_transcribing_overlay,
+    show_recording_overlay, show_transcribing_overlay, show_voice_command_recording_overlay,
+    show_voice_command_transcribing_overlay,
 };
 use crate::{app_detection, known_apps};
 use async_openai::types::{
@@ -1163,9 +1164,8 @@ impl ShortcutAction for VoiceCommandAction {
         let binding_id = binding_id.to_string();
         change_tray_icon(app, TrayIconState::Recording);
 
-        // Show a different overlay state for command mode
-        let _ = app.emit("voice-command-mode", true);
-        show_recording_overlay(app);
+        // Show voice command recording overlay (purple theme)
+        show_voice_command_recording_overlay(app);
 
         let rm = app.state::<Arc<AudioRecordingManager>>();
         let _settings = get_settings(app);
@@ -1198,7 +1198,7 @@ impl ShortcutAction for VoiceCommandAction {
         let tm = Arc::clone(&app.state::<Arc<TranscriptionManager>>());
 
         change_tray_icon(app, TrayIconState::Transcribing);
-        show_transcribing_overlay(app);
+        show_voice_command_transcribing_overlay(app);
 
         rm.remove_mute();
         play_feedback_sound(app, SoundType::Stop);

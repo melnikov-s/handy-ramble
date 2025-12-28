@@ -908,7 +908,15 @@ voice_commands?: VoiceCommand[];
 /**
  * Optional regex pattern to filter out filler words from transcriptions (e.g., "um", "uh")
  */
-filler_word_filter?: string | null }
+filler_word_filter?: string | null; 
+/**
+ * Model for computer use commands (requires Gemini Computer Use model)
+ */
+computer_use_model?: string; 
+/**
+ * Maximum steps for computer use agent loop
+ */
+computer_use_max_steps?: number }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard"
@@ -1001,7 +1009,11 @@ export type VoiceCommandType =
 /**
  * User-defined script that runs exactly as specified
  */
-"bespoke"
+"bespoke" | 
+/**
+ * Gemini Computer Use agent for multi-step UI automation
+ */
+"computer_use"
 
 /** tauri-specta globals **/
 

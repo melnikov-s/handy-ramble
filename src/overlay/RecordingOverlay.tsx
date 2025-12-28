@@ -8,7 +8,7 @@ import {
   PauseIcon,
   PlayIcon,
 } from "../components/icons";
-import { Sparkles, AlertCircle, X, FileText } from "lucide-react";
+import { Sparkles, AlertCircle, X, FileText, Monitor } from "lucide-react";
 import "./RecordingOverlay.css";
 import { commands } from "@/bindings";
 import { syncLanguageFromSettings } from "@/i18n";
@@ -16,10 +16,13 @@ import { syncLanguageFromSettings } from "@/i18n";
 type OverlayState =
   | "recording"
   | "ramble_recording"
+  | "voice_command_recording"
   | "transcribing"
   | "ramble_transcribing"
+  | "voice_command_transcribing"
   | "making_coherent"
   | "processing_command"
+  | "computer_use"
   | "paused"
   | "ramble_paused"
   | "error";
@@ -69,11 +72,23 @@ const RecordingOverlay: React.FC = () => {
   const [promptMode, setPromptMode] = useState<PromptMode>("dynamic");
   // Detected category in Dynamic mode (from backend when refinement starts)
   const [detectedCategory, setDetectedCategory] = useState<string | null>(null);
-  // Track if in voice command mode for different styling
-  const [isVoiceCommandMode, setIsVoiceCommandMode] = useState(false);
+
+  // Helper to determine if current state is voice command related (purple theme)
+  const isVoiceCommandState =
+    state === "voice_command_recording" ||
+    state === "voice_command_transcribing" ||
+    state === "processing_command" ||
+    state === "computer_use";
 
   // Context params count (for badge)
   const [contextParamsCount, setContextParamsCount] = useState(0);
+
+  // Computer Use agent status
+  const [computerUseStep, setComputerUseStep] = useState(0);
+  const [computerUseAction, setComputerUseAction] = useState("");
+
+  // Toast notification for completion message
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -117,14 +132,18 @@ const RecordingOverlay: React.FC = () => {
           console.error("Failed to fetch prompt mode:", e);
         }
 
-        // Reset mode known state only when a NEW recording session starts (initial 'recording' state)
-        if (overlayState === "recording") {
+        // Reset mode known state only when a NEW recording session starts
+        if (
+          overlayState === "recording" ||
+          overlayState === "voice_command_recording"
+        ) {
           setModeKnown(false);
           setIsQuickPressMode(false);
           setDetectedCategory(null);
         } else if (
           overlayState === "transcribing" ||
           overlayState === "ramble_transcribing" ||
+          overlayState === "voice_command_transcribing" ||
           overlayState === "making_coherent"
         ) {
           setModeKnown(false);
@@ -159,13 +178,6 @@ const RecordingOverlay: React.FC = () => {
         setModeKnown(false);
         setIsQuickPressMode(false);
         setDetectedCategory(null);
-        setIsVoiceCommandMode(false);
-      });
-
-      // Listen for voice command mode activation
-      await register<boolean>("voice-command-mode", (event) => {
-        console.log("[UI] voice-command-mode received:", event.payload);
-        setIsVoiceCommandMode(event.payload);
       });
 
       // Listen for mode-determined event from Rust
@@ -205,6 +217,43 @@ const RecordingOverlay: React.FC = () => {
         console.log("[UI] processing-command received:", event.payload);
         setState("processing_command");
       });
+
+      // Listen for Computer Use agent events
+      await register<{ task: string }>("computer-use-start", (event) => {
+        console.log("[UI] computer-use-start received:", event.payload);
+        setState("computer_use");
+        setComputerUseStep(0);
+        setComputerUseAction("Starting...");
+      });
+
+      await register<{ step: number; action: string; description: string }>(
+        "computer-use-step",
+        (event) => {
+          console.log("[UI] computer-use-step received:", event.payload);
+          setComputerUseStep(event.payload.step);
+          setComputerUseAction(event.payload.description);
+        },
+      );
+
+      await register<{ success: boolean; message: string }>(
+        "computer-use-end",
+        (event) => {
+          console.log("[UI] computer-use-end received:", event.payload);
+          const { success, message } = event.payload;
+
+          // Hide the overlay
+          setIsVisible(false);
+          setComputerUseStep(0);
+          setComputerUseAction("");
+
+          // Show toast with completion message
+          if (success && message) {
+            setToastMessage(message);
+          } else if (!success && message) {
+            setToastMessage(`Error: ${message}`);
+          }
+        },
+      );
     };
 
     setupEventListeners();
@@ -249,7 +298,7 @@ const RecordingOverlay: React.FC = () => {
     // Helper to get category icon (only for refiner mode, not voice commands)
     const getCategoryIcon = () => {
       // In voice command mode, always use microphone - no category needed
-      if (isVoiceCommandMode) {
+      if (isVoiceCommandState) {
         return <MicrophoneIcon color="#a855f7" />;
       }
       // For explicit modes, use the mode's icon
@@ -274,7 +323,7 @@ const RecordingOverlay: React.FC = () => {
 
     if (state === "recording" || state === "ramble_recording") {
       // In voice command mode, show microphone with purple color
-      if (isVoiceCommandMode) {
+      if (isVoiceCommandState) {
         return <MicrophoneIcon color="#a855f7" />;
       }
       // In Refined mode, show category icon
@@ -288,9 +337,14 @@ const RecordingOverlay: React.FC = () => {
     } else if (state === "processing_command") {
       // Processing voice command - purple microphone
       return <MicrophoneIcon color="#a855f7" />;
+    } else if (state === "computer_use") {
+      // Computer Use agent active - monitor icon
+      return <Monitor size={16} style={{ color: "#a855f7" }} />;
     } else if (state === "ramble_transcribing" || state === "transcribing") {
       return (
-        <TranscriptionIcon color={isVoiceCommandMode ? "#a855f7" : "#1e40af"} />
+        <TranscriptionIcon
+          color={isVoiceCommandState ? "#a855f7" : "#1e40af"}
+        />
       );
     } else if (state === "error") {
       return <AlertCircle size={16} style={{ color: "#ff6b6b" }} />;
@@ -308,7 +362,7 @@ const RecordingOverlay: React.FC = () => {
   return (
     <>
       <div
-        className={`recording-overlay ${isVisible ? "fade-in" : ""} ${state === "error" ? "error-state" : ""} ${isPaused ? "paused-state" : ""} ${isVoiceCommandMode ? "voice-command-mode" : ""}`}
+        className={`recording-overlay ${isVisible ? "fade-in" : ""} ${state === "error" ? "error-state" : ""} ${isPaused ? "paused-state" : ""} ${isVoiceCommandState ? "voice-command-mode" : ""}`}
       >
         <div className="overlay-left">{getIcon()}</div>
 
@@ -370,6 +424,23 @@ const RecordingOverlay: React.FC = () => {
               </div>
             </div>
           )}
+          {state === "computer_use" && (
+            <div className="stacked-content computer-use-content">
+              <div className="computer-use-status">
+                {computerUseStep > 0 && (
+                  <span className="computer-use-step">
+                    Step {computerUseStep}:
+                  </span>
+                )}
+                <span className="computer-use-action">{computerUseAction}</span>
+              </div>
+              <div className="refining-indicator">
+                <div className="refining-dot"></div>
+                <div className="refining-dot"></div>
+                <div className="refining-dot"></div>
+              </div>
+            </div>
+          )}
           {state === "error" && (
             <div
               className="error-text text-red-400 text-xs truncate max-w-[120px]"
@@ -419,8 +490,36 @@ const RecordingOverlay: React.FC = () => {
               <X className="w-4 h-4" />
             </div>
           )}
+          {state === "computer_use" && (
+            <div
+              className="cancel-button"
+              onClick={() => {
+                commands.cancelOperation();
+              }}
+              title={t("overlay.stopAgent", "Stop Agent")}
+            >
+              <CancelIcon color="#a855f7" />
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Toast notification for Computer Use completion */}
+      {toastMessage && (
+        <div className="computer-use-toast">
+          <div className="toast-content">
+            <Monitor size={16} className="toast-icon" />
+            <div className="toast-message">{toastMessage}</div>
+            <button
+              className="toast-dismiss"
+              onClick={() => setToastMessage(null)}
+              title="Dismiss"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+      )}
     </>
   );
 };

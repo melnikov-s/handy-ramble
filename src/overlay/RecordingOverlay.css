@@ -320,3 +320,109 @@
   border-color: #93c5fd;
   transition: all 100ms ease-out;
 }
+
+/* Computer Use agent styling */
+.computer-use-content {
+  min-width: 120px;
+}
+
+.computer-use-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: #a855f7;
+  white-space: nowrap;
+}
+
+.computer-use-step {
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+.computer-use-action {
+  font-weight: 400;
+}
+
+/* Make overlay wider when in computer_use state to accommodate longer messages */
+.recording-overlay:has(.computer-use-content) {
+  width: auto;
+  min-width: 200px;
+  max-width: 350px;
+  padding-left: 10px;
+  padding-right: 10px;
+}
+
+/* Toast notification for Computer Use completion */
+.computer-use-toast {
+  position: fixed;
+  top: 50px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+  max-width: 500px;
+  min-width: 300px;
+  animation: toast-slide-in 0.3s ease-out;
+}
+
+.toast-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px;
+  background: linear-gradient(135deg, #1a0026ee 0%, #260033ee 100%);
+  border: 1px solid #a855f744;
+  border-radius: 12px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(8px);
+}
+
+.toast-icon {
+  flex-shrink: 0;
+  color: #a855f7;
+  margin-top: 2px;
+}
+
+.toast-message {
+  flex: 1;
+  color: #e0e0e0;
+  font-size: 13px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.5;
+  max-height: 300px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.toast-dismiss {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: #888;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.15s, background 0.15s;
+}
+
+.toast-dismiss:hover {
+  color: #fff;
+  background: #a855f733;
+}
+
+@keyframes toast-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
