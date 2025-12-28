@@ -39,7 +39,9 @@ fn paste_via_clipboard(
         _ => return Err("Invalid paste method for clipboard paste".into()),
     }
 
-    std::thread::sleep(std::time::Duration::from_millis(50));
+    // Give the OS/target application more time to process the paste command
+    // before we restore the previous clipboard contents.
+    std::thread::sleep(std::time::Duration::from_millis(200));
 
     clipboard
         .write_text(&clipboard_content)

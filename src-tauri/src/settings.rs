@@ -504,6 +504,9 @@ pub struct AppSettings {
     /// Maximum steps for computer use agent loop
     #[serde(default = "default_computer_use_max_steps")]
     pub computer_use_max_steps: usize,
+    /// Customizable initial prompt for the quick chat
+    #[serde(default = "default_quick_chat_initial_prompt")]
+    pub quick_chat_initial_prompt: String,
 }
 
 fn default_model() -> String {
@@ -703,6 +706,10 @@ fn default_computer_use_model() -> String {
 
 fn default_computer_use_max_steps() -> usize {
     100 // High safeguard limit, user-configurable
+}
+
+fn default_quick_chat_initial_prompt() -> String {
+    "You are a helpful assistant. You are given some context from the user's screen or selection to help you answer their questions.\n\nCONTEXT FROM USER SELECTION:\n${selection}".to_string()
 }
 
 fn default_voice_commands() -> Vec<VoiceCommand> {
@@ -1418,6 +1425,7 @@ pub fn get_default_settings() -> AppSettings {
         // Computer Use settings
         computer_use_model: default_computer_use_model(),
         computer_use_max_steps: default_computer_use_max_steps(),
+        quick_chat_initial_prompt: default_quick_chat_initial_prompt(),
     }
 }
 

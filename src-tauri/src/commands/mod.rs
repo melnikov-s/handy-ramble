@@ -29,15 +29,37 @@ pub fn open_chat_window(app: AppHandle, context: Option<String>) -> Result<Strin
         "src/chat/index.html".to_string()
     };
 
-    match WebviewWindowBuilder::new(&app, &window_label, tauri::WebviewUrl::App(url.into()))
-        .title("Ramble Chat")
-        .inner_size(500.0, 600.0)
-        .min_inner_size(400.0, 400.0)
-        .resizable(true)
-        .visible(true)
-        .focused(true)
-        .build()
+    let mut builder =
+        WebviewWindowBuilder::new(&app, &window_label, tauri::WebviewUrl::App(url.into()))
+            .title("Ramble Chat")
+            .inner_size(500.0, 600.0)
+            .min_inner_size(400.0, 400.0)
+            .resizable(true)
+            .visible(true)
+            .focused(true)
+            .always_on_top(true);
+
+    #[cfg(target_os = "macos")]
     {
+        use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+        if let Ok(menu) = Menu::with_id(&app, "chat_menu") {
+            if let Ok(edit_menu) = Submenu::with_id(&app, "edit", "Edit", true) {
+                let _ = edit_menu.append_items(&[
+                    &PredefinedMenuItem::undo(&app, None).unwrap(),
+                    &PredefinedMenuItem::redo(&app, None).unwrap(),
+                    &PredefinedMenuItem::separator(&app).unwrap(),
+                    &PredefinedMenuItem::cut(&app, None).unwrap(),
+                    &PredefinedMenuItem::copy(&app, None).unwrap(),
+                    &PredefinedMenuItem::paste(&app, None).unwrap(),
+                    &PredefinedMenuItem::select_all(&app, None).unwrap(),
+                ]);
+                let _ = menu.append(&edit_menu);
+                builder = builder.menu(menu);
+            }
+        }
+    }
+
+    match builder.build() {
         Ok(_window) => {
             log::info!("Chat window '{}' created successfully", window_label);
             Ok(window_label)

@@ -89,7 +89,7 @@ const UserMessage: FC = () => {
 
 const AssistantMessage: FC = () => {
   return (
-    <MessagePrimitive.Root className="mb-4 flex flex-col">
+    <MessagePrimitive.Root className="mb-4 flex flex-col group">
       <div className="max-w-[80%] rounded-lg bg-[var(--color-text)]/10 px-4 py-2 text-[var(--color-text)]">
         <MessagePrimitive.Content />
       </div>
@@ -103,7 +103,7 @@ const AssistantActionBar: FC = () => {
     <ActionBarPrimitive.Root
       hideWhenRunning
       autohide="not-last"
-      className="mt-1 flex gap-1 text-[var(--color-text)]/50"
+      className="mt-1 flex gap-1 text-[var(--color-text)]/50 invisible opacity-0 group-hover:visible group-hover:opacity-100 transition-all duration-200"
     >
       <ActionBarPrimitive.Copy asChild>
         <button className="rounded p-1 hover:bg-[var(--color-text)]/10">
