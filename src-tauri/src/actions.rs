@@ -688,22 +688,26 @@ impl ShortcutAction for TranscribeAction {
                             });
 
                             // Paste the final text (either processed or original)
-                            let ah_clone = ah.clone();
+                            // We do NOT run this on the main thread because utils::paste contains sleep calls
+                            // that would block the main event loop, preventing the app's own windows (like quick chat)
+                            // from receiving the simulated paste events before the clipboard is restored.
                             let paste_time = Instant::now();
-                            ah.run_on_main_thread(move || {
-                                match utils::paste(final_text, ah_clone.clone()) {
-                                    Ok(()) => debug!(
-                                        "Text pasted successfully in {:?}",
-                                        paste_time.elapsed()
-                                    ),
-                                    Err(e) => error!("Failed to paste transcription: {}", e),
+                            match utils::paste(final_text, ah.clone()) {
+                                Ok(()) => {
+                                    debug!("Text pasted successfully in {:?}", paste_time.elapsed())
                                 }
+                                Err(e) => error!("Failed to paste transcription: {}", e),
+                            }
+
+                            // Perform UI updates on the main thread
+                            let ah_clone = ah.clone();
+                            ah.run_on_main_thread(move || {
                                 // Hide the overlay after transcription is complete
                                 utils::hide_recording_overlay(&ah_clone);
                                 change_tray_icon(&ah_clone, TrayIconState::Idle);
                             })
                             .unwrap_or_else(|e| {
-                                error!("Failed to run paste on main thread: {:?}", e);
+                                error!("Failed to update UI on main thread: {:?}", e);
                                 utils::hide_recording_overlay(&ah);
                                 change_tray_icon(&ah, TrayIconState::Idle);
                             });

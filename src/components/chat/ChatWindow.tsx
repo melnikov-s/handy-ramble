@@ -13,23 +13,51 @@ interface ChatWindowProps {
   onClose?: () => void;
 }
 
-// Adapter that bridges assistant-ui to our backend LLM provider
 const createChatAdapter = (
   selectedModelId: string | null,
+  initialPrompt: string,
+  initialContext: string | undefined,
 ): ChatModelAdapter => {
   return {
     async *run({ messages }) {
-      // Convert messages to our backend format
-      const formattedMessages = messages.map((msg) => ({
-        role: msg.role,
-        content:
-          typeof msg.content === "string"
-            ? msg.content
-            : msg.content
-                .filter((part) => part.type === "text")
-                .map((part) => (part as { type: "text"; text: string }).text)
-                .join(""),
-      }));
+      // Build starting messages with system prompt
+      const allMessages = [];
+
+      // Process initial prompt by replacing ${selection} if present
+      let processedPrompt = initialPrompt;
+      if (initialContext) {
+        processedPrompt = processedPrompt.replace(
+          "${selection}",
+          initialContext,
+        );
+      } else {
+        // If no context, remove most things related to selection
+        processedPrompt = processedPrompt.replace(
+          "${selection}",
+          "[No selection provided]",
+        );
+      }
+
+      // Add the processed system prompt
+      allMessages.push({
+        role: "system",
+        content: processedPrompt,
+      });
+
+      // Convert messages to our backend format and append
+      const formattedMessages = [
+        ...allMessages,
+        ...messages.map((msg) => ({
+          role: msg.role,
+          content:
+            typeof msg.content === "string"
+              ? msg.content
+              : msg.content
+                  .filter((part) => part.type === "text")
+                  .map((part) => (part as { type: "text"; text: string }).text)
+                  .join(""),
+        })),
+      ];
 
       try {
         // Call our Tauri backend for LLM response
@@ -76,22 +104,32 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
   const [providers, setProviders] = useState<LLMProvider[]>([]);
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [initialPrompt, setInitialPrompt] = useState("");
 
   // Load models and providers on mount
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [modelsResult, providersResult, defaultModelsResult] =
-          await Promise.all([
-            commands.getLlmModels(),
-            commands.getLlmProviders(),
-            commands.getDefaultModels(),
-          ]);
+        const [
+          modelsResult,
+          providersResult,
+          defaultModelsResult,
+          settingsResult,
+        ] = await Promise.all([
+          commands.getLlmModels(),
+          commands.getLlmProviders(),
+          commands.getDefaultModels(),
+          commands.getAppSettings(),
+        ]);
 
         // Only show enabled models in the dropdown
         const enabledModels = modelsResult.filter((m) => m.enabled);
         setModels(enabledModels);
         setProviders(providersResult);
+
+        if (settingsResult.status === "ok") {
+          setInitialPrompt(settingsResult.data.quick_chat_initial_prompt || "");
+        }
 
         // Use default chat model if available and enabled
         if (defaultModelsResult.chat) {
@@ -118,13 +156,15 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
 
   // Create adapter with current model selection
   const [adapter, setAdapter] = useState(() =>
-    createChatAdapter(selectedModelId),
+    createChatAdapter(selectedModelId, initialPrompt, initialContext),
   );
 
-  // Update adapter when model changes
+  // Update adapter when model or initial prompt changes
   useEffect(() => {
-    setAdapter(createChatAdapter(selectedModelId));
-  }, [selectedModelId]);
+    setAdapter(
+      createChatAdapter(selectedModelId, initialPrompt, initialContext),
+    );
+  }, [selectedModelId, initialPrompt, initialContext]);
 
   const runtime = useLocalRuntime(adapter);
 

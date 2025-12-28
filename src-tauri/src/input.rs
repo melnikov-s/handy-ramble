@@ -53,9 +53,9 @@ pub fn send_paste_ctrl_v(enigo: &mut Enigo) -> Result<(), String> {
         enigo
             .key(modifier_key, enigo::Direction::Release)
             .map_err(|e| format!("Failed to release modifier key: {}", e))?;
-    }
 
-    Ok(())
+        Ok(())
+    }
 }
 
 /// Sends a Ctrl+Shift+V paste command.

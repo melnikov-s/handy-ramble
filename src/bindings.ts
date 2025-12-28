@@ -109,6 +109,14 @@ async changeWordCorrectionThresholdSetting(threshold: number) : Promise<Result<n
     else return { status: "error", error: e  as any };
 }
 },
+async changeQuickChatInitialPromptSetting(prompt: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_quick_chat_initial_prompt_setting", { prompt }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changePasteMethodSetting(method: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_paste_method_setting", { method }) };
@@ -1053,7 +1061,11 @@ computer_use_model?: string;
 /**
  * Maximum steps for computer use agent loop
  */
-computer_use_max_steps?: number }
+computer_use_max_steps?: number; 
+/**
+ * Customizable initial prompt for the quick chat
+ */
+quick_chat_initial_prompt?: string }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
 export type ChatMessage = { role: string; content: string }

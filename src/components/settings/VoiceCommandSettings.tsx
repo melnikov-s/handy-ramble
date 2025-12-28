@@ -180,6 +180,38 @@ export const VoiceCommandSettings: React.FC = () => {
         </SettingsGroup>
       }
 
+      <SettingsGroup title={t("settings.quickChat.title", "Quick Chat")}>
+        <SettingContainer
+          title={t("settings.quickChat.initialPrompt.title", "Initial Prompt")}
+          description={t(
+            "settings.quickChat.initialPrompt.description",
+            "The system prompt sent to the LLM when starting a new quick chat.",
+          )}
+          descriptionMode="tooltip"
+          layout="stacked"
+          grouped={true}
+        >
+          <textarea
+            value={settings?.quick_chat_initial_prompt ?? ""}
+            onChange={async (e) => {
+              try {
+                await commands.changeQuickChatInitialPromptSetting(
+                  e.target.value,
+                );
+                await refreshSettings();
+              } catch (error) {
+                console.error("Failed to update initial prompt:", error);
+              }
+            }}
+            placeholder={t(
+              "settings.quickChat.initialPrompt.placeholder",
+              "Enter initial prompt...",
+            )}
+            className="w-full min-h-[100px] p-2 bg-mid-gray/5 border border-mid-gray/20 rounded text-sm focus:outline-none focus:border-logo-primary resize-y font-mono"
+          />
+        </SettingContainer>
+      </SettingsGroup>
+
       {voiceCommands.length > 0 && (
         <SettingsGroup
           title={t(
