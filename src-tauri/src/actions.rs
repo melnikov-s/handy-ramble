@@ -74,10 +74,26 @@ pub fn resolve_llm_config(
     })
 }
 
+/// interaction styles for different types of shortcuts
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InteractionBehavior {
+    /// Action fires exactly once on Press. Release is ignored.
+    Instant,
+    /// Tap (short press) = Toggle. Hold (long press) = Push-to-Talk.
+    Hybrid,
+    /// Action starts on Press and stops on Release.
+    Momentary,
+}
+
 // Shortcut Action Trait
 pub trait ShortcutAction: Send + Sync {
+    /// The style of interaction this action supports
+    fn interaction_behavior(&self) -> InteractionBehavior;
+
     /// Start the action. Returns true if the action started successfully, false otherwise.
     fn start(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str) -> bool;
+
+    /// Stop the action (for PTT or Toggle-off)
     fn stop(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str);
 }
 
@@ -441,6 +457,10 @@ fn maybe_capture_screen_ocr_background(app: &AppHandle) {
 }
 
 impl ShortcutAction for TranscribeAction {
+    fn interaction_behavior(&self) -> InteractionBehavior {
+        InteractionBehavior::Hybrid
+    }
+
     fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) -> bool {
         let start_time = Instant::now();
         debug!(
@@ -1076,6 +1096,10 @@ async fn process_ramble_to_coherent(
 struct CancelAction;
 
 impl ShortcutAction for CancelAction {
+    fn interaction_behavior(&self) -> InteractionBehavior {
+        InteractionBehavior::Instant
+    }
+
     fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) -> bool {
         utils::cancel_current_operation(app);
         true
@@ -1090,6 +1114,10 @@ impl ShortcutAction for CancelAction {
 struct TestAction;
 
 impl ShortcutAction for TestAction {
+    fn interaction_behavior(&self) -> InteractionBehavior {
+        InteractionBehavior::Instant
+    }
+
     fn start(&self, app: &AppHandle, binding_id: &str, shortcut_str: &str) -> bool {
         log::info!(
             "Shortcut ID '{}': Started - {} (App: {})",
@@ -1114,6 +1142,10 @@ impl ShortcutAction for TestAction {
 struct PauseAction;
 
 impl ShortcutAction for PauseAction {
+    fn interaction_behavior(&self) -> InteractionBehavior {
+        InteractionBehavior::Instant
+    }
+
     fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) -> bool {
         crate::utils::toggle_pause_operation(app);
         true
@@ -1122,10 +1154,52 @@ impl ShortcutAction for PauseAction {
     fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {}
 }
 
+// Quick Chat Action - Opens a new chat window immediately
+struct QuickChatAction;
+
+impl ShortcutAction for QuickChatAction {
+    fn interaction_behavior(&self) -> InteractionBehavior {
+        InteractionBehavior::Instant
+    }
+
+    fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) -> bool {
+        debug!("[ACTION] QuickChatAction::start - opening chat window");
+
+        // Get current selection context (if user has text selected)
+        let selection = match crate::clipboard::get_selected_text(app) {
+            Ok(text) => text,
+            Err(e) => {
+                debug!("Failed to get selected text: {}", e);
+                None
+            }
+        };
+
+        // Open a new chat window
+        match crate::commands::open_chat_window(app.clone(), selection) {
+            Ok(label) => {
+                info!("Opened quick chat window: {}", label);
+                true
+            }
+            Err(e) => {
+                error!("Failed to open quick chat window: {}", e);
+                false
+            }
+        }
+    }
+
+    fn stop(&self, _app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        // Quick chat is instant - no stop action needed
+    }
+}
+
 // Voice Command Action
 struct VoiceCommandAction;
 
 impl ShortcutAction for VoiceCommandAction {
+    fn interaction_behavior(&self) -> InteractionBehavior {
+        InteractionBehavior::Hybrid
+    }
+
     fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) -> bool {
         debug!(
             "[ACTION] VoiceCommandAction::start called for binding: {}",
@@ -1372,7 +1446,10 @@ async fn execute_via_llm(
                         "Direct phrase match for bespoke command '{}' (phrase: '{}')",
                         cmd.name, phrase
                     );
-                    return Ok(crate::voice_commands::execute_bespoke_command(cmd));
+                    return Ok(crate::voice_commands::execute_bespoke_command(
+                        cmd,
+                        selection.as_deref(),
+                    ));
                 }
             }
         }
@@ -1487,7 +1564,10 @@ async fn execute_via_llm(
                 if let Some(bespoke) = settings.voice_commands.iter().find(|c| c.id == matched_id) {
                     if bespoke.command_type == crate::settings::VoiceCommandType::Bespoke {
                         debug!("Executing bespoke command by ID: {}", matched_id);
-                        return Ok(crate::voice_commands::execute_bespoke_command(bespoke));
+                        return Ok(crate::voice_commands::execute_bespoke_command(
+                            bespoke,
+                            selection.as_deref(),
+                        ));
                     }
                 }
 
@@ -1496,7 +1576,10 @@ async fn execute_via_llm(
                     if let Some(bespoke) =
                         settings.voice_commands.iter().find(|c| c.id == matched_id)
                     {
-                        return Ok(crate::voice_commands::execute_bespoke_command(bespoke));
+                        return Ok(crate::voice_commands::execute_bespoke_command(
+                            bespoke,
+                            selection.as_deref(),
+                        ));
                     }
                 }
 
@@ -1589,6 +1672,10 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
     map.insert(
         "voice_command".to_string(),
         Arc::new(VoiceCommandAction) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "quick_chat".to_string(),
+        Arc::new(QuickChatAction) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "test".to_string(),

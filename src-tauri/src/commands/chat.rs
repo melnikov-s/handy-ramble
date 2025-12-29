@@ -11,6 +11,7 @@ use tauri::AppHandle;
 pub struct ChatMessage {
     pub role: String,
     pub content: String,
+    pub images: Option<Vec<String>>, // Base64 encoded images
 }
 
 /// Send a chat completion request to the configured LLM provider
@@ -65,11 +66,63 @@ pub async fn chat_completion(
                 .build()
                 .map_err(|e| e.to_string())?
                 .into(),
-            "user" => ChatCompletionRequestUserMessageArgs::default()
-                .content(msg.content)
-                .build()
-                .map_err(|e| e.to_string())?
-                .into(),
+            "user" => {
+                if let Some(images) = msg.images {
+                    if !images.is_empty() {
+                        use async_openai::types::{
+                            ChatCompletionRequestMessageContentPartImageArgs,
+                            ChatCompletionRequestMessageContentPartTextArgs,
+                            ChatCompletionRequestUserMessageContentPart, ImageUrlArgs,
+                        };
+
+                        let mut parts: Vec<ChatCompletionRequestUserMessageContentPart> =
+                            Vec::new();
+
+                        // Add text part
+                        parts.push(
+                            ChatCompletionRequestMessageContentPartTextArgs::default()
+                                .text(msg.content)
+                                .build()
+                                .map_err(|e| e.to_string())?
+                                .into(),
+                        );
+
+                        // Add image parts
+                        for base64_image in images {
+                            parts.push(
+                                ChatCompletionRequestMessageContentPartImageArgs::default()
+                                    .image_url(
+                                        ImageUrlArgs::default()
+                                            .url(format!("data:image/png;base64,{}", base64_image))
+                                            .build()
+                                            .map_err(|e| e.to_string())?,
+                                    )
+                                    .build()
+                                    .map_err(|e| e.to_string())?
+                                    .into(),
+                            );
+                        }
+
+                        ChatCompletionRequestUserMessageArgs::default()
+                            .content(parts)
+                            .build()
+                            .map_err(|e| e.to_string())?
+                            .into()
+                    } else {
+                        ChatCompletionRequestUserMessageArgs::default()
+                            .content(msg.content)
+                            .build()
+                            .map_err(|e| e.to_string())?
+                            .into()
+                    }
+                } else {
+                    ChatCompletionRequestUserMessageArgs::default()
+                        .content(msg.content)
+                        .build()
+                        .map_err(|e| e.to_string())?
+                        .into()
+                }
+            }
             "assistant" => {
                 // For assistant messages, we'll treat them as user context for now
                 ChatCompletionRequestUserMessageArgs::default()

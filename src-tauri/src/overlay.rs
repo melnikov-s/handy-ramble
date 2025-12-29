@@ -429,6 +429,17 @@ pub fn hide_recording_overlay(app_handle: &AppHandle) {
     }
 }
 
+/// Sets the visibility of the recording overlay window directly without animation
+pub fn set_overlay_visibility(app_handle: &AppHandle, visible: bool) {
+    if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
+        if visible {
+            let _ = overlay_window.show();
+        } else {
+            let _ = overlay_window.hide();
+        }
+    }
+}
+
 pub fn emit_levels(app_handle: &AppHandle, levels: &Vec<f32>) {
     // emit levels to main app
     let _ = app_handle.emit("mic-level", levels);
