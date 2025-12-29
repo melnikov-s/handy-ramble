@@ -166,7 +166,12 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
           if (response.status === "ok") {
             setAttachments([]);
             yield {
-              content: [{ type: "text" as const, text: response.data }],
+              content: [{ type: "text" as const, text: response.data.content }],
+              metadata: {
+                custom: {
+                  groundingMetadata: response.data.grounding_metadata,
+                },
+              },
             };
           } else {
             yield {

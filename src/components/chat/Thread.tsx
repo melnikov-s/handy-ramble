@@ -4,7 +4,12 @@ import {
   ComposerPrimitive,
   MessagePrimitive,
   ThreadPrimitive,
+  useMessage,
 } from "@assistant-ui/react";
+import Markdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { GroundingMetadata } from "@/bindings";
+import { useState } from "react";
 import {
   ArrowUpIcon,
   CheckIcon,
@@ -13,6 +18,8 @@ import {
   CopyIcon,
   RefreshCwIcon,
   XIcon,
+  SearchIcon,
+  ChevronDownIcon,
 } from "lucide-react";
 import type { FC } from "react";
 import React, { useEffect } from "react";
@@ -178,13 +185,71 @@ const UserMessage: FC = () => {
 };
 
 const AssistantMessage: FC = () => {
+  const message = useMessage();
+  // @ts-ignore - types might be slightly off with custom metadata
+  const groundingMetadata = message.metadata?.custom?.groundingMetadata as
+    | GroundingMetadata
+    | undefined;
+
   return (
     <MessagePrimitive.Root className="mb-4 flex flex-col group">
-      <div className="max-w-[80%] rounded-lg bg-[var(--color-text)]/10 px-4 py-2 text-[var(--color-text)]">
-        <MessagePrimitive.Content />
+      <div className="max-w-[80%] rounded-lg bg-[var(--color-text)]/10 px-4 py-2 text-[var(--color-text)] [&_p]:my-1 [&_ul]:list-disc [&_ul]:pl-4 [&_ol]:list-decimal [&_ol]:pl-4 [&_code]:bg-black/10 [&_code]:rounded [&_code]:px-1 [&_pre]:bg-black/10 [&_pre]:p-2 [&_pre]:rounded [&_pre]:overflow-x-auto">
+        <MessagePrimitive.Content
+          components={{
+            Text: ({ text }) => (
+              <Markdown remarkPlugins={[remarkGfm]}>{text}</Markdown>
+            ),
+          }}
+        />
       </div>
+      {groundingMetadata && <SearchGrounding metadata={groundingMetadata} />}
       <AssistantActionBar />
     </MessagePrimitive.Root>
+  );
+};
+
+const SearchGrounding: FC<{ metadata: GroundingMetadata }> = ({ metadata }) => {
+  const [isOpen, setIsOpen] = useState(false);
+
+  if (
+    (!metadata.chunks || metadata.chunks.length === 0) &&
+    !metadata.search_entry_point
+  )
+    return null;
+
+  return (
+    <div className="ml-2 mt-1">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex items-center gap-1.5 rounded-full border border-[var(--color-text)]/10 px-2 py-0.5 text-xs text-[var(--color-text)]/60 hover:bg-[var(--color-text)]/5 hover:text-[var(--color-text)]"
+      >
+        <SearchIcon className="h-3 w-3" />
+        <span>Search Activated</span>
+        <ChevronDownIcon
+          className={cn("h-3 w-3 transition-transform", isOpen && "rotate-180")}
+        />
+      </button>
+      {isOpen && (
+        <div className="mt-2 flex flex-col gap-1.5 pl-2 text-xs">
+          {metadata.chunks.map((chunk, i) => (
+            <a
+              key={i}
+              href={chunk.uri || "#"}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex flex-col gap-0.5 rounded p-1 hover:bg-[var(--color-text)]/5"
+            >
+              <span className="font-medium text-[var(--color-primary)] truncate max-w-[300px]">
+                {chunk.title || "Source"}
+              </span>
+              <span className="text-[var(--color-text)]/40 truncate max-w-[300px]">
+                {chunk.uri}
+              </span>
+            </a>
+          ))}
+        </div>
+      )}
+    </div>
   );
 };
 
