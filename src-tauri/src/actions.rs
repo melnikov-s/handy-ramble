@@ -588,7 +588,7 @@ impl ShortcutAction for TranscribeAction {
                                     Err(error_msg) => {
                                         // Show error overlay but fall back to raw text output
                                         error!("Coherent processing failed: {}", error_msg);
-                                        utils::show_error_overlay(&ah, &error_msg);
+                                        utils::show_error_overlay(&ah, &error_msg, false);
                                         // Continue with raw text - final_text already contains the original
                                         // filtered transcription, so we just let the code continue to paste it
                                     }
@@ -1198,7 +1198,7 @@ impl ShortcutAction for VoiceCommandAction {
                                             change_tray_icon(&ah, TrayIconState::Idle);
                                         }
                                         crate::voice_commands::CommandResult::Error(msg) => {
-                                            utils::show_error_overlay(&ah, &msg);
+                                            utils::show_error_overlay(&ah, &msg, true);
                                             change_tray_icon(&ah, TrayIconState::Idle);
                                         }
                                         crate::voice_commands::CommandResult::InternalCommand(
@@ -1228,7 +1228,7 @@ impl ShortcutAction for VoiceCommandAction {
                                 }
                                 Err(e) => {
                                     error!("Voice command processing failed: {}", e);
-                                    utils::show_error_overlay(&ah, &e);
+                                    utils::show_error_overlay(&ah, &e, true);
                                     change_tray_icon(&ah, TrayIconState::Idle);
                                 }
                             }
@@ -1501,15 +1501,15 @@ async fn execute_via_llm(
                         .get("message")
                         .and_then(|v| v.as_str())
                         .unwrap_or("Command not understood");
-                    Ok(crate::voice_commands::CommandResult::PasteOutput(
+                    Ok(crate::voice_commands::CommandResult::Error(
                         message.to_string(),
                     ))
                 }
             }
         }
         Err(_) => {
-            // LLM didn't return valid JSON, treat response as the output
-            Ok(crate::voice_commands::CommandResult::PasteOutput(
+            // LLM didn't return valid JSON, treat response as the error
+            Ok(crate::voice_commands::CommandResult::Error(
                 llm_response.clone(),
             ))
         }

@@ -445,6 +445,9 @@
     "paused": "Paused",
     "pause": "Pause",
     "resume": "Resume",
-    "dismissError": "Dismiss"
+    "dismissError": "Dismiss",
+    "refinementFailed": "Refinement failed",
+    "commandFailed": "Command failed",
+    "processingCommand": "Processing..."
   }
 }
