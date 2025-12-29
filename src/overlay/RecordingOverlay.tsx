@@ -36,6 +36,7 @@ type PromptMode =
 interface ErrorPayload {
   state: string;
   message: string;
+  is_voice_command: boolean;
 }
 
 // Icons for prompt modes (emoji for most, null for dynamic which shows detected category)
@@ -60,6 +61,7 @@ const RecordingOverlay: React.FC = () => {
   const [isVisible, setIsVisible] = useState(false);
   const [state, setState] = useState<OverlayState>("recording");
   const [errorMessage, setErrorMessage] = useState<string>("");
+  const [isVoiceCommandError, setIsVoiceCommandError] = useState(false);
   const [levels, setLevels] = useState<number[]>(Array(16).fill(0));
   const smoothedLevelsRef = useRef<number[]>(Array(16).fill(0));
   // Mode determination state - hide pause button until mode is known
@@ -106,6 +108,7 @@ const RecordingOverlay: React.FC = () => {
         console.log("[UI] show-overlay received:", overlayState);
         setState(overlayState as OverlayState);
         setErrorMessage("");
+        setIsVoiceCommandError(false);
         setIsVisible(true);
 
         // Fetch current prompt mode from settings
@@ -158,6 +161,7 @@ const RecordingOverlay: React.FC = () => {
         await syncLanguageFromSettings();
         setState("error");
         setErrorMessage(event.payload.message);
+        setIsVoiceCommandError(event.payload.is_voice_command);
         setIsVisible(true);
       });
 
@@ -226,6 +230,7 @@ const RecordingOverlay: React.FC = () => {
   const handleDismissError = () => {
     setIsVisible(false);
     setErrorMessage("");
+    setIsVoiceCommandError(false);
     setState("recording");
   };
 
@@ -381,8 +386,10 @@ const RecordingOverlay: React.FC = () => {
               className="error-text text-red-400 text-xs truncate max-w-[120px]"
               title={errorMessage}
             >
-              {t("overlay.refinementFailed", "Refinement failed")}:{" "}
-              {errorMessage}
+              {isVoiceCommandError
+                ? t("overlay.commandFailed", "Command failed")
+                : t("overlay.refinementFailed", "Refinement failed")}
+              : {errorMessage}
             </div>
           )}
         </div>

@@ -373,7 +373,7 @@ pub fn show_paused_overlay(app_handle: &AppHandle, is_ramble: bool) {
 }
 
 /// Shows an error overlay with a message that the user must dismiss
-pub fn show_error_overlay(app_handle: &AppHandle, error_message: &str) {
+pub fn show_error_overlay(app_handle: &AppHandle, error_message: &str, is_voice_command: bool) {
     // Check if overlay should be shown based on position setting
     let settings = settings::get_settings(app_handle);
     if settings.overlay_position == OverlayPosition::None {
@@ -394,10 +394,12 @@ pub fn show_error_overlay(app_handle: &AppHandle, error_message: &str) {
         struct ErrorPayload {
             state: String,
             message: String,
+            is_voice_command: bool,
         }
         let payload = ErrorPayload {
             state: "error".to_string(),
             message: error_message.to_string(),
+            is_voice_command,
         };
         let _ = overlay_window.emit("show-overlay-error", payload);
     }
