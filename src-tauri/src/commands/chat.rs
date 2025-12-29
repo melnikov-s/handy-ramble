@@ -14,6 +14,25 @@ pub struct ChatMessage {
     pub images: Option<Vec<String>>, // Base64 encoded images
 }
 
+#[derive(Debug, Serialize, Deserialize, specta::Type, Clone)]
+pub struct GroundingChunk {
+    pub uri: Option<String>,
+    pub title: Option<String>,
+    // we can add content later if needed
+}
+
+#[derive(Debug, Serialize, Deserialize, specta::Type, Clone)]
+pub struct GroundingMetadata {
+    pub search_entry_point: Option<String>,
+    pub chunks: Vec<GroundingChunk>,
+}
+
+#[derive(Debug, Serialize, Deserialize, specta::Type)]
+pub struct ChatResponse {
+    pub content: String,
+    pub grounding_metadata: Option<GroundingMetadata>,
+}
+
 /// Send a chat completion request to the configured LLM provider
 ///
 /// # Arguments
@@ -25,7 +44,7 @@ pub async fn chat_completion(
     messages: Vec<ChatMessage>,
     model_id: Option<String>,
     enable_grounding: bool,
-) -> Result<String, String> {
+) -> Result<ChatResponse, String> {
     let settings = get_settings(&app);
 
     // Determine which model to use
@@ -163,7 +182,10 @@ pub async fn chat_completion(
         .and_then(|choice| choice.message.content.clone())
         .ok_or_else(|| "No response content".to_string())?;
 
-    Ok(content)
+    Ok(ChatResponse {
+        content,
+        grounding_metadata: None,
+    })
 }
 
 /// Native Gemini API call for search grounding
@@ -171,7 +193,7 @@ async fn chat_completion_gemini_native(
     provider: &crate::settings::LLMProvider,
     model_id: &str,
     messages: Vec<ChatMessage>,
-) -> Result<String, String> {
+) -> Result<ChatResponse, String> {
     let url = format!(
         "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
         model_id, provider.api_key
@@ -235,9 +257,41 @@ async fn chat_completion_gemini_native(
         .await
         .map_err(|e| format!("Failed to parse response: {}", e))?;
 
-    let content = res_json["candidates"][0]["content"]["parts"][0]["text"]
+    let candidate = &res_json["candidates"][0];
+    let content = candidate["content"]["parts"][0]["text"]
         .as_str()
-        .ok_or_else(|| "No text in Gemini response".to_string())?;
+        .ok_or_else(|| "No text in Gemini response".to_string())?
+        .to_string();
 
-    Ok(content.to_string())
+    // Parse grounding metadata
+    let mut grounding_metadata = None;
+    if let Some(grounding_info) = candidate.get("groundingMetadata") {
+        let mut chunks = Vec::new();
+        if let Some(grounding_chunks) = grounding_info["groundingChunks"].as_array() {
+            for chunk in grounding_chunks {
+                if let Some(web) = chunk.get("web") {
+                    chunks.push(GroundingChunk {
+                        uri: web["uri"].as_str().map(|s| s.to_string()),
+                        title: web["title"].as_str().map(|s| s.to_string()),
+                    });
+                }
+            }
+        }
+
+        let search_entry_point = grounding_info["searchEntryPoint"]["renderedContent"]
+            .as_str()
+            .map(|s| s.to_string());
+
+        if !chunks.is_empty() || search_entry_point.is_some() {
+            grounding_metadata = Some(GroundingMetadata {
+                search_entry_point,
+                chunks,
+            });
+        }
+    }
+
+    Ok(ChatResponse {
+        content,
+        grounding_metadata,
+    })
 }

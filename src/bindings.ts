@@ -862,7 +862,7 @@ async removeAppCategoryMapping(bundleId: string) : Promise<Result<null, string>>
  * # Arguments
  * * `model_id` - Optional model ID to use. Falls back to `default_chat_model_id` if not provided.
  */
-async chatCompletion(messages: ChatMessage[], modelId: string | null, enableGrounding: boolean) : Promise<Result<string, string>> {
+async chatCompletion(messages: ChatMessage[], modelId: string | null, enableGrounding: boolean) : Promise<Result<ChatResponse, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("chat_completion", { messages, modelId, enableGrounding }) };
 } catch (e) {
@@ -1111,6 +1111,7 @@ quick_chat_initial_prompt?: string }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
 export type ChatMessage = { role: string; content: string; images: string[] | null }
+export type ChatResponse = { content: string; grounding_metadata: GroundingMetadata | null }
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard"
 export type CustomSounds = { start: boolean; stop: boolean }
 export type DefaultModels = { chat: string | null; coherent: string | null; voice: string | null }
@@ -1119,6 +1120,8 @@ export type DefaultModels = { chat: string | null; coherent: string | null; voic
  */
 export type DetectedApp = { bundle_identifier: string; display_name: string; last_seen: number }
 export type EngineType = "Whisper" | "Parakeet"
+export type GroundingChunk = { uri: string | null; title: string | null }
+export type GroundingMetadata = { search_entry_point: string | null; chunks: GroundingChunk[] }
 export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null }
 /**
  * Information about an installed application (from JSON)
