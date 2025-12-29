@@ -35,28 +35,29 @@ use crate::ManagedToggleState;
 // Constants: Raw modifier binding identifiers
 // ============================================================================
 
-pub const RAW_BINDING_RIGHT_OPTION: &str = "right_option";
-pub const RAW_BINDING_LEFT_OPTION: &str = "left_option";
-pub const RAW_BINDING_SHIFT_RIGHT_OPTION: &str = "shift+right_option";
-pub const RAW_BINDING_SHIFT_LEFT_OPTION: &str = "shift+left_option";
-pub const RAW_BINDING_RIGHT_COMMAND: &str = "right_command";
-pub const RAW_BINDING_LEFT_COMMAND: &str = "left_command";
-pub const RAW_BINDING_SHIFT_RIGHT_COMMAND: &str = "shift+right_command";
-pub const RAW_BINDING_SHIFT_LEFT_COMMAND: &str = "shift+left_command";
+// Note: Raw bindings are now handled generically in is_raw_modifier_binding.
+// Individual constants are kept for reference if needed elsewhere.
 
-/// Check if a binding string is a raw modifier binding
+/// Check if a binding string is a raw modifier binding (composed only of modifiers)
 pub fn is_raw_modifier_binding(binding: &str) -> bool {
-    matches!(
-        binding,
-        RAW_BINDING_RIGHT_OPTION
-            | RAW_BINDING_LEFT_OPTION
-            | RAW_BINDING_SHIFT_RIGHT_OPTION
-            | RAW_BINDING_SHIFT_LEFT_OPTION
-            | RAW_BINDING_RIGHT_COMMAND
-            | RAW_BINDING_LEFT_COMMAND
-            | RAW_BINDING_SHIFT_RIGHT_COMMAND
-            | RAW_BINDING_SHIFT_LEFT_COMMAND
-    )
+    let modifiers = [
+        "ctrl",
+        "control",
+        "shift",
+        "alt",
+        "option",
+        "meta",
+        "command",
+        "cmd",
+        "right_option",
+        "left_option",
+        "right_command",
+        "left_command",
+    ];
+
+    binding
+        .split('+')
+        .all(|part| modifiers.contains(&part.trim().to_lowercase().as_str()))
 }
 
 // ============================================================================
@@ -95,8 +96,14 @@ struct KeyListenerState {
     suspended: std::collections::HashSet<String>,
     /// App handle for triggering actions
     app_handle: Option<AppHandle>,
-    /// Modifier key tracking
+
+    // Modifier Tracking
     shift_pressed: bool,
+    ctrl_pressed: bool,
+    alt_pressed: bool,        // Left Option on Mac
+    alt_gr_pressed: bool,     // Right Option on Mac
+    meta_left_pressed: bool,  // Left Command on Mac
+    meta_right_pressed: bool, // Right Command on Mac
 }
 
 impl KeyListenerState {
@@ -107,6 +114,11 @@ impl KeyListenerState {
             suspended: std::collections::HashSet::new(),
             app_handle: None,
             shift_pressed: false,
+            ctrl_pressed: false,
+            alt_pressed: false,
+            alt_gr_pressed: false,
+            meta_left_pressed: false,
+            meta_right_pressed: false,
         }
     }
 }
@@ -229,21 +241,54 @@ fn handle_rdev_event(event: Event) {
 }
 
 fn handle_key_press(key: Key) {
-    // Track shift state
-    if matches!(key, Key::ShiftLeft | Key::ShiftRight) {
-        if let Ok(mut guard) = get_state().lock() {
-            guard.shift_pressed = true;
+    let mut current_modifiers = Vec::new();
+
+    // 1. Update Modifier State & Build Modifier String
+    if let Ok(mut guard) = get_state().lock() {
+        match key {
+            Key::ShiftLeft | Key::ShiftRight => guard.shift_pressed = true,
+            Key::ControlLeft | Key::ControlRight => guard.ctrl_pressed = true,
+            Key::Alt => guard.alt_pressed = true,
+            Key::AltGr => guard.alt_gr_pressed = true,
+            Key::MetaLeft => guard.meta_left_pressed = true,
+            Key::MetaRight => guard.meta_right_pressed = true,
+            _ => {}
         }
-        return;
+
+        // Build current chord string for identification
+        if guard.shift_pressed {
+            current_modifiers.push("shift");
+        }
+        if guard.ctrl_pressed {
+            current_modifiers.push("ctrl");
+        }
+        if guard.alt_pressed {
+            current_modifiers.push("left_option");
+        }
+        if guard.alt_gr_pressed {
+            current_modifiers.push("right_option");
+        }
+        if guard.meta_left_pressed {
+            current_modifiers.push("left_command");
+        }
+        if guard.meta_right_pressed {
+            current_modifiers.push("right_command");
+        }
     }
 
-    // Handle modifier keys (Option/Command)
-    if let Some(binding_string) = key_to_binding_string(key, true) {
-        handle_transcribe_press(&binding_string);
-        return;
+    // 2. Identify the Binding
+    // We check for exact matches based on the physical key pressed + current modifiers.
+    // e.g. If Shift is held and RightCmd is pressed, binding_string = "shift+right_command"
+    let binding_string = key_to_binding_string_chord(key, &current_modifiers);
+
+    if let Some(bs) = binding_string {
+        if handle_behavior_press(&bs) {
+            return; // Action handled
+        }
     }
 
-    // Handle passive keys during recording (Escape, S, P)
+    // 3. Handle Passive Keys during Recording (S, P, Esc)
+    // Only if not already handled by a binding
     match key {
         Key::Escape => handle_cancel(),
         Key::KeyS => handle_vision(),
@@ -253,263 +298,317 @@ fn handle_key_press(key: Key) {
 }
 
 fn handle_key_release(key: Key) {
-    // Track shift state
-    if matches!(key, Key::ShiftLeft | Key::ShiftRight) {
-        if let Ok(mut guard) = get_state().lock() {
-            guard.shift_pressed = false;
+    let mut current_modifiers = Vec::new();
+
+    // 1. Get snapshot of modifiers BEFORE we update them for release
+    if let Ok(guard) = get_state().lock() {
+        if guard.shift_pressed {
+            current_modifiers.push("shift");
         }
-        return;
+        if guard.ctrl_pressed {
+            current_modifiers.push("ctrl");
+        }
+        if guard.alt_pressed {
+            current_modifiers.push("left_option");
+        }
+        if guard.alt_gr_pressed {
+            current_modifiers.push("right_option");
+        }
+        if guard.meta_left_pressed {
+            current_modifiers.push("left_command");
+        }
+        if guard.meta_right_pressed {
+            current_modifiers.push("right_command");
+        }
     }
 
-    // Handle modifier key release
-    if let Some(binding_string) = key_to_binding_string(key, false) {
-        handle_transcribe_release(&binding_string);
+    // 2. Resolve the binding that is being released
+    let binding_string = key_to_binding_string_chord(key, &current_modifiers);
+
+    // 3. Trigger behavior release
+    if let Some(bs) = binding_string {
+        handle_behavior_release(&bs);
+    }
+
+    // 4. Update Global Modifier State
+    if let Ok(mut guard) = get_state().lock() {
+        match key {
+            Key::ShiftLeft | Key::ShiftRight => guard.shift_pressed = false,
+            Key::ControlLeft | Key::ControlRight => guard.ctrl_pressed = false,
+            Key::Alt => guard.alt_pressed = false,
+            Key::AltGr => guard.alt_gr_pressed = false,
+            Key::MetaLeft => guard.meta_left_pressed = false,
+            Key::MetaRight => guard.meta_right_pressed = false,
+            _ => {}
+        }
     }
 }
 
-/// Convert an rdev Key to a binding string (e.g., "right_option")
-fn key_to_binding_string(key: Key, check_shift: bool) -> Option<String> {
-    let shift_pressed = if check_shift {
-        get_state()
-            .lock()
-            .ok()
-            .map(|g| g.shift_pressed)
-            .unwrap_or(false)
-    } else {
-        // On release, we need to check if this was a shift+modifier combo
-        // but shift might already be released, so we check the current state
-        get_state()
-            .lock()
-            .ok()
-            .map(|g| g.shift_pressed)
-            .unwrap_or(false)
+/// Helper to build a binding string for the current key event
+fn key_to_binding_string_chord(key: Key, modifiers: &[&str]) -> Option<String> {
+    let key_name = match key {
+        Key::Alt => "left_option",
+        Key::AltGr => "right_option",
+        Key::MetaLeft => "left_command",
+        Key::MetaRight => "right_command",
+        Key::ShiftLeft | Key::ShiftRight => "shift",
+        Key::ControlLeft | Key::ControlRight => "ctrl",
+        Key::Space => "space",
+        Key::KeyQ => "q",
+        Key::KeyA => "a",
+        Key::KeyS => "s",
+        Key::KeyZ => "z",
+        _ => return None, // Add more as needed
     };
 
-    match key {
-        Key::Alt => Some(if shift_pressed {
-            RAW_BINDING_SHIFT_LEFT_OPTION.to_string()
-        } else {
-            RAW_BINDING_LEFT_OPTION.to_string()
-        }),
-        Key::AltGr => Some(if shift_pressed {
-            RAW_BINDING_SHIFT_RIGHT_OPTION.to_string()
-        } else {
-            RAW_BINDING_RIGHT_OPTION.to_string()
-        }),
-        Key::MetaLeft => Some(if shift_pressed {
-            RAW_BINDING_SHIFT_LEFT_COMMAND.to_string()
-        } else {
-            RAW_BINDING_LEFT_COMMAND.to_string()
-        }),
-        Key::MetaRight => Some(if shift_pressed {
-            RAW_BINDING_SHIFT_RIGHT_COMMAND.to_string()
-        } else {
-            RAW_BINDING_RIGHT_COMMAND.to_string()
-        }),
-        _ => None,
+    // If the key itself is a modifier, we want the chord WITHOUT it in the prefix
+    // e.g. Chord = ["shift", "right_command"], Key = "right_command" -> "shift+right_command"
+    let modifier_prefix: Vec<String> = modifiers
+        .iter()
+        .filter(|&&m| m != key_name)
+        .map(|&m| m.to_string())
+        .collect();
+
+    if modifier_prefix.is_empty() {
+        Some(key_name.to_string())
+    } else {
+        Some(format!("{}+{}", modifier_prefix.join("+"), key_name))
     }
 }
+
+// Replaced by key_to_binding_string_chord and behavior handlers
 
 // ============================================================================
 // State Machine Transitions
 // ============================================================================
 
-fn handle_transcribe_press(binding_string: &str) {
+// behavior handlers
+fn handle_behavior_press(binding_string: &str) -> bool {
+    use crate::actions::InteractionBehavior;
+
     let state = get_state();
-    let (app, _binding_id, action) = {
+    let (app, binding_id, behavior) = {
         let mut guard = match state.lock() {
             Ok(g) => g,
-            Err(_) => return,
+            Err(_) => return false,
         };
 
-        // Look up the binding
+        // Exact match lookup
         let binding = match guard.bindings.get(binding_string) {
             Some(b) => b.clone(),
-            None => {
-                // Try base binding if shift variant not found
-                let base = binding_string
-                    .strip_prefix("shift+")
-                    .unwrap_or(binding_string);
-                match guard.bindings.get(base) {
-                    Some(b) => b.clone(),
-                    None => return, // Not registered
-                }
-            }
+            None => return false,
         };
 
-        // Check if suspended
         if guard.suspended.contains(&binding.binding_id) {
-            return;
+            return false;
         }
 
         let app = match &guard.app_handle {
             Some(a) => a.clone(),
-            None => return,
+            None => return false,
         };
 
+        let action = match ACTION_MAP.get(&binding.binding_id) {
+            Some(a) => a,
+            None => return false,
+        };
+
+        let behavior = action.interaction_behavior();
+
         // State machine transition
-        let action = match &guard.state {
+        match guard.state.clone() {
             ListenerState::Idle => {
-                // Idle → Recording
-                guard.state = ListenerState::Recording {
-                    binding_id: binding.binding_id.clone(),
-                    press_time: Instant::now(),
-                    key_released: false,
-                };
-                debug!("[STATE] Idle -> Recording ({})", binding.binding_id);
-                Some(("start", binding.binding_id.clone()))
+                // Determine next state based on behavior
+                match behavior {
+                    InteractionBehavior::Instant => {
+                        // Fires once, stays Idle
+                    }
+                    InteractionBehavior::Hybrid | InteractionBehavior::Momentary => {
+                        guard.state = ListenerState::Recording {
+                            binding_id: binding.binding_id.clone(),
+                            press_time: Instant::now(),
+                            key_released: false,
+                        };
+                    }
+                }
+                (app, binding.binding_id.clone(), behavior)
             }
             ListenerState::Recording {
                 key_released: true,
                 binding_id,
                 ..
             } => {
-                // Toggle off - Recording → Idle (stop)
-                let bid = binding_id.clone();
-                guard.state = ListenerState::Idle;
-                debug!("[STATE] Recording -> Idle (toggle stop)");
-                Some(("stop", bid))
-            }
-            ListenerState::Recording {
-                key_released: false,
-                ..
-            } => {
-                // Key pressed while still held - ignore
-                None
-            }
-            ListenerState::Paused { binding_id } => {
-                // Resume from pause
-                let bid = binding_id.clone();
-                guard.state = ListenerState::Recording {
-                    binding_id: bid.clone(),
-                    press_time: Instant::now(),
-                    key_released: false,
-                };
-                debug!("[STATE] Paused -> Recording (resume)");
-                Some(("start", bid)) // start resumes
-            }
-        };
-
-        (app, binding.binding_id, action)
-    };
-
-    // Execute action outside of lock
-    if let Some((action_type, bid)) = action {
-        if action_type == "start" {
-            // Update toggle state for actions
-            let toggle_state = app.state::<ManagedToggleState>();
-            if let Ok(mut states) = toggle_state.lock() {
-                states.active_toggles.insert(bid.clone(), true);
-            }
-
-            if let Some(action) = ACTION_MAP.get(&bid) {
-                let started = action.start(&app, &bid, binding_string);
-                if !started {
-                    // Reset state if start failed
-                    if let Ok(mut guard) = state.lock() {
-                        guard.state = ListenerState::Idle;
-                    }
-                    if let Ok(mut states) = app.state::<ManagedToggleState>().lock() {
-                        states.active_toggles.insert(bid, false);
-                    }
+                if binding_id == binding.binding_id {
+                    // Toggle off
+                    guard.state = ListenerState::Idle;
+                    (app, binding.binding_id.clone(), behavior)
                 } else {
-                    // Start hold timer for mode detection
-                    spawn_hold_timer(app.clone(), bid.clone());
+                    return false;
                 }
             }
-        } else if action_type == "stop" {
-            // Stop action
-            if let Ok(mut states) = app.state::<ManagedToggleState>().lock() {
-                states.active_toggles.insert(bid.clone(), false);
+            ListenerState::Paused { binding_id } => {
+                if binding_id == binding.binding_id {
+                    // Resume
+                    guard.state = ListenerState::Recording {
+                        binding_id: binding.binding_id.clone(),
+                        press_time: Instant::now(),
+                        key_released: false,
+                    };
+                    (app, binding.binding_id.clone(), behavior)
+                } else {
+                    return false;
+                }
             }
-            if let Some(action) = ACTION_MAP.get(&bid) {
-                action.stop(&app, &bid, binding_string);
+            _ => return false,
+        }
+    };
+
+    // Execute outside of lock
+    match behavior {
+        InteractionBehavior::Instant => {
+            if let Some(action) = ACTION_MAP.get(&binding_id) {
+                action.start(&app, &binding_id, binding_string);
             }
+            true
+        }
+        InteractionBehavior::Hybrid | InteractionBehavior::Momentary => {
+            // Check if we are actually starting or resuming
+            let is_stop = {
+                let guard = state.lock().unwrap();
+                matches!(guard.state, ListenerState::Idle)
+            };
+
+            if is_stop {
+                // Stop action (Toggle off)
+                if let Ok(mut states) = app.state::<ManagedToggleState>().lock() {
+                    states.active_toggles.insert(binding_id.clone(), false);
+                }
+                if let Some(action) = ACTION_MAP.get(&binding_id) {
+                    action.stop(&app, &binding_id, binding_string);
+                }
+            } else {
+                // Start/Resume action
+                if let Ok(mut states) = app.state::<ManagedToggleState>().lock() {
+                    states.active_toggles.insert(binding_id.clone(), true);
+                }
+                if let Some(action) = ACTION_MAP.get(&binding_id) {
+                    let started = action.start(&app, &binding_id, binding_string);
+                    if started {
+                        if behavior == InteractionBehavior::Hybrid {
+                            spawn_hold_timer(app.clone(), binding_id.clone());
+                        }
+                    } else {
+                        // Reset if failed
+                        let mut guard = state.lock().unwrap();
+                        guard.state = ListenerState::Idle;
+                        if let Ok(mut states) = app.state::<ManagedToggleState>().lock() {
+                            states.active_toggles.insert(binding_id.clone(), false);
+                        }
+                    }
+                }
+            }
+            true
         }
     }
 }
 
-fn handle_transcribe_release(binding_string: &str) {
+fn handle_behavior_release(binding_string: &str) {
+    use crate::actions::InteractionBehavior;
+
     let state = get_state();
-    let (app, action) = {
+    let (app, binding_id, behavior, is_long_hold) = {
         let mut guard = match state.lock() {
             Ok(g) => g,
             Err(_) => return,
         };
 
-        let app = match &guard.app_handle {
-            Some(a) => a.clone(),
-            None => return,
-        };
-
-        // State machine transition on release
-        let action = match &guard.state {
+        match guard.state.clone() {
             ListenerState::Recording {
                 binding_id,
                 press_time,
                 key_released: false,
             } => {
-                let held_ms = press_time.elapsed().as_millis() as u64;
+                let app = guard.app_handle.as_ref().cloned().unwrap();
+                let action = match ACTION_MAP.get(&binding_id) {
+                    Some(a) => a,
+                    None => return,
+                };
+                let behavior = action.interaction_behavior();
                 let threshold = get_hold_threshold(&app);
-                let bid = binding_id.clone();
+                let held_ms = press_time.elapsed().as_millis() as u64;
+                let is_long_hold = held_ms >= threshold;
 
-                if held_ms >= threshold {
-                    // Long hold (PTT mode) - stop immediately
-                    guard.state = ListenerState::Idle;
-                    debug!(
-                        "[STATE] Recording -> Idle (PTT release after {}ms)",
-                        held_ms
-                    );
-
-                    // Emit hold mode
-                    crate::overlay::emit_mode_determined(&app, "hold");
-
-                    Some(("stop", bid, false))
-                } else {
-                    // Quick tap (toggle mode) - keep recording, mark key as released
-                    guard.state = ListenerState::Recording {
-                        binding_id: bid.clone(),
-                        press_time: *press_time,
-                        key_released: true,
-                    };
-                    debug!(
-                        "[STATE] Recording: key released (toggle mode, {}ms)",
-                        held_ms
-                    );
-
-                    // Set coherent mode and emit refining
-                    let audio_manager = app.state::<Arc<AudioRecordingManager>>();
-                    audio_manager.set_coherent_mode(true);
-                    crate::utils::show_ramble_recording_overlay(&app);
-                    crate::overlay::emit_mode_determined(&app, "refining");
-
-                    // Capture selection context on main thread
-                    let app_clone = app.clone();
-                    let audio_manager_clone = Arc::clone(&audio_manager);
-                    let _ = app.run_on_main_thread(move || {
-                        if let Ok(Some(text)) = crate::clipboard::get_selected_text(&app_clone) {
-                            debug!("Captured selection context: {} chars", text.len());
-                            audio_manager_clone.set_selection_context(text);
+                match behavior {
+                    InteractionBehavior::Instant => {
+                        // Should not even be in Recording state for Instant
+                        return;
+                    }
+                    InteractionBehavior::Momentary => {
+                        // Transitions to Idle
+                        let bid = binding_id.clone();
+                        guard.state = ListenerState::Idle;
+                        (app, bid, behavior, true)
+                    }
+                    InteractionBehavior::Hybrid => {
+                        if is_long_hold {
+                            // PTT release -> Idle
+                            let bid = binding_id.clone();
+                            guard.state = ListenerState::Idle;
+                            (app, bid, behavior, true)
+                        } else {
+                            // Tap -> remain in Recording, mark released
+                            guard.state = ListenerState::Recording {
+                                binding_id: binding_id.clone(),
+                                press_time: press_time,
+                                key_released: true,
+                            };
+                            (app, binding_id.clone(), behavior, false)
                         }
-                    });
-
-                    None // Don't stop yet
+                    }
                 }
             }
-            _ => None,
-        };
-
-        (app, action)
+            _ => return,
+        }
     };
 
-    // Execute stop action outside of lock
-    if let Some(("stop", bid, _)) = action {
-        if let Ok(mut states) = app.state::<ManagedToggleState>().lock() {
-            states.active_toggles.insert(bid.clone(), false);
+    // Execute outside of lock
+    match behavior {
+        InteractionBehavior::Hybrid => {
+            if is_long_hold {
+                // PTT stop
+                if let Ok(mut states) = app.state::<ManagedToggleState>().lock() {
+                    states.active_toggles.insert(binding_id.clone(), false);
+                }
+                if let Some(action) = ACTION_MAP.get(&binding_id) {
+                    action.stop(&app, &binding_id, binding_string);
+                }
+                crate::overlay::emit_mode_determined(&app, "hold");
+            } else {
+                // Toggle ON - Tap
+                let audio_manager = app.state::<Arc<AudioRecordingManager>>();
+                audio_manager.set_coherent_mode(true);
+                crate::utils::show_ramble_recording_overlay(&app);
+                crate::overlay::emit_mode_determined(&app, "refining");
+
+                let app_clone = app.clone();
+                let _ = app.run_on_main_thread(move || {
+                    if let Ok(Some(text)) = crate::clipboard::get_selected_text(&app_clone) {
+                        if let Some(mgr) = app_clone.try_state::<Arc<AudioRecordingManager>>() {
+                            mgr.set_selection_context(text);
+                        }
+                    }
+                });
+            }
         }
-        if let Some(action) = ACTION_MAP.get(&bid) {
-            action.stop(&app, &bid, binding_string);
+        InteractionBehavior::Momentary => {
+            if let Ok(mut states) = app.state::<ManagedToggleState>().lock() {
+                states.active_toggles.insert(binding_id.clone(), false);
+            }
+            if let Some(action) = ACTION_MAP.get(&binding_id) {
+                action.stop(&app, &binding_id, binding_string);
+            }
         }
+        _ => {}
     }
 }
 
@@ -520,20 +619,36 @@ fn handle_cancel() {
             Ok(g) => g,
             Err(_) => return,
         };
-
-        // Only cancel if we're recording or paused
-        match &guard.state {
-            ListenerState::Recording { .. } | ListenerState::Paused { .. } => {
-                guard.app_handle.clone()
-            }
-            _ => None,
-        }
+        guard.app_handle.clone()
     };
 
     if let Some(app) = app {
-        info!("Cancel triggered via Escape");
-        crate::utils::cancel_current_operation(&app);
-        force_reset_state();
+        // Priority 1: Close focused Quick Chat window
+        let windows = app.webview_windows();
+        for (label, window) in windows {
+            if label.starts_with("chat_") {
+                if let Ok(true) = window.is_focused() {
+                    info!("Closing focused chat window '{}' via Escape", label);
+                    let _ = window.close();
+                    return; // Exit - window closed, don't cancel recording
+                }
+            }
+        }
+
+        // Priority 2: Cancel active recording
+        let should_cancel = {
+            let guard = state.lock().unwrap();
+            matches!(
+                &guard.state,
+                ListenerState::Recording { .. } | ListenerState::Paused { .. }
+            )
+        };
+
+        if should_cancel {
+            info!("Cancel recording triggered via Escape");
+            crate::utils::cancel_current_operation(&app);
+            force_reset_state();
+        }
     }
 }
 

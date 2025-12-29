@@ -784,26 +784,75 @@ fn default_voice_commands() -> Vec<VoiceCommand> {
             model_override: None,
             is_builtin: true,
         },
+        // CLI Launcher commands - open terminal with CLI pre-filled
         VoiceCommand {
-            id: "open_chat".to_string(),
-            name: "Open Chat Window".to_string(),
+            id: "cli_gemini".to_string(),
+            name: "Ask Gemini CLI".to_string(),
             phrases: vec![
-                "chat".to_string(),
-                "chart".to_string(),  // Common mishearing by Whisper
-                "chat window".to_string(),
-                "open chat".to_string(),
-                "open chart".to_string(),  // Common mishearing
-                "start chat".to_string(),
-                "ask question".to_string(),
-                "ask about".to_string(),
+                "ask gemini".to_string(),
+                "gemini cli".to_string(),
+                "gemini".to_string(),
             ],
             command_type: VoiceCommandType::Bespoke,
             description: Some(
-                "Opens the Ramble AI chat window for conversation. IMPORTANT: If user says 'chat', 'open chat', or anything about asking questions to AI, this is the command to use - NOT open_app. This is an internal command, not a regular app."
+                "Opens iTerm with Gemini CLI pre-filled with the selected text as the prompt."
                     .to_string(),
             ),
-            script_type: ScriptType::Shell,
-            script: Some("open_chat_window".to_string()), // Special internal command
+            script_type: ScriptType::AppleScript,
+            script: Some(r#"tell application "iTerm"
+    activate
+    create window with default profile
+    tell current session of current window
+        write text "gemini \"${selection}\"" without newline
+    end tell
+end tell"#.to_string()),
+            model_override: None,
+            is_builtin: true,
+        },
+        VoiceCommand {
+            id: "cli_claude".to_string(),
+            name: "Ask Claude CLI".to_string(),
+            phrases: vec![
+                "ask claude".to_string(),
+                "claude cli".to_string(),
+            ],
+            command_type: VoiceCommandType::Bespoke,
+            description: Some(
+                "Opens iTerm with Claude CLI pre-filled with the selected text as the prompt."
+                    .to_string(),
+            ),
+            script_type: ScriptType::AppleScript,
+            script: Some(r#"tell application "iTerm"
+    activate
+    create window with default profile
+    tell current session of current window
+        write text "claude \"${selection}\"" without newline
+    end tell
+end tell"#.to_string()),
+            model_override: None,
+            is_builtin: true,
+        },
+        VoiceCommand {
+            id: "cli_cloudcode".to_string(),
+            name: "Cloud Code".to_string(),
+            phrases: vec![
+                "cloud code".to_string(),
+                "cloudcode".to_string(),
+                "code with cloud".to_string(),
+            ],
+            command_type: VoiceCommandType::Bespoke,
+            description: Some(
+                "Opens iTerm with Cloud Code CLI pre-filled with the selected text as the prompt."
+                    .to_string(),
+            ),
+            script_type: ScriptType::AppleScript,
+            script: Some(r#"tell application "iTerm"
+    activate
+    create window with default profile
+    tell current session of current window
+        write text "cloudcode \"${selection}\"" without newline
+    end tell
+end tell"#.to_string()),
             model_override: None,
             is_builtin: true,
         },
@@ -1363,6 +1412,16 @@ pub fn get_default_settings() -> AppSettings {
             description: "Activates voice command mode to control your computer.".to_string(),
             default_binding: "right_command".to_string(),
             current_binding: "right_command".to_string(),
+        },
+    );
+    bindings.insert(
+        "quick_chat".to_string(),
+        ShortcutBinding {
+            id: "quick_chat".to_string(),
+            name: "Quick Chat".to_string(),
+            description: "Opens a new AI chat window.".to_string(),
+            default_binding: "".to_string(),
+            current_binding: "".to_string(),
         },
     );
 

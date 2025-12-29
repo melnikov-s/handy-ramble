@@ -362,7 +362,7 @@ const RecordingOverlay: React.FC = () => {
   return (
     <>
       <div
-        className={`recording-overlay ${isVisible ? "fade-in" : ""} ${state === "error" ? "error-state" : ""} ${isPaused ? "paused-state" : ""} ${isVoiceCommandState ? "voice-command-mode" : ""}`}
+        className={`recording-overlay bg-app-base ${isVisible ? "fade-in" : ""} ${state === "error" ? "error-state" : ""} ${isPaused ? "paused-state" : ""} ${isVoiceCommandState ? "voice-command-mode" : ""}`}
       >
         <div className="overlay-left">{getIcon()}</div>
 

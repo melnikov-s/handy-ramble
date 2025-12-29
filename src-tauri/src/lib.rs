@@ -375,6 +375,11 @@ pub fn run() {
         // Chat commands
         commands::chat::chat_completion,
         commands::open_chat_window,
+        commands::capture_screen_mode,
+        commands::capture_region_command,
+        commands::open_clipping_tool,
+        commands::restore_app_visibility,
+        commands::get_pending_clip,
         // Unified provider/model commands
         commands::providers::get_llm_providers,
         commands::providers::get_llm_models,
@@ -425,8 +430,10 @@ pub fn run() {
     }
 
     builder
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            show_main_window(app);
+        .plugin(tauri_plugin_single_instance::init(|_app, _args, _cwd| {
+            // Don't show main window automatically - this causes issues with clipping tool
+            // The user can always click the tray icon to open settings
+            log::info!("Another instance attempted to start, ignoring.");
         }))
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_process::init())
@@ -464,17 +471,22 @@ pub fn run() {
         })
         .on_window_event(|window, event| match event {
             tauri::WindowEvent::CloseRequested { api, .. } => {
-                api.prevent_close();
-                let _res = window.hide();
-                #[cfg(target_os = "macos")]
-                {
-                    let res = window
-                        .app_handle()
-                        .set_activation_policy(tauri::ActivationPolicy::Accessory);
-                    if let Err(e) = res {
-                        log::error!("Failed to set activation policy: {}", e);
+                // Only prevent close for the main settings window
+                // Allow other windows (chat, clipping overlay) to close normally
+                if window.label() == "main" {
+                    api.prevent_close();
+                    let _res = window.hide();
+                    #[cfg(target_os = "macos")]
+                    {
+                        let res = window
+                            .app_handle()
+                            .set_activation_policy(tauri::ActivationPolicy::Accessory);
+                        if let Err(e) = res {
+                            log::error!("Failed to set activation policy: {}", e);
+                        }
                     }
                 }
+                // Other windows close normally, destroying their React state
             }
             tauri::WindowEvent::ThemeChanged(theme) => {
                 log::info!("Theme changed to: {:?}", theme);

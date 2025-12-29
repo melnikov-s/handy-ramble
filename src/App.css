@@ -32,6 +32,9 @@
 
   /* Apply colors */
   color: var(--color-text);
+}
+
+.bg-app-base {
   background-color: var(--color-background);
 }
 

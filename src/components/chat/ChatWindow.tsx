@@ -1,11 +1,11 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   AssistantRuntimeProvider,
   useLocalRuntime,
   type ChatModelAdapter,
 } from "@assistant-ui/react";
 import { Thread } from "./Thread";
-import { commands, LLMModel, LLMProvider } from "@/bindings";
+import { commands, LLMModel, LLMProvider, ChatMessage } from "@/bindings";
 import { XIcon, ChevronDownIcon, Loader2Icon } from "lucide-react";
 
 interface ChatWindowProps {
@@ -13,84 +13,7 @@ interface ChatWindowProps {
   onClose?: () => void;
 }
 
-const createChatAdapter = (
-  selectedModelId: string | null,
-  initialPrompt: string,
-  initialContext: string | undefined,
-): ChatModelAdapter => {
-  return {
-    async *run({ messages }) {
-      // Build starting messages with system prompt
-      const allMessages = [];
-
-      // Process initial prompt by replacing ${selection} if present
-      let processedPrompt = initialPrompt;
-      if (initialContext) {
-        processedPrompt = processedPrompt.replace(
-          "${selection}",
-          initialContext,
-        );
-      } else {
-        // If no context, remove most things related to selection
-        processedPrompt = processedPrompt.replace(
-          "${selection}",
-          "[No selection provided]",
-        );
-      }
-
-      // Add the processed system prompt
-      allMessages.push({
-        role: "system",
-        content: processedPrompt,
-      });
-
-      // Convert messages to our backend format and append
-      const formattedMessages = [
-        ...allMessages,
-        ...messages.map((msg) => ({
-          role: msg.role,
-          content:
-            typeof msg.content === "string"
-              ? msg.content
-              : msg.content
-                  .filter((part) => part.type === "text")
-                  .map((part) => (part as { type: "text"; text: string }).text)
-                  .join(""),
-        })),
-      ];
-
-      try {
-        // Call our Tauri backend for LLM response
-        const response = await commands.chatCompletion(
-          formattedMessages,
-          selectedModelId,
-        );
-
-        if (response.status === "ok") {
-          yield {
-            content: [{ type: "text" as const, text: response.data }],
-          };
-        } else {
-          yield {
-            content: [
-              { type: "text" as const, text: `Error: ${response.error}` },
-            ],
-          };
-        }
-      } catch (error) {
-        console.error("Chat completion error:", error);
-        yield {
-          content: [
-            {
-              type: "text" as const,
-              text: `Error: ${error instanceof Error ? error.message : "Unknown error"}`,
-            },
-          ],
-        };
-      }
-    },
-  };
-};
+// Remove internal createChatAdapter as it's now handled inside the stable runtime state
 
 import { ModelsDropdown } from "../ui/ModelsDropdown";
 
@@ -105,6 +28,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [initialPrompt, setInitialPrompt] = useState("");
+  const [attachments, setAttachments] = useState<string[]>([]);
 
   // Load models and providers on mount
   useEffect(() => {
@@ -152,21 +76,120 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
     };
 
     loadData();
+
+    // Poll for pending clips instead of using events (events are unreliable across windows)
+    const pollInterval = setInterval(async () => {
+      try {
+        const pendingClip = await commands.getPendingClip();
+        if (pendingClip) {
+          console.log(
+            "ChatWindow: Got pending clip",
+            pendingClip.length,
+            "chars",
+          );
+          setAttachments((prev) => [...prev, pendingClip]);
+        }
+      } catch (err) {
+        // Ignore errors during polling
+      }
+    }, 500);
+
+    return () => {
+      clearInterval(pollInterval);
+    };
   }, []);
 
-  // Create adapter with current model selection
-  const [adapter, setAdapter] = useState(() =>
-    createChatAdapter(selectedModelId, initialPrompt, initialContext),
-  );
+  // Stabilize adapter and accessories with refs
+  const attachmentsRef = useRef(attachments);
+  const selectedModelIdRef = useRef(selectedModelId);
+  const initialPromptRef = useRef(initialPrompt);
+  const initialContextRef = useRef(initialContext);
 
-  // Update adapter when model or initial prompt changes
   useEffect(() => {
-    setAdapter(
-      createChatAdapter(selectedModelId, initialPrompt, initialContext),
-    );
-  }, [selectedModelId, initialPrompt, initialContext]);
+    attachmentsRef.current = attachments;
+    selectedModelIdRef.current = selectedModelId;
+    initialPromptRef.current = initialPrompt;
+    initialContextRef.current = initialContext;
+  }, [attachments, selectedModelId, initialPrompt, initialContext]);
 
-  const runtime = useLocalRuntime(adapter);
+  const [runtime] = useState(() => {
+    const adapter: ChatModelAdapter = {
+      async *run({ messages }) {
+        const allMessages: ChatMessage[] = [];
+        let processedPrompt = initialPromptRef.current;
+        if (initialContextRef.current) {
+          processedPrompt = processedPrompt.replace(
+            "${selection}",
+            initialContextRef.current,
+          );
+        } else {
+          processedPrompt = processedPrompt.replace(
+            "${selection}",
+            "[No selection provided]",
+          );
+        }
+
+        allMessages.push({
+          role: "system",
+          content: processedPrompt,
+          images: null,
+        });
+
+        const formattedMessages = [
+          ...allMessages,
+          ...messages.map((msg, index) => ({
+            role: msg.role,
+            content:
+              typeof msg.content === "string"
+                ? msg.content
+                : msg.content
+                    .filter((part) => part.type === "text")
+                    .map(
+                      (part) => (part as { type: "text"; text: string }).text,
+                    )
+                    .join(""),
+            images:
+              msg.role === "user" && index === messages.length - 1
+                ? attachmentsRef.current
+                : null,
+          })),
+        ];
+
+        try {
+          const response = await commands.chatCompletion(
+            formattedMessages as any,
+            selectedModelIdRef.current,
+          );
+
+          if (response.status === "ok") {
+            setAttachments([]);
+            yield {
+              content: [{ type: "text" as const, text: response.data }],
+            };
+          } else {
+            yield {
+              content: [
+                { type: "text" as const, text: `Error: ${response.error}` },
+              ],
+            };
+          }
+        } catch (error) {
+          console.error("Chat completion error:", error);
+          yield {
+            content: [
+              {
+                type: "text" as const,
+                text: `Error: ${error instanceof Error ? error.message : "Unknown error"}`,
+              },
+            ],
+          };
+        }
+      },
+    };
+    return adapter;
+  });
+
+  const chatRuntime = useLocalRuntime(runtime as any);
 
   return (
     <div className="flex h-full flex-col bg-[var(--color-background)]">
@@ -212,9 +235,9 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
       )}
 
       {/* Chat thread */}
-      <div className="flex-1 overflow-hidden">
-        <AssistantRuntimeProvider runtime={runtime}>
-          <Thread />
+      <div className="flex h-screen flex-col overflow-hidden bg-app-base">
+        <AssistantRuntimeProvider runtime={chatRuntime}>
+          <Thread attachments={attachments} setAttachments={setAttachments} />
         </AssistantRuntimeProvider>
       </div>
     </div>

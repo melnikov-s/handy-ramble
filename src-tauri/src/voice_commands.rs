@@ -23,7 +23,10 @@ pub enum CommandResult {
 }
 
 /// Execute a bespoke (user-defined script) command
-pub fn execute_bespoke_command(command: &VoiceCommand) -> CommandResult {
+///
+/// If the script contains `${selection}`, it will be replaced with the provided selection text.
+/// The selection is properly escaped for the script type (shell or AppleScript).
+pub fn execute_bespoke_command(command: &VoiceCommand, selection: Option<&str>) -> CommandResult {
     let script = match &command.script {
         Some(s) if !s.trim().is_empty() => s,
         _ => {
@@ -45,10 +48,43 @@ pub fn execute_bespoke_command(command: &VoiceCommand) -> CommandResult {
         return CommandResult::InternalCommand("open_chat_window".to_string());
     }
 
+    // Substitute ${selection} with the actual selection text (escaped appropriately)
+    let processed_script = if script.contains("${selection}") {
+        let selection_text = selection.unwrap_or("");
+        let escaped_selection = match command.script_type {
+            ScriptType::Shell => escape_for_shell(selection_text),
+            ScriptType::AppleScript => escape_for_applescript(selection_text),
+        };
+        debug!(
+            "Substituting ${{selection}} with {} chars of text",
+            selection_text.len()
+        );
+        script.replace("${selection}", &escaped_selection)
+    } else {
+        script.clone()
+    };
+
     match command.script_type {
-        ScriptType::Shell => execute_shell_script(script),
-        ScriptType::AppleScript => execute_applescript(script),
+        ScriptType::Shell => execute_shell_script(&processed_script),
+        ScriptType::AppleScript => execute_applescript(&processed_script),
     }
+}
+
+/// Escape a string for safe inclusion in a shell script (single-quoted context)
+fn escape_for_shell(s: &str) -> String {
+    // For shell, we escape single quotes by ending the single-quoted string,
+    // adding an escaped single quote, and starting a new single-quoted string
+    s.replace('\'', "'\\''")
+}
+
+/// Escape a string for safe inclusion in an AppleScript string (double-quoted context)
+fn escape_for_applescript(s: &str) -> String {
+    // AppleScript uses backslash escaping within double quotes
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+        .replace('\t', "\\t")
 }
 
 /// Execute a shell script

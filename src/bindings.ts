@@ -882,6 +882,48 @@ async openChatWindow(context: string | null) : Promise<Result<string, string>> {
 }
 },
 /**
+ * Command to capture a screenshot or region, hiding all app windows first
+ */
+async captureScreenMode(region: boolean) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("capture_screen_mode", { region }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async captureRegionCommand(x: number, y: number, width: number, height: number) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("capture_region_command", { x, y, width, height }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async openClippingTool() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("open_clipping_tool") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async restoreAppVisibility() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("restore_app_visibility") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Retrieves and clears any pending clip attachment
+ * Called by ChatWindow to get captured images
+ */
+async getPendingClip() : Promise<string | null> {
+    return await TAURI_INVOKE("get_pending_clip");
+},
+/**
  * Get all configured LLM providers, deduplicated by ID
  */
 async getLlmProviders() : Promise<LLMProvider[]> {
@@ -1068,7 +1110,7 @@ computer_use_max_steps?: number;
 quick_chat_initial_prompt?: string }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
-export type ChatMessage = { role: string; content: string }
+export type ChatMessage = { role: string; content: string; images: string[] | null }
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard"
 export type CustomSounds = { start: boolean; stop: boolean }
 export type DefaultModels = { chat: string | null; coherent: string | null; voice: string | null }
