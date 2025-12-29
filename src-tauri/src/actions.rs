@@ -389,73 +389,6 @@ async fn maybe_convert_chinese_variant(
     }
 }
 
-/// Captures screen OCR in background if the current prompt uses ${screen_context}.
-/// This runs at recording start so OCR is ready by the time transcription finishes.
-fn maybe_capture_screen_ocr_background(app: &AppHandle) {
-    let settings = get_settings(app);
-
-    // Determine which category/prompt will be used based on current app
-    let category_id = match settings.prompt_mode {
-        PromptMode::Dynamic => {
-            // Detect frontmost app
-            let app_info = app_detection::get_frontmost_application();
-            let bundle_id = app_info
-                .map(|info| info.bundle_identifier)
-                .unwrap_or_default();
-
-            // Look up category: user mappings first, then known_apps, then default
-            settings
-                .app_category_mappings
-                .iter()
-                .find(|m| m.bundle_identifier == bundle_id)
-                .map(|m| m.category_id.clone())
-                .or_else(|| {
-                    known_apps::find_known_app(&bundle_id).map(|k| k.suggested_category.clone())
-                })
-                .unwrap_or_else(|| settings.default_category_id.clone())
-        }
-        PromptMode::Development => "development".to_string(),
-        PromptMode::Conversation => "conversation".to_string(),
-        PromptMode::Writing => "writing".to_string(),
-        PromptMode::Email => "email".to_string(),
-    };
-
-    // Get the prompt for this category
-    let prompt = settings
-        .prompt_categories
-        .iter()
-        .find(|c| c.id == category_id)
-        .or_else(|| {
-            settings
-                .prompt_categories
-                .iter()
-                .find(|c| c.id == settings.default_category_id)
-        })
-        .map(|c| c.prompt.clone())
-        .unwrap_or_default();
-
-    // Check if prompt uses ${screen_context}
-    if !prompt.contains("${screen_context}") {
-        debug!("Prompt does not use ${{screen_context}}, skipping background OCR");
-        return;
-    }
-
-    debug!("Prompt uses ${{screen_context}}, starting background OCR capture...");
-
-    // Capture and OCR the screen
-    let ocr_text = crate::vision::capture_and_ocr_screen();
-
-    if !ocr_text.is_empty() {
-        debug!("Background OCR captured {} chars", ocr_text.len());
-
-        // Store in audio manager for later use
-        let audio_manager = app.state::<Arc<AudioRecordingManager>>();
-        audio_manager.set_screen_ocr_context(ocr_text);
-    } else {
-        debug!("Background OCR returned empty result");
-    }
-}
-
 impl ShortcutAction for TranscribeAction {
     fn interaction_behavior(&self) -> InteractionBehavior {
         InteractionBehavior::Hybrid
@@ -537,14 +470,6 @@ impl ShortcutAction for TranscribeAction {
             start_time.elapsed(),
             recording_started
         );
-
-        // If recording started, check if we should capture screen OCR in background
-        if recording_started {
-            let app_clone = app.clone();
-            std::thread::spawn(move || {
-                maybe_capture_screen_ocr_background(&app_clone);
-            });
-        }
 
         recording_started
     }
@@ -862,31 +787,6 @@ async fn process_ramble_to_coherent(
         return Err(msg);
     }
 
-    // === OCR: Use pre-captured screen context from recording start ===
-    let screen_context = if prompt.contains("${screen_context}") {
-        // Get the cached OCR result that was captured in background when recording started
-        let audio_manager = app.state::<Arc<AudioRecordingManager>>();
-        match audio_manager.get_screen_ocr_context() {
-            Some(ocr_text) => {
-                debug!("Using cached OCR result ({} chars)", ocr_text.len());
-                Some(ocr_text)
-            }
-            None => {
-                // Fallback: capture synchronously if background capture didn't complete
-                debug!("No cached OCR, falling back to synchronous capture...");
-                utils::log_to_frontend(app, "info", "Analyzing screen...");
-                let ocr_text = crate::vision::capture_and_ocr_screen();
-                if !ocr_text.is_empty() {
-                    debug!("Fallback OCR captured {} chars", ocr_text.len());
-                }
-                Some(ocr_text)
-            }
-        }
-    } else {
-        debug!("Prompt does not contain ${{screen_context}}, skipping OCR");
-        None
-    };
-
     // Get the model ID to use - check for vision model if screenshots are present
     let audio_manager = app.state::<Arc<AudioRecordingManager>>();
     let vision_context = audio_manager.get_vision_context();
@@ -928,8 +828,7 @@ async fn process_ramble_to_coherent(
     // ${category} - The category name
     // ${selection} - Selected text captured before recording
     // ${output} - The transcribed speech
-    // ${screen_context} - OCR text from screen capture
-    let screen_text = screen_context.as_deref().unwrap_or("");
+    // ${screen_context} - (REMOVED) - was OCR text from screen capture
 
     let processed_prompt = if let Some(selection) = selection_context {
         if prompt.contains("${selection}") {
@@ -939,7 +838,7 @@ async fn process_ramble_to_coherent(
                 .replace("${category}", &category_id)
                 .replace("${output}", transcription)
                 .replace("${selection}", &selection)
-                .replace("${screen_context}", screen_text)
+                .replace("${screen_context}", "")
         } else {
             // User hasn't included ${selection}, so we ignore it to respect "not combined" requested by user unless explicit.
             warn!("Selection context available but ${{selection}} variable missing in prompt. Ignoring selection.");
@@ -947,7 +846,7 @@ async fn process_ramble_to_coherent(
                 .replace("${application}", &app_name)
                 .replace("${category}", &category_id)
                 .replace("${output}", transcription)
-                .replace("${screen_context}", screen_text)
+                .replace("${screen_context}", "")
         }
     } else {
         // No selection context, just clear the variable if it exists
@@ -956,7 +855,7 @@ async fn process_ramble_to_coherent(
             .replace("${category}", &category_id)
             .replace("${output}", transcription)
             .replace("${selection}", "")
-            .replace("${screen_context}", screen_text)
+            .replace("${screen_context}", "")
     };
 
     debug!(
