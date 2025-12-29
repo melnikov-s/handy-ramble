@@ -24,8 +24,7 @@ mod tray;
 mod tray_i18n;
 mod utils;
 mod vision;
-#[cfg(target_os = "macos")]
-mod vision_ocr;
+
 mod voice_commands;
 use specta_typescript::{BigIntExportBehavior, Typescript};
 use tauri_specta::{collect_commands, Builder};

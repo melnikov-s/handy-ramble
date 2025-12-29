@@ -934,9 +934,7 @@ Return ONLY the cleaned, formatted text. No preamble.
 ${selection}
 </selection>
 
-<screen_context>
-${screen_context}
-</screen_context>
+
 
 <transcript>
 ${output}
