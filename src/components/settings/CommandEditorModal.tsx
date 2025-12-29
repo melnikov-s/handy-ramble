@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { X, Terminal, Mic } from "lucide-react";
+import { X, Terminal } from "lucide-react";
 
 import {
   commands as rawCommands,
@@ -35,7 +35,7 @@ export const CommandEditorModal: React.FC<CommandEditorModalProps> = ({
   // Form state
   const [name, setName] = useState("");
   const [phrases, setPhrases] = useState("");
-  const [commandType, setCommandType] = useState<VoiceCommandType>("inferable");
+  const [commandType, setCommandType] = useState<VoiceCommandType>("custom");
   const [description, setDescription] = useState("");
   const [scriptType, setScriptType] = useState<ScriptType>("shell");
   const [script, setScript] = useState("");
@@ -55,7 +55,7 @@ export const CommandEditorModal: React.FC<CommandEditorModalProps> = ({
       // Reset for new command
       setName("");
       setPhrases("");
-      setCommandType("inferable");
+      setCommandType("custom");
       setDescription("");
       setScriptType("shell");
       setScript("");
@@ -73,8 +73,8 @@ export const CommandEditorModal: React.FC<CommandEditorModalProps> = ({
       setError("At least one trigger phrase is required");
       return;
     }
-    if (commandType === "bespoke" && !script.trim()) {
-      setError("Script is required for bespoke commands");
+    if (commandType === "custom" && !script.trim()) {
+      setError("Script is required for custom commands");
       return;
     }
 
@@ -92,7 +92,7 @@ export const CommandEditorModal: React.FC<CommandEditorModalProps> = ({
         command_type: commandType,
         description: description.trim() || null,
         script_type: scriptType,
-        script: commandType === "bespoke" ? script.trim() : null,
+        script: commandType === "custom" ? script.trim() : null,
         model_override: null, // Removed - using centralized model
         is_builtin: false,
       };
@@ -180,115 +180,91 @@ export const CommandEditorModal: React.FC<CommandEditorModalProps> = ({
             </p>
           </div>
 
-          {/* Command Type */}
+          {/* Command Type - For new commands, just show as custom */}
           <div>
             <label className="block text-sm font-medium mb-2">
               {t("commandEditor.type", "Command Type")}
             </label>
-            <div className="flex gap-3">
-              <button
-                onClick={() => setCommandType("inferable")}
-                className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg border transition-colors ${
-                  commandType === "inferable"
-                    ? "border-blue-500 bg-blue-500/10 text-blue-400"
-                    : "border-mid-gray/30 hover:border-mid-gray/50"
-                }`}
-              >
-                <Mic className="w-4 h-4" />
-                <span>{t("commandEditor.typeInferable", "Inferable")}</span>
-              </button>
-              <button
-                onClick={() => setCommandType("bespoke")}
-                className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-lg border transition-colors ${
-                  commandType === "bespoke"
-                    ? "border-purple-500 bg-purple-500/10 text-purple-400"
-                    : "border-mid-gray/30 hover:border-mid-gray/50"
-                }`}
-              >
-                <Terminal className="w-4 h-4" />
-                <span>{t("commandEditor.typeBespoke", "Bespoke")}</span>
-              </button>
+            <div className="px-4 py-3 rounded-lg border border-mid-gray/30 bg-black/20">
+              <div className="flex items-center gap-2">
+                <Terminal className="w-4 h-4 text-purple-400" />
+                <span className="text-purple-400">
+                  {t("commandEditor.typeCustom", "Custom Script")}
+                </span>
+              </div>
+              <p className="text-xs text-mid-gray mt-2">
+                {t(
+                  "commandEditor.customHint",
+                  "Runs your script when triggered",
+                )}
+              </p>
             </div>
-            <p className="text-xs text-mid-gray mt-2">
-              {commandType === "inferable"
-                ? t(
-                    "commandEditor.inferableHint",
-                    "AI determines how to execute based on your description",
-                  )
-                : t(
-                    "commandEditor.bespokeHint",
-                    "Runs your exact script when triggered",
-                  )}
-            </p>
           </div>
 
-          {/* Description (for inferable) */}
-          {commandType === "inferable" && (
+          {/* Description - optional for all commands */}
+          <div>
+            <label className="block text-sm font-medium mb-1">
+              {t("commandEditor.description", "Description")}{" "}
+              <span className="text-mid-gray">(optional)</span>
+            </label>
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder={t(
+                "commandEditor.descriptionPlaceholder",
+                "Describe what this command does...",
+              )}
+              rows={2}
+              className="w-full px-3 py-2 bg-black/20 border border-mid-gray/30 rounded-lg focus:outline-none focus:border-logo-primary resize-none"
+            />
+          </div>
+
+          {/* Script */}
+          <>
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                {t("commandEditor.scriptType", "Script Type")}
+              </label>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setScriptType("shell")}
+                  className={`px-4 py-2 rounded-lg border transition-colors ${
+                    scriptType === "shell"
+                      ? "border-logo-primary bg-logo-primary/10"
+                      : "border-mid-gray/30 hover:border-mid-gray/50"
+                  }`}
+                >
+                  Shell
+                </button>
+                <button
+                  onClick={() => setScriptType("apple_script")}
+                  className={`px-4 py-2 rounded-lg border transition-colors ${
+                    scriptType === "apple_script"
+                      ? "border-logo-primary bg-logo-primary/10"
+                      : "border-mid-gray/30 hover:border-mid-gray/50"
+                  }`}
+                >
+                  AppleScript
+                </button>
+              </div>
+            </div>
             <div>
               <label className="block text-sm font-medium mb-1">
-                {t("commandEditor.description", "Description")}
+                {t("commandEditor.script", "Script")}
               </label>
               <textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder={t(
-                  "commandEditor.descriptionPlaceholder",
-                  "Tell the AI what this command does...",
-                )}
-                rows={3}
-                className="w-full px-3 py-2 bg-black/20 border border-mid-gray/30 rounded-lg focus:outline-none focus:border-logo-primary resize-none"
+                value={script}
+                onChange={(e) => setScript(e.target.value)}
+                placeholder={
+                  scriptType === "shell"
+                    ? "#!/bin/bash\necho 'Hello'"
+                    : 'tell application "Finder" to activate'
+                }
+                rows={5}
+                className="w-full px-3 py-2 bg-black/20 border border-mid-gray/30 rounded-lg focus:outline-none focus:border-logo-primary resize-none font-mono text-sm"
               />
             </div>
-          )}
-
-          {/* Script (for bespoke) */}
-          {commandType === "bespoke" && (
-            <>
-              <div>
-                <label className="block text-sm font-medium mb-2">
-                  {t("commandEditor.scriptType", "Script Type")}
-                </label>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setScriptType("shell")}
-                    className={`px-4 py-2 rounded-lg border transition-colors ${
-                      scriptType === "shell"
-                        ? "border-logo-primary bg-logo-primary/10"
-                        : "border-mid-gray/30 hover:border-mid-gray/50"
-                    }`}
-                  >
-                    Shell
-                  </button>
-                  <button
-                    onClick={() => setScriptType("apple_script")}
-                    className={`px-4 py-2 rounded-lg border transition-colors ${
-                      scriptType === "apple_script"
-                        ? "border-logo-primary bg-logo-primary/10"
-                        : "border-mid-gray/30 hover:border-mid-gray/50"
-                    }`}
-                  >
-                    AppleScript
-                  </button>
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">
-                  {t("commandEditor.script", "Script")}
-                </label>
-                <textarea
-                  value={script}
-                  onChange={(e) => setScript(e.target.value)}
-                  placeholder={
-                    scriptType === "shell"
-                      ? "#!/bin/bash\necho 'Hello'"
-                      : 'tell application "Finder" to activate'
-                  }
-                  rows={5}
-                  className="w-full px-3 py-2 bg-black/20 border border-mid-gray/30 rounded-lg focus:outline-none focus:border-logo-primary resize-none font-mono text-sm"
-                />
-              </div>
-            </>
-          )}
+          </>
         </div>
 
         {/* Footer */}
