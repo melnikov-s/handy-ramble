@@ -862,9 +862,9 @@ async removeAppCategoryMapping(bundleId: string) : Promise<Result<null, string>>
  * # Arguments
  * * `model_id` - Optional model ID to use. Falls back to `default_chat_model_id` if not provided.
  */
-async chatCompletion(messages: ChatMessage[], modelId: string | null) : Promise<Result<string, string>> {
+async chatCompletion(messages: ChatMessage[], modelId: string | null, enableGrounding: boolean) : Promise<Result<string, string>> {
     try {
-    return { status: "ok", data: await TAURI_INVOKE("chat_completion", { messages, modelId }) };
+    return { status: "ok", data: await TAURI_INVOKE("chat_completion", { messages, modelId, enableGrounding }) };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };

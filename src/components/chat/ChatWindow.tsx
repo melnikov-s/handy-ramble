@@ -7,6 +7,7 @@ import {
 import { Thread } from "./Thread";
 import { commands, LLMModel, LLMProvider, ChatMessage } from "@/bindings";
 import { XIcon, ChevronDownIcon, Loader2Icon } from "lucide-react";
+import { cn } from "@/lib/utils/cn";
 
 interface ChatWindowProps {
   initialContext?: string;
@@ -159,6 +160,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
           const response = await commands.chatCompletion(
             formattedMessages as any,
             selectedModelIdRef.current,
+            true, // Always enable grounding (backend handles provider filtering)
           );
 
           if (response.status === "ok") {
