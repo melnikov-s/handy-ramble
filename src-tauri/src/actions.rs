@@ -1335,14 +1335,14 @@ async fn execute_via_llm(
 ) -> Result<crate::voice_commands::CommandResult, String> {
     let transcription_lower = transcription.to_lowercase();
 
-    // Pre-check: For bespoke commands, try direct phrase matching first
+    // Pre-check: For custom commands, try direct phrase matching first
     // This avoids LLM misinterpreting commands like "open chat" as "open app"
     for cmd in &settings.voice_commands {
-        if cmd.command_type == crate::settings::VoiceCommandType::Bespoke {
+        if cmd.command_type == crate::settings::VoiceCommandType::Custom {
             for phrase in &cmd.phrases {
                 if transcription_lower.contains(&phrase.to_lowercase()) {
                     debug!(
-                        "Direct phrase match for bespoke command '{}' (phrase: '{}')",
+                        "Direct phrase match for custom command '{}' (phrase: '{}')",
                         cmd.name, phrase
                     );
                     return Ok(crate::voice_commands::execute_bespoke_command(
@@ -1354,15 +1354,18 @@ async fn execute_via_llm(
         }
     }
 
-    let model = &settings.voice_command_default_model;
-    if model.trim().is_empty() {
-        return Err("No default model configured for voice commands".to_string());
-    }
+    let model = match settings.default_voice_model_id.as_ref() {
+        Some(id) if !id.trim().is_empty() => id,
+        _ => {
+            return Err("No default model configured for voice commands".to_string());
+        }
+    };
 
     // Resolve the LLM config using the voice command default model
     let llm_config = resolve_llm_config(settings, model)?;
     let provider = llm_config.provider.clone();
     let api_key = llm_config.api_key.clone();
+    let api_model = llm_config.model.model_id.clone(); // The actual API model ID (e.g., "gemini-2.5-flash-lite")
 
     let client = crate::llm_client::create_client(&provider, api_key.clone())
         .map_err(|e| format!("Failed to create LLM client: {}", e))?;
@@ -1382,7 +1385,7 @@ async fn execute_via_llm(
         .map_err(|e| format!("Failed to build system message: {}", e))?;
 
     let request = CreateChatCompletionRequestArgs::default()
-        .model(model)
+        .model(&api_model)
         .messages(vec![
             ChatCompletionRequestMessage::System(system_message),
             ChatCompletionRequestMessage::User(user_message),
@@ -1394,7 +1397,7 @@ async fn execute_via_llm(
         .chat()
         .create(request)
         .await
-        .map_err(|e| extract_llm_error(&e, model))?;
+        .map_err(|e| extract_llm_error(&e, &api_model))?;
 
     let llm_response = response
         .choices
@@ -1423,25 +1426,6 @@ async fn execute_via_llm(
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
 
-            // Check for computer_use FIRST - this can be triggered even without a matched command
-            // Also treat invalid types that suggest web interaction as computer_use
-            let is_computer_use = exec_type == "computer_use"
-                || exec_type == "web_search"
-                || exec_type == "browse"
-                || exec_type == "web"
-                || exec_type == "search";
-
-            if is_computer_use {
-                let task_description = json
-                    .get("task_description")
-                    .and_then(|v| v.as_str())
-                    // Fallback to command field if task_description missing
-                    .or_else(|| json.get("command").and_then(|v| v.as_str()))
-                    .unwrap_or(transcription);
-
-                return execute_computer_use_command(app, task_description, &api_key).await;
-            }
-
             if let Some(matched_id) = json.get("matched_command").and_then(|v| v.as_str()) {
                 // LLM matched a command, execute it
                 let command = json.get("command").and_then(|v| v.as_str()).unwrap_or("");
@@ -1458,39 +1442,48 @@ async fn execute_via_llm(
                     ));
                 }
 
-                // Check for specific internal/bespoke commands by ID
-                // This handles cases where LLM might return a command string but we want to use our bespoke handler
-                if let Some(bespoke) = settings.voice_commands.iter().find(|c| c.id == matched_id) {
-                    if bespoke.command_type == crate::settings::VoiceCommandType::Bespoke {
-                        debug!("Executing bespoke command by ID: {}", matched_id);
-                        return Ok(crate::voice_commands::execute_bespoke_command(
-                            bespoke,
-                            selection.as_deref(),
-                        ));
+                // Look up the matched command to determine how to execute it
+                if let Some(cmd) = settings.voice_commands.iter().find(|c| c.id == matched_id) {
+                    match cmd.command_type {
+                        crate::settings::VoiceCommandType::Custom => {
+                            // Execute user-defined script
+                            debug!("Executing custom command by ID: {}", matched_id);
+                            return Ok(crate::voice_commands::execute_bespoke_command(
+                                cmd,
+                                selection.as_deref(),
+                            ));
+                        }
+                        crate::settings::VoiceCommandType::Builtin
+                        | crate::settings::VoiceCommandType::LegacyInferable => {
+                            // Execute built-in command with native handler
+                            debug!("Executing built-in command: {}", matched_id);
+                            return execute_builtin_command(
+                                matched_id,
+                                transcription,
+                                selection.as_deref(),
+                            );
+                        }
                     }
                 }
 
-                // Fallback: if command is empty, try to find bespoke by ID
-                if command.is_empty() {
-                    if let Some(bespoke) =
-                        settings.voice_commands.iter().find(|c| c.id == matched_id)
-                    {
-                        return Ok(crate::voice_commands::execute_bespoke_command(
-                            bespoke,
-                            selection.as_deref(),
-                        ));
-                    }
+                // If no command found by ID but we have a command string, execute it as shell
+                if !command.is_empty() {
+                    debug!(
+                        "Executing voice command: type={}, command={}",
+                        exec_type, command
+                    );
+
+                    return match exec_type {
+                        "applescript" => Ok(execute_applescript_command(command)),
+                        _ => Ok(execute_shell_command(command)),
+                    };
                 }
 
-                debug!(
-                    "Executing voice command: type={}, command={}",
-                    exec_type, command
-                );
-
-                match exec_type {
-                    "applescript" => Ok(execute_applescript_command(command)),
-                    _ => Ok(execute_shell_command(command)),
-                }
+                // No executable command found
+                Ok(crate::voice_commands::CommandResult::Error(format!(
+                    "Command '{}' not found",
+                    matched_id
+                )))
             } else {
                 // No match, return the explanation or paste output
                 if exec_type == "paste" {
@@ -1521,34 +1514,101 @@ async fn execute_via_llm(
     }
 }
 
-/// Execute a computer use command via the Gemini agent
-async fn execute_computer_use_command(
-    app: &AppHandle,
-    task: &str,
-    api_key: &str,
+/// Execute a built-in command with native handler
+fn execute_builtin_command(
+    command_id: &str,
+    transcription: &str,
+    selection: Option<&str>,
 ) -> Result<crate::voice_commands::CommandResult, String> {
-    use crate::computer_use::ComputerUseAgent;
-
-    info!("Starting Computer Use agent for task: {}", task);
-
-    // Get the stop signal from the audio manager
-    let audio_manager = app.state::<Arc<AudioRecordingManager>>();
-    audio_manager.clear_computer_use_stop();
-    let stop_signal = audio_manager.get_computer_use_stop_signal();
-
-    // Create and run the agent
-    let agent = ComputerUseAgent::new(app.clone(), stop_signal)
-        .map_err(|e| format!("Failed to create agent: {}", e))?;
-
-    let result = agent.run(task, api_key).await;
-
-    if result.success {
-        // Don't paste the output - the toast notification is shown via emit_end event
-        Ok(crate::voice_commands::CommandResult::Success)
-    } else {
-        let error_msg = result.error.unwrap_or_else(|| "Unknown error".to_string());
-        Ok(crate::voice_commands::CommandResult::Error(error_msg))
+    match command_id {
+        "web_search" => {
+            // Extract search query from transcription
+            let query = extract_search_query(transcription);
+            if query.is_empty() {
+                return Ok(crate::voice_commands::CommandResult::Error(
+                    "No search query provided".to_string(),
+                ));
+            }
+            // URL encode the query and open in browser
+            let encoded_query = urlencoding::encode(&query);
+            let url = format!("https://google.com/search?q={}", encoded_query);
+            Ok(execute_shell_command(&format!("open \"{}\"", url)))
+        }
+        "open_app" => {
+            // Extract app name from transcription
+            let app_name = extract_app_name(transcription);
+            if app_name.is_empty() {
+                return Ok(crate::voice_commands::CommandResult::Error(
+                    "No application name provided".to_string(),
+                ));
+            }
+            Ok(execute_shell_command(&format!("open -a \"{}\"", app_name)))
+        }
+        "print" => {
+            // Extract text to print (everything after trigger words)
+            let text = extract_print_text(transcription);
+            Ok(crate::voice_commands::CommandResult::PasteOutput(text))
+        }
+        "refactor_code" => {
+            // For refactor, we need to process selection through LLM
+            // For now, just return the selection with a note
+            if let Some(sel) = selection {
+                Ok(crate::voice_commands::CommandResult::PasteOutput(format!(
+                    "// TODO: Refactor the following code:\n{}",
+                    sel
+                )))
+            } else {
+                Ok(crate::voice_commands::CommandResult::Error(
+                    "No code selected for refactoring".to_string(),
+                ))
+            }
+        }
+        _ => {
+            // Unknown built-in command, treat as error
+            Ok(crate::voice_commands::CommandResult::Error(format!(
+                "Unknown built-in command: {}",
+                command_id
+            )))
+        }
     }
+}
+
+/// Extract search query from transcription like "search for weather in nyc"
+fn extract_search_query(transcription: &str) -> String {
+    let lower = transcription.to_lowercase();
+    // Common trigger phrases for web search
+    let triggers = ["search for ", "look up ", "google ", "search "];
+    for trigger in triggers {
+        if let Some(pos) = lower.find(trigger) {
+            return transcription[pos + trigger.len()..].trim().to_string();
+        }
+    }
+    // If no trigger found, use the whole transcription
+    transcription.trim().to_string()
+}
+
+/// Extract app name from transcription like "open chrome" or "launch safari"
+fn extract_app_name(transcription: &str) -> String {
+    let lower = transcription.to_lowercase();
+    let triggers = ["open ", "launch ", "start "];
+    for trigger in triggers {
+        if let Some(pos) = lower.find(trigger) {
+            return transcription[pos + trigger.len()..].trim().to_string();
+        }
+    }
+    transcription.trim().to_string()
+}
+
+/// Extract text to print from transcription like "print hello world" -> "hello world"
+fn extract_print_text(transcription: &str) -> String {
+    let lower = transcription.to_lowercase();
+    let triggers = ["print ", "echo ", "say ", "type "];
+    for trigger in triggers {
+        if let Some(pos) = lower.find(trigger) {
+            return transcription[pos + trigger.len()..].trim().to_string();
+        }
+    }
+    transcription.trim().to_string()
 }
 
 // Static Action Map

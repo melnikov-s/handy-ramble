@@ -98,9 +98,9 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
 
     // Platform-specific accelerators
     #[cfg(target_os = "macos")]
-    let (settings_accelerator, quit_accelerator) = (Some("Cmd+,"), Some("Cmd+Q"));
+    let quit_accelerator = Some("Cmd+Q");
     #[cfg(not(target_os = "macos"))]
-    let (settings_accelerator, quit_accelerator) = (Some("Ctrl+,"), Some("Ctrl+Q"));
+    let quit_accelerator = Some("Ctrl+Q");
 
     // Create common menu items
     let version_label = if cfg!(debug_assertions) {
@@ -110,14 +110,8 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
     };
     let version_i = MenuItem::with_id(app, "version", &version_label, false, None::<&str>)
         .expect("failed to create version item");
-    let settings_i = MenuItem::with_id(
-        app,
-        "settings",
-        &strings.settings,
-        true,
-        settings_accelerator,
-    )
-    .expect("failed to create settings item");
+    let settings_i = MenuItem::with_id(app, "settings", &strings.settings, true, None::<&str>)
+        .expect("failed to create settings item");
     let check_updates_i = MenuItem::with_id(
         app,
         "check_updates",

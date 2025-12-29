@@ -69,11 +69,7 @@ const PROVIDER_PRESETS: Record<
       { id: "gemini-2.5-pro", name: "gemini-2.5-pro", vision: true },
       { id: "gemini-2.5-pro-lite", name: "gemini-2.5-pro-lite", vision: true },
       { id: "gemini-2.5-flash", name: "gemini-2.5-flash", vision: true },
-      {
-        id: "gemini-2.5-flash-lite",
-        name: "gemini-2.5-flash-lite",
-        vision: true,
-      },
+
       // Gemini 2.0 series
       { id: "gemini-2.0-flash", name: "gemini-2.0-flash", vision: true },
       {

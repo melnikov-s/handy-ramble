@@ -205,9 +205,9 @@ pub fn build_command_prompt(commands: &[VoiceCommand], selection: Option<&str>) 
     prompt.push_str("Available commands:\n");
     for cmd in commands {
         let type_label = match cmd.command_type {
-            crate::settings::VoiceCommandType::Inferable => "inferable",
-            crate::settings::VoiceCommandType::Bespoke => "bespoke",
-            crate::settings::VoiceCommandType::ComputerUse => "computer_use",
+            crate::settings::VoiceCommandType::Builtin
+            | crate::settings::VoiceCommandType::LegacyInferable => "builtin",
+            crate::settings::VoiceCommandType::Custom => "custom",
         };
         prompt.push_str(&format!(
             "- {} ({}) [type: {}]: ",
@@ -225,31 +225,22 @@ pub fn build_command_prompt(commands: &[VoiceCommand], selection: Option<&str>) 
     prompt.push_str(
         r#"
 
-VALID EXECUTION TYPES (use ONLY these exact values):
-- "shell" - run a shell command
-- "applescript" - run AppleScript (macOS only)  
-- "bespoke" - execute a predefined script by command ID
-- "paste" - paste text to the user
-- "computer_use" - AI agent that sees screen and performs UI automation
-
-DECISION LOGIC:
-1. If user says "Computer, do X" or "Agent, do X" → execution_type = "computer_use"
-2. If a configured command matches → use that command's type
-3. If task needs web browsing, clicking, navigating apps, forms, or any visual interaction → execution_type = "computer_use"
-4. If task is a simple shell/system command → execution_type = "shell"
-5. If task is just a text response or information → execution_type = "paste"
-
-CRITICAL: execution_type MUST be one of: "shell", "applescript", "bespoke", "paste", "computer_use"
-Do NOT invent other types like "web_search", "browse", etc. Use "computer_use" for anything needing screen interaction.
+COMMAND TYPES:
+- "builtin" commands: Have native handlers. Just match and return the command ID.
+- "custom" commands: Have user-defined scripts. Just match and return the command ID.
 
 Respond with JSON:
 {
   "matched_command": "command_id" or null,
-  "execution_type": "shell" | "applescript" | "bespoke" | "paste" | "computer_use",
-  "command": "shell/applescript command" (for shell/applescript),
-  "output": "text to paste" (for paste),
-  "task_description": "full task for computer use agent" (for computer_use),
+  "execution_type": "builtin" | "custom" | "paste",
   "explanation": "brief explanation"
+}
+
+For text responses or information:
+{
+  "matched_command": null,
+  "execution_type": "paste",
+  "output": "text to paste"
 }
 
 If nothing can be done:
