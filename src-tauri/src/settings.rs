@@ -1540,6 +1540,26 @@ pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
         default_settings
     };
 
+    // Migration: Convert LegacyInferable command types to Builtin
+    // LegacyInferable was the old "inferable" type, now treated as Builtin
+    let mut legacy_migrated = false;
+    for cmd in &mut settings.voice_commands {
+        if cmd.command_type == VoiceCommandType::LegacyInferable {
+            debug!(
+                "Migrating voice command '{}' from LegacyInferable to Builtin",
+                cmd.name
+            );
+            cmd.command_type = VoiceCommandType::Builtin;
+            legacy_migrated = true;
+        }
+    }
+    if legacy_migrated {
+        // Save immediately to prevent serialization errors later
+        if let Ok(value) = serde_json::to_value(&settings) {
+            store.set("settings", value);
+        }
+    }
+
     // Migration: Fix invalid model IDs (e.g. gemini-2.5-flash-lite -> gemini-2-0-flash-lite)
     let invalid_models = ["gemini-2.5-flash-lite", "gemini-2.5-flash"];
     let replacement_model = "gemini-2-0-flash-lite";

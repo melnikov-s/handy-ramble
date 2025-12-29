@@ -1168,8 +1168,10 @@ impl ShortcutAction for VoiceCommandAction {
                         if !transcription.is_empty() {
                             debug!("Voice command transcription: '{}'", transcription);
 
-                            // Emit processing state to update overlay
-                            let _ = ah.emit("processing-command", transcription.clone());
+                            // Emit processing state to update overlay (must emit to overlay window, not globally)
+                            if let Some(overlay) = ah.get_webview_window("recording_overlay") {
+                                let _ = overlay.emit("show-overlay", "processing_command");
+                            }
 
                             // Process voice command
                             match process_voice_command(&ah, &transcription).await {

@@ -585,19 +585,28 @@ fn handle_behavior_release(binding_string: &str) {
                 crate::overlay::emit_mode_determined(&app, "hold");
             } else {
                 // Toggle ON - Tap
-                let audio_manager = app.state::<Arc<AudioRecordingManager>>();
-                audio_manager.set_coherent_mode(true);
-                crate::utils::show_ramble_recording_overlay(&app);
-                crate::overlay::emit_mode_determined(&app, "refining");
+                // Check which action this is - voice commands should NOT switch to refining mode
+                let is_voice_command = binding_id == "voice_command";
 
-                let app_clone = app.clone();
-                let _ = app.run_on_main_thread(move || {
-                    if let Ok(Some(text)) = crate::clipboard::get_selected_text(&app_clone) {
-                        if let Some(mgr) = app_clone.try_state::<Arc<AudioRecordingManager>>() {
-                            mgr.set_selection_context(text);
+                if is_voice_command {
+                    // Voice commands stay in voice command mode, no refining
+                    // The overlay was already set when start() was called
+                } else {
+                    // Regular transcribe action - switch to refining mode
+                    let audio_manager = app.state::<Arc<AudioRecordingManager>>();
+                    audio_manager.set_coherent_mode(true);
+                    crate::utils::show_ramble_recording_overlay(&app);
+                    crate::overlay::emit_mode_determined(&app, "refining");
+
+                    let app_clone = app.clone();
+                    let _ = app.run_on_main_thread(move || {
+                        if let Ok(Some(text)) = crate::clipboard::get_selected_text(&app_clone) {
+                            if let Some(mgr) = app_clone.try_state::<Arc<AudioRecordingManager>>() {
+                                mgr.set_selection_context(text);
+                            }
                         }
-                    }
-                });
+                    });
+                }
             }
         }
         InteractionBehavior::Momentary => {
