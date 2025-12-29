@@ -261,13 +261,16 @@ pub struct DetectedApp {
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum VoiceCommandType {
-    /// LLM determines how to execute the command
+    /// Built-in command with native handler (web_search, open_app, print, etc.)
     #[default]
-    Inferable,
-    /// User-defined script that runs exactly as specified
-    Bespoke,
-    /// Gemini Computer Use agent for multi-step UI automation
-    ComputerUse,
+    Builtin,
+    /// User-defined script (shell or AppleScript)
+    #[serde(alias = "bespoke")]
+    Custom,
+    /// Legacy: LLM-inferred command (treated as Builtin)
+    #[serde(alias = "inferable")]
+    #[serde(skip_serializing)]
+    LegacyInferable,
 }
 
 /// Script type for bespoke commands
@@ -494,16 +497,8 @@ pub struct AppSettings {
     /// User-defined voice commands
     #[serde(default = "default_voice_commands")]
     pub voice_commands: Vec<VoiceCommand>,
-    /// Optional regex pattern to filter out filler words from transcriptions (e.g., "um", "uh")
     #[serde(default)]
     pub filler_word_filter: Option<String>,
-    // Computer Use settings
-    /// Model for computer use commands (requires Gemini Computer Use model)
-    #[serde(default = "default_computer_use_model")]
-    pub computer_use_model: String,
-    /// Maximum steps for computer use agent loop
-    #[serde(default = "default_computer_use_max_steps")]
-    pub computer_use_max_steps: usize,
     /// Customizable initial prompt for the quick chat
     #[serde(default = "default_quick_chat_initial_prompt")]
     pub quick_chat_initial_prompt: String,
@@ -599,7 +594,7 @@ fn default_ramble_provider_id() -> String {
 }
 
 fn default_ramble_model() -> String {
-    "gemini-2.5-flash-lite".to_string()
+    "gemini-2-0-flash-lite".to_string()
 }
 
 fn default_ramble_use_vision_model() -> bool {
@@ -700,14 +695,6 @@ fn default_filler_word_filter() -> Option<String> {
     Some(r"\b(u+[hm]+|a+h+|e+r+m?|m+h?m+|h+m+)\b[,\s]*".to_string())
 }
 
-fn default_computer_use_model() -> String {
-    "gemini-2.5-computer-use-preview-10-2025".to_string()
-}
-
-fn default_computer_use_max_steps() -> usize {
-    100 // High safeguard limit, user-configurable
-}
-
 fn default_quick_chat_initial_prompt() -> String {
     "You are a helpful assistant. You are given some context from the user's screen or selection to help you answer their questions.\n\nCONTEXT FROM USER SELECTION:\n${selection}".to_string()
 }
@@ -722,7 +709,7 @@ fn default_voice_commands() -> Vec<VoiceCommand> {
                 "launch".to_string(),
                 "start".to_string(),
             ],
-            command_type: VoiceCommandType::Inferable,
+            command_type: VoiceCommandType::Builtin,
             description: Some(
                 "Opens an application by name. The user will specify which app to open."
                     .to_string(),
@@ -740,7 +727,7 @@ fn default_voice_commands() -> Vec<VoiceCommand> {
                 "look up".to_string(),
                 "google".to_string(),
             ],
-            command_type: VoiceCommandType::Inferable,
+            command_type: VoiceCommandType::Builtin,
             description: Some("Opens a web browser with a search query.".to_string()),
             script_type: ScriptType::Shell,
             script: None,
@@ -755,7 +742,7 @@ fn default_voice_commands() -> Vec<VoiceCommand> {
                 "rewrite".to_string(),
                 "improve this".to_string(),
             ],
-            command_type: VoiceCommandType::Inferable,
+            command_type: VoiceCommandType::Builtin,
             description: Some(
                 "Refactors or rewrites the selected code based on the user's instruction."
                     .to_string(),
@@ -774,7 +761,7 @@ fn default_voice_commands() -> Vec<VoiceCommand> {
                 "say".to_string(),
                 "type".to_string(),
             ],
-            command_type: VoiceCommandType::Inferable,
+            command_type: VoiceCommandType::Builtin,
             description: Some(
                 "Echoes back the text that follows the trigger word. Returns the text verbatim without any modifications. For example, 'print hello world' returns 'hello world'."
                     .to_string(),
@@ -793,7 +780,7 @@ fn default_voice_commands() -> Vec<VoiceCommand> {
                 "gemini cli".to_string(),
                 "gemini".to_string(),
             ],
-            command_type: VoiceCommandType::Bespoke,
+            command_type: VoiceCommandType::Custom,
             description: Some(
                 "Opens iTerm with Gemini CLI pre-filled with the selected text as the prompt."
                     .to_string(),
@@ -816,7 +803,7 @@ end tell"#.to_string()),
                 "ask claude".to_string(),
                 "claude cli".to_string(),
             ],
-            command_type: VoiceCommandType::Bespoke,
+            command_type: VoiceCommandType::Custom,
             description: Some(
                 "Opens iTerm with Claude CLI pre-filled with the selected text as the prompt."
                     .to_string(),
@@ -840,7 +827,7 @@ end tell"#.to_string()),
                 "cloudcode".to_string(),
                 "code with cloud".to_string(),
             ],
-            command_type: VoiceCommandType::Bespoke,
+            command_type: VoiceCommandType::Custom,
             description: Some(
                 "Opens iTerm with Cloud Code CLI pre-filled with the selected text as the prompt."
                     .to_string(),
@@ -1477,11 +1464,7 @@ pub fn get_default_settings() -> AppSettings {
         voice_commands_enabled: false,
         voice_command_default_model: default_voice_command_model(),
         voice_commands: default_voice_commands(),
-        // Filler word filter
         filler_word_filter: default_filler_word_filter(),
-        // Computer Use settings
-        computer_use_model: default_computer_use_model(),
-        computer_use_max_steps: default_computer_use_max_steps(),
         quick_chat_initial_prompt: default_quick_chat_initial_prompt(),
     }
 }
@@ -1556,6 +1539,46 @@ pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
         store.set("settings", serde_json::to_value(&default_settings).unwrap());
         default_settings
     };
+
+    // Migration: Fix invalid model IDs (e.g. gemini-2.5-flash-lite -> gemini-2-0-flash-lite)
+    let invalid_models = ["gemini-2.5-flash-lite", "gemini-2.5-flash"];
+    let replacement_model = "gemini-2-0-flash-lite";
+    let mut changed = false;
+
+    if invalid_models.contains(&settings.selected_model.as_str()) {
+        debug!(
+            "Migrating selected_model from {} to {}",
+            settings.selected_model, replacement_model
+        );
+        settings.selected_model = replacement_model.to_string();
+        changed = true;
+    }
+
+    if let Some(voice_model) = &settings.default_voice_model_id {
+        if invalid_models.contains(&voice_model.as_str()) {
+            debug!(
+                "Migrating default_voice_model_id from {} to {}",
+                voice_model, replacement_model
+            );
+            settings.default_voice_model_id = Some(replacement_model.to_string());
+            changed = true;
+        }
+    }
+
+    if let Some(coherent_model) = &settings.default_coherent_model_id {
+        if invalid_models.contains(&coherent_model.as_str()) {
+            debug!(
+                "Migrating default_coherent_model_id from {} to {}",
+                coherent_model, replacement_model
+            );
+            settings.default_coherent_model_id = Some(replacement_model.to_string());
+            changed = true;
+        }
+    }
+
+    if changed {
+        store.set("settings", serde_json::to_value(&settings).unwrap());
+    }
 
     if ensure_llm_defaults(&mut settings) {
         store.set("settings", serde_json::to_value(&settings).unwrap());

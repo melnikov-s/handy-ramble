@@ -1091,19 +1091,7 @@ voice_command_default_model?: string;
 /**
  * User-defined voice commands
  */
-voice_commands?: VoiceCommand[]; 
-/**
- * Optional regex pattern to filter out filler words from transcriptions (e.g., "um", "uh")
- */
-filler_word_filter?: string | null; 
-/**
- * Model for computer use commands (requires Gemini Computer Use model)
- */
-computer_use_model?: string; 
-/**
- * Maximum steps for computer use agent loop
- */
-computer_use_max_steps?: number; 
+voice_commands?: VoiceCommand[]; filler_word_filter?: string | null; 
 /**
  * Customizable initial prompt for the quick chat
  */
@@ -1255,17 +1243,13 @@ is_builtin?: boolean }
  */
 export type VoiceCommandType = 
 /**
- * LLM determines how to execute the command
+ * Built-in command with native handler (web_search, open_app, print, etc.)
  */
-"inferable" | 
+"builtin" | 
 /**
- * User-defined script that runs exactly as specified
+ * User-defined script (shell or AppleScript)
  */
-"bespoke" | 
-/**
- * Gemini Computer Use agent for multi-step UI automation
- */
-"computer_use"
+"custom"
 
 /** tauri-specta globals **/
 

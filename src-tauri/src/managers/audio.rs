@@ -3,7 +3,6 @@ use crate::helpers::clamshell;
 use crate::settings::{get_settings, AppSettings};
 use crate::utils;
 use log::{debug, error, info};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -163,9 +162,6 @@ pub struct AudioRecordingManager {
     coherent_mode: Arc<Mutex<bool>>,
     /// Stores the Base64 representation of screenshots captured during the session.
     vision_context: Arc<Mutex<Vec<String>>>,
-
-    /// Stop signal for computer use agent - when set to true, the agent loop should stop
-    computer_use_stop: Arc<AtomicBool>,
 }
 
 impl AudioRecordingManager {
@@ -193,8 +189,6 @@ impl AudioRecordingManager {
             selection_context: Arc::new(Mutex::new(None)),
             coherent_mode: Arc::new(Mutex::new(false)),
             vision_context: Arc::new(Mutex::new(Vec::new())),
-
-            computer_use_stop: Arc::new(AtomicBool::new(false)),
         };
 
         // Always-on?  Open immediately.
@@ -637,22 +631,5 @@ impl AudioRecordingManager {
         let ctx = self.vision_context.lock().unwrap().clone();
         debug!("Retrieved vision context ({} images)", ctx.len());
         ctx
-    }
-
-    /// Get the stop signal for computer use agent
-    pub fn get_computer_use_stop_signal(&self) -> Arc<AtomicBool> {
-        self.computer_use_stop.clone()
-    }
-
-    /// Request the computer use agent to stop
-    pub fn request_computer_use_stop(&self) {
-        self.computer_use_stop.store(true, Ordering::SeqCst);
-        debug!("Computer use stop requested");
-    }
-
-    /// Clear the computer use stop signal (call before starting agent)
-    pub fn clear_computer_use_stop(&self) {
-        self.computer_use_stop.store(false, Ordering::SeqCst);
-        debug!("Computer use stop signal cleared");
     }
 }
