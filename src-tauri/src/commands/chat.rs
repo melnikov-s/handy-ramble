@@ -24,6 +24,7 @@ pub async fn chat_completion(
     app: AppHandle,
     messages: Vec<ChatMessage>,
     model_id: Option<String>,
+    enable_grounding: bool,
 ) -> Result<String, String> {
     let settings = get_settings(&app);
 
@@ -51,6 +52,11 @@ pub async fn chat_completion(
             "No API key configured for provider: {}",
             provider.name
         ));
+    }
+
+    // Use Gemini native API for all Gemini models (enables grounding)
+    if provider.id == "gemini" {
+        return chat_completion_gemini_native(provider, &model.model_id, messages).await;
     }
 
     // Create the client
@@ -158,4 +164,80 @@ pub async fn chat_completion(
         .ok_or_else(|| "No response content".to_string())?;
 
     Ok(content)
+}
+
+/// Native Gemini API call for search grounding
+async fn chat_completion_gemini_native(
+    provider: &crate::settings::LLMProvider,
+    model_id: &str,
+    messages: Vec<ChatMessage>,
+) -> Result<String, String> {
+    let url = format!(
+        "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+        model_id, provider.api_key
+    );
+
+    let mut contents = Vec::new();
+    for msg in messages {
+        let role = if msg.role == "assistant" {
+            "model"
+        } else {
+            "user"
+        };
+
+        let mut parts = Vec::new();
+
+        // Add text content
+        parts.push(serde_json::json!({ "text": msg.content }));
+
+        // Add images if present
+        if let Some(images) = msg.images {
+            for base64_image in images {
+                parts.push(serde_json::json!({
+                    "inline_data": {
+                        "mime_type": "image/png",
+                        "data": base64_image
+                    }
+                }));
+            }
+        }
+
+        contents.push(serde_json::json!({
+            "role": role,
+            "parts": parts
+        }));
+    }
+
+    let request_body = serde_json::json!({
+        "contents": contents,
+        "tools": [{
+            "google_search": {}
+        }]
+    });
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&url)
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .json(&request_body)
+        .send()
+        .await
+        .map_err(|e| format!("Request failed: {}", e))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("Gemini API error {}: {}", status, body));
+    }
+
+    let res_json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse response: {}", e))?;
+
+    let content = res_json["candidates"][0]["content"]["parts"][0]["text"]
+        .as_str()
+        .ok_or_else(|| "No text in Gemini response".to_string())?;
+
+    Ok(content.to_string())
 }
