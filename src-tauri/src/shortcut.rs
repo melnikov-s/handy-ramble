@@ -366,6 +366,30 @@ pub fn change_quick_chat_initial_prompt_setting(
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_unknown_command_template_setting(
+    app: AppHandle,
+    template: String,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.unknown_command_template = template;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn change_unknown_command_terminal_setting(
+    app: AppHandle,
+    terminal: String,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.unknown_command_terminal = terminal;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn change_paste_method_setting(app: AppHandle, method: String) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     let parsed = match method.as_str() {

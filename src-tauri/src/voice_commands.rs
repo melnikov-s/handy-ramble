@@ -250,7 +250,7 @@ COMMAND TYPES:
 Respond with JSON:
 {
   "matched_command": "command_id" or null,
-  "execution_type": "builtin" | "custom" | "paste",
+  "execution_type": "builtin" | "custom" | "paste" | "unknown",
   "explanation": "brief explanation"
 }
 
@@ -261,11 +261,14 @@ For text responses or information:
   "output": "text to paste"
 }
 
-If nothing can be done:
+IMPORTANT: If the command does NOT match any available command, return:
 {
   "matched_command": null,
-  "message": "explanation to show user"
+  "execution_type": "unknown"
 }
+
+Do NOT try to explain what you cannot do. Do NOT provide helpful suggestions.
+Unknown commands will be passed to an external CLI agent for handling.
 
 IMPORTANT: Return ONLY raw JSON. No markdown code blocks."#,
     );

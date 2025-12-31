@@ -469,6 +469,22 @@ async changeFillerWordFilterSetting(pattern: string | null) : Promise<Result<nul
     else return { status: "error", error: e  as any };
 }
 },
+async changeUnknownCommandTemplateSetting(template: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_unknown_command_template_setting", { template }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async changeUnknownCommandTerminalSetting(terminal: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_unknown_command_terminal_setting", { terminal }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async triggerUpdateCheck() : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("trigger_update_check") };
@@ -1106,7 +1122,20 @@ voice_commands?: VoiceCommand[]; filler_word_filter?: string | null;
 /**
  * Customizable initial prompt for the quick chat
  */
-quick_chat_initial_prompt?: string }
+quick_chat_initial_prompt?: string; 
+/**
+ * Whether to launch CLI agent for unknown commands (instead of showing error)
+ */
+unknown_command_agent_enabled?: boolean; 
+/**
+ * Template for the CLI command to run. Supports ${prompt} placeholder.
+ * Example: `claude -p "${prompt}"` or `gemini "${prompt}"`
+ */
+unknown_command_template?: string; 
+/**
+ * Terminal application to use (iTerm, Terminal, Warp)
+ */
+unknown_command_terminal?: string }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
 export type ChatMessage = { role: string; content: string; images: string[] | null }

@@ -212,6 +212,84 @@ export const VoiceCommandSettings: React.FC = () => {
         </SettingContainer>
       </SettingsGroup>
 
+      <SettingsGroup
+        title={t(
+          "settings.voiceCommands.unknownCommand.title",
+          "Unknown Command Agent",
+        )}
+      >
+        <div className="px-4 py-3 text-sm text-mid-gray">
+          <p>
+            {t(
+              "settings.voiceCommands.unknownCommand.description",
+              "When a voice command is not recognized, the system will open a terminal with a CLI agent ready to execute your spoken request.",
+            )}
+          </p>
+        </div>
+        <SettingContainer
+          title={t(
+            "settings.voiceCommands.unknownCommand.template.title",
+            "Command Template",
+          )}
+          description={t(
+            "settings.voiceCommands.unknownCommand.template.description",
+            "The CLI command to run. Use ${prompt} as a placeholder for the spoken text.",
+          )}
+          descriptionMode="tooltip"
+          layout="stacked"
+          grouped={true}
+        >
+          <input
+            type="text"
+            value={(settings as any)?.unknown_command_template ?? ""}
+            onChange={async (e) => {
+              try {
+                await commands.changeUnknownCommandTemplateSetting(
+                  e.target.value,
+                );
+                await refreshSettings();
+              } catch (error) {
+                console.error("Failed to update command template:", error);
+              }
+            }}
+            placeholder='claude -p "${prompt}"'
+            className="w-full p-2 bg-mid-gray/5 border border-mid-gray/20 rounded text-sm focus:outline-none focus:border-logo-primary font-mono"
+          />
+        </SettingContainer>
+        <SettingContainer
+          title={t(
+            "settings.voiceCommands.unknownCommand.terminal.title",
+            "Terminal Application",
+          )}
+          description={t(
+            "settings.voiceCommands.unknownCommand.terminal.description",
+            "The terminal application to use when launching the CLI agent.",
+          )}
+          descriptionMode="tooltip"
+          layout="horizontal"
+          grouped={true}
+        >
+          <select
+            value={(settings as any)?.unknown_command_terminal ?? "iTerm"}
+            onChange={async (e) => {
+              try {
+                await commands.changeUnknownCommandTerminalSetting(
+                  e.target.value,
+                );
+                await refreshSettings();
+              } catch (error) {
+                console.error("Failed to update terminal setting:", error);
+              }
+            }}
+            className="px-3 py-1.5 bg-mid-gray/5 border border-mid-gray/20 rounded text-sm focus:outline-none focus:border-logo-primary"
+          >
+            <option value="iTerm">iTerm</option>
+            <option value="Terminal">Terminal</option>
+            <option value="Warp">Warp</option>
+          </select>
+        </SettingContainer>
+      </SettingsGroup>
+
       {voiceCommands.length > 0 && (
         <SettingsGroup
           title={t(
