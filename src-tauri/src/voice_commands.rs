@@ -25,8 +25,13 @@ pub enum CommandResult {
 /// Execute a bespoke (user-defined script) command
 ///
 /// If the script contains `${selection}`, it will be replaced with the provided selection text.
-/// The selection is properly escaped for the script type (shell or AppleScript).
-pub fn execute_bespoke_command(command: &VoiceCommand, selection: Option<&str>) -> CommandResult {
+/// If the script contains `${transcription}`, it will be replaced with the spoken text.
+/// The placeholders are properly escaped for the script type (shell or AppleScript).
+pub fn execute_bespoke_command(
+    command: &VoiceCommand,
+    selection: Option<&str>,
+    transcription: Option<&str>,
+) -> CommandResult {
     let script = match &command.script {
         Some(s) if !s.trim().is_empty() => s,
         _ => {
@@ -48,21 +53,34 @@ pub fn execute_bespoke_command(command: &VoiceCommand, selection: Option<&str>) 
         return CommandResult::InternalCommand("open_chat_window".to_string());
     }
 
-    // Substitute ${selection} with the actual selection text (escaped appropriately)
-    let processed_script = if script.contains("${selection}") {
+    // Substitute placeholders with actual text (escaped appropriately)
+    let mut processed_script = script.clone();
+
+    if processed_script.contains("${selection}") {
         let selection_text = selection.unwrap_or("");
         let escaped_selection = match command.script_type {
             ScriptType::Shell => escape_for_shell(selection_text),
             ScriptType::AppleScript => escape_for_applescript(selection_text),
         };
         debug!(
-            "Substituting ${{selection}} with {} chars of text",
+            "Substituting {{selection}} placeholder with {} chars of text",
             selection_text.len()
         );
-        script.replace("${selection}", &escaped_selection)
-    } else {
-        script.clone()
-    };
+        processed_script = processed_script.replace("${selection}", &escaped_selection);
+    }
+
+    if processed_script.contains("${transcription}") {
+        let transcription_text = transcription.unwrap_or("");
+        let escaped_transcription = match command.script_type {
+            ScriptType::Shell => escape_for_shell(transcription_text),
+            ScriptType::AppleScript => escape_for_applescript(transcription_text),
+        };
+        debug!(
+            "Substituting {{transcription}} placeholder with {} chars of text",
+            transcription_text.len()
+        );
+        processed_script = processed_script.replace("${transcription}", &escaped_transcription);
+    }
 
     match command.script_type {
         ScriptType::Shell => execute_shell_script(&processed_script),

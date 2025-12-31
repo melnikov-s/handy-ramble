@@ -882,6 +882,17 @@ async openChatWindow(context: string | null) : Promise<Result<string, string>> {
 }
 },
 /**
+ * Opens a new chat window with initial messages (for forking conversations)
+ */
+async openChatWindowWithMessages(messages: ForkMessage[]) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("open_chat_window_with_messages", { messages }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Command to capture a screenshot or region, hiding all app windows first
  */
 async captureScreenMode(region: boolean) : Promise<Result<string, string>> {
@@ -1108,6 +1119,10 @@ export type DefaultModels = { chat: string | null; coherent: string | null; voic
  */
 export type DetectedApp = { bundle_identifier: string; display_name: string; last_seen: number }
 export type EngineType = "Whisper" | "Parakeet"
+/**
+ * Message structure for forking conversations
+ */
+export type ForkMessage = { role: string; content: string }
 export type GroundingChunk = { uri: string | null; title: string | null }
 export type GroundingMetadata = { search_entry_point: string | null; chunks: GroundingChunk[] }
 export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null }

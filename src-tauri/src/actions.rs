@@ -1350,6 +1350,7 @@ async fn execute_via_llm(
                     return Ok(crate::voice_commands::execute_bespoke_command(
                         cmd,
                         selection.as_deref(),
+                        Some(transcription),
                     ));
                 }
             }
@@ -1453,6 +1454,7 @@ async fn execute_via_llm(
                             return Ok(crate::voice_commands::execute_bespoke_command(
                                 cmd,
                                 selection.as_deref(),
+                                Some(transcription),
                             ));
                         }
                         crate::settings::VoiceCommandType::Builtin

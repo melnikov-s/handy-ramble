@@ -374,6 +374,7 @@ pub fn run() {
         // Chat commands
         commands::chat::chat_completion,
         commands::open_chat_window,
+        commands::open_chat_window_with_messages,
         commands::capture_screen_mode,
         commands::capture_region_command,
         commands::open_clipping_tool,
