@@ -401,7 +401,10 @@ impl TranscriptionManager {
         // Apply filler word filter if configured
         let filtered_result = if let Some(ref pattern) = settings.filler_word_filter {
             if !pattern.is_empty() {
-                match regex::Regex::new(pattern) {
+                match regex::RegexBuilder::new(pattern)
+                    .case_insensitive(true)
+                    .build()
+                {
                     Ok(re) => {
                         let filtered = re.replace_all(&corrected_result, "").to_string();
                         // Clean up any double spaces left behind
