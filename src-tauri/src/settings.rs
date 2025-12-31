@@ -523,6 +523,17 @@ pub struct AppSettings {
     /// Customizable initial prompt for the quick chat
     #[serde(default = "default_quick_chat_initial_prompt")]
     pub quick_chat_initial_prompt: String,
+    // Unknown command agent settings
+    /// Whether to launch CLI agent for unknown commands (instead of showing error)
+    #[serde(default)]
+    pub unknown_command_agent_enabled: bool,
+    /// Template for the CLI command to run. Supports ${prompt} placeholder.
+    /// Example: `claude -p "${prompt}"` or `gemini "${prompt}"`
+    #[serde(default = "default_unknown_command_template")]
+    pub unknown_command_template: String,
+    /// Terminal application to use (iTerm, Terminal, Warp)
+    #[serde(default = "default_unknown_command_terminal")]
+    pub unknown_command_terminal: String,
 }
 
 fn default_model() -> String {
@@ -718,6 +729,14 @@ fn default_filler_word_filter() -> Option<String> {
 
 fn default_quick_chat_initial_prompt() -> String {
     "You are a helpful assistant. You are given some context from the user's screen or selection to help you answer their questions.\n\nCONTEXT FROM USER SELECTION:\n${selection}".to_string()
+}
+
+fn default_unknown_command_template() -> String {
+    "claude -p \"${prompt}\"".to_string()
+}
+
+fn default_unknown_command_terminal() -> String {
+    "Terminal".to_string()
 }
 
 fn default_voice_commands() -> Vec<VoiceCommand> {
@@ -1571,6 +1590,10 @@ pub fn get_default_settings() -> AppSettings {
         voice_commands: default_voice_commands(),
         filler_word_filter: default_filler_word_filter(),
         quick_chat_initial_prompt: default_quick_chat_initial_prompt(),
+        // Unknown command agent settings
+        unknown_command_agent_enabled: false,
+        unknown_command_template: default_unknown_command_template(),
+        unknown_command_terminal: default_unknown_command_terminal(),
     }
 }
 

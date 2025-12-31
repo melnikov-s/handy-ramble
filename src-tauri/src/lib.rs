@@ -315,6 +315,8 @@ pub fn run() {
         shortcut::update_voice_command,
         shortcut::delete_voice_command,
         shortcut::change_filler_word_filter_setting,
+        shortcut::change_unknown_command_template_setting,
+        shortcut::change_unknown_command_terminal_setting,
         trigger_update_check,
         commands::cancel_operation,
         commands::pause_operation,

@@ -1488,7 +1488,7 @@ async fn execute_via_llm(
                     matched_id
                 )))
             } else {
-                // No match, return the explanation or paste output
+                // No match - check execution type
                 if exec_type == "paste" {
                     let output = json
                         .get("output")
@@ -1498,13 +1498,8 @@ async fn execute_via_llm(
                         output.to_string(),
                     ))
                 } else {
-                    let message = json
-                        .get("message")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("Command not understood");
-                    Ok(crate::voice_commands::CommandResult::Error(
-                        message.to_string(),
-                    ))
+                    // "unknown" or any unrecognized type - launch CLI agent
+                    return launch_unknown_command_agent(app, transcription, settings);
                 }
             }
         }
@@ -1515,6 +1510,128 @@ async fn execute_via_llm(
             ))
         }
     }
+}
+
+/// Launch a terminal with CLI agent for unknown commands
+fn launch_unknown_command_agent(
+    app: &AppHandle,
+    prompt: &str,
+    settings: &AppSettings,
+) -> Result<crate::voice_commands::CommandResult, String> {
+    // Strip newlines from prompt to prevent premature execution
+    let prompt_clean = prompt.replace('\n', " ").replace('\r', " ");
+
+    // Substitute ${prompt} in the template
+    let command = settings
+        .unknown_command_template
+        .replace("${prompt}", &prompt_clean);
+
+    info!(
+        "Launching unknown command agent with template: {}",
+        settings.unknown_command_template
+    );
+    debug!("Final command: {}", command);
+
+    // Check if the configured terminal is installed
+    let configured_terminal = settings.unknown_command_terminal.as_str();
+    let mut actual_terminal = configured_terminal;
+
+    if configured_terminal != "Terminal" {
+        let check_script = format!("id of application \"{}\"", configured_terminal);
+        let output = std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(&check_script)
+            .output();
+
+        if let Ok(output) = output {
+            if !output.status.success() {
+                warn!(
+                    "Configured terminal '{}' not found, falling back to Terminal.app",
+                    configured_terminal
+                );
+                actual_terminal = "Terminal";
+            }
+        }
+    }
+
+    info!(
+        "Using terminal '{}' for unknown command agent",
+        actual_terminal
+    );
+
+    // Step 1: Activate terminal and open window via safe AppleScript (if possible)
+    let script = match actual_terminal {
+        "Terminal" => {
+            "tell application \"Terminal\"
+    activate
+    do script \"\"
+end tell"
+        }
+        "Warp" => "tell application \"Warp\" to activate",
+        _ => {
+            "tell application \"iTerm\"
+    activate
+    try
+        create window with default profile
+    on error
+        -- Window might already be open or iTerm behaves differently
+    end try
+end tell"
+        }
+    };
+
+    match std::process::Command::new("osascript")
+        .arg("-e")
+        .arg(script)
+        .output()
+    {
+        Ok(output) if !output.status.success() => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            warn!("AppleScript activation warning: {}", stderr);
+        }
+        Err(e) => {
+            error!("Failed to execute activation AppleScript: {}", e);
+        }
+        _ => {}
+    }
+
+    // Step 2: Use Enigo to open new window for terminals that need it (like Warp)
+    // and type the command
+    let enigo_state = app
+        .try_state::<crate::input::EnigoState>()
+        .ok_or_else(|| "Failed to get Enigo state".to_string())?;
+    let mut enigo = enigo_state
+        .0
+        .lock()
+        .map_err(|e| format!("Failed to lock Enigo: {}", e))?;
+
+    use enigo::{Direction, Key, Keyboard};
+    use std::thread::sleep;
+    use std::time::Duration;
+
+    // Small delay to let terminal focus
+    sleep(Duration::from_millis(500));
+
+    if actual_terminal == "Warp" {
+        // Warp doesn't have a direct 'do script ""' but we can send Cmd+N
+        // We use Enigo directly for this to avoid System Events permissions
+        #[cfg(target_os = "macos")]
+        {
+            let _ = enigo.key(Key::Meta, Direction::Press);
+            let _ = enigo.key(Key::Unicode('n'), Direction::Click);
+            let _ = enigo.key(Key::Meta, Direction::Release);
+            sleep(Duration::from_millis(500));
+        }
+    }
+
+    // Step 3: Type the command
+    info!("Typing command into terminal: {}", command);
+    if let Err(e) = enigo.text(&command) {
+        error!("Failed to type command via Enigo: {}", e);
+        return Err(format!("Failed to type command: {}", e));
+    }
+
+    Ok(crate::voice_commands::CommandResult::Success)
 }
 
 /// Execute a built-in command with native handler
