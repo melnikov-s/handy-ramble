@@ -101,7 +101,7 @@ pub fn open_chat_window_with_messages(
 
     let mut builder =
         WebviewWindowBuilder::new(&app, &window_label, tauri::WebviewUrl::App(url.into()))
-            .title("Ramble Chat (Forked)")
+            .title("Ramble Chat")
             .inner_size(500.0, 600.0)
             .min_inner_size(400.0, 400.0)
             .resizable(true)

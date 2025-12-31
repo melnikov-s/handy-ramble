@@ -757,10 +757,9 @@ async fn process_ramble_to_coherent(
             );
             (cat_id, name)
         }
-        PromptMode::Development => ("development".to_string(), "Unknown".to_string()),
-        PromptMode::Conversation => ("conversation".to_string(), "Unknown".to_string()),
-        PromptMode::Writing => ("writing".to_string(), "Unknown".to_string()),
-        PromptMode::Email => ("email".to_string(), "Unknown".to_string()),
+        PromptMode::Low => ("low".to_string(), "Unknown".to_string()),
+        PromptMode::Medium => ("medium".to_string(), "Unknown".to_string()),
+        PromptMode::High => ("high".to_string(), "Unknown".to_string()),
     };
 
     // Find the prompt for this category, falling back to default category's prompt

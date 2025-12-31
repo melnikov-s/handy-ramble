@@ -3,7 +3,12 @@
     "settings": "設定...",
     "checkUpdates": "アップデートを確認...",
     "quit": "終了",
-    "cancel": "キャンセル"
+    "cancel": "キャンセル",
+    "postProcessing": "後処理",
+    "dynamic": "ダイナミック",
+    "low": "低",
+    "medium": "中",
+    "high": "高"
   },
   "sidebar": {
     "general": "一般",

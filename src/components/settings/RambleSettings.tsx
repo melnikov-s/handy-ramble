@@ -249,19 +249,16 @@ export const RambleSettings: React.FC = () => {
             className="px-3 py-2 bg-background border border-mid-gray/30 rounded-lg text-sm focus:outline-none focus:border-logo-primary"
           >
             <option value="dynamic">
-              🔄 {t("settings.ramble.mode.dynamic", "Dynamic")}
+              {t("settings.ramble.mode.dynamic", "Dynamic")}
             </option>
-            <option value="development">
-              💻 {t("settings.ramble.mode.development", "Development")}
+            <option value="low">
+              ▁ {t("settings.ramble.mode.low", "Low")}
             </option>
-            <option value="conversation">
-              💬 {t("settings.ramble.mode.conversation", "Conversation")}
+            <option value="medium">
+              ▃ {t("settings.ramble.mode.medium", "Medium")}
             </option>
-            <option value="writing">
-              ✍️ {t("settings.ramble.mode.writing", "Writing")}
-            </option>
-            <option value="email">
-              📧 {t("settings.ramble.mode.email", "Email")}
+            <option value="high">
+              ▅ {t("settings.ramble.mode.high", "High")}
             </option>
           </select>
         </SettingContainer>

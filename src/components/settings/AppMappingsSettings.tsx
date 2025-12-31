@@ -21,10 +21,9 @@ interface AppOption {
 
 // Fallback categories in case settings haven't loaded yet
 const DEFAULT_CATEGORIES = [
-  { id: "development", name: "Development", icon: "💻" },
-  { id: "conversation", name: "Conversation", icon: "💬" },
-  { id: "writing", name: "Writing", icon: "✍️" },
-  { id: "email", name: "Email", icon: "📧" },
+  { id: "low", name: "Low", icon: "▁" },
+  { id: "medium", name: "Medium", icon: "▃" },
+  { id: "high", name: "High", icon: "▅" },
 ];
 
 export const AppMappingsSettings: React.FC = () => {
@@ -36,7 +35,7 @@ export const AppMappingsSettings: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedApp, setSelectedApp] = useState<AppOption | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState("development");
+  const [selectedCategory, setSelectedCategory] = useState("medium");
   const [isAdding, setIsAdding] = useState(false);
 
   // Get current mappings from settings
@@ -46,7 +45,7 @@ export const AppMappingsSettings: React.FC = () => {
     (settings as any)?.detected_apps_history ?? [];
   const promptCategories: PromptCategory[] = settings?.prompt_categories ?? [];
   const defaultCategoryId: string =
-    (settings as any)?.default_category_id ?? "development";
+    (settings as any)?.default_category_id ?? "medium";
 
   const handleDefaultCategoryChange = async (categoryId: string) => {
     try {

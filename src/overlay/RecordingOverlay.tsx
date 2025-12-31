@@ -26,12 +26,7 @@ type OverlayState =
   | "error";
 
 // Prompt mode type matches Rust PromptMode enum
-type PromptMode =
-  | "dynamic"
-  | "development"
-  | "conversation"
-  | "writing"
-  | "email";
+type PromptMode = "dynamic" | "low" | "medium" | "high";
 
 interface ErrorPayload {
   state: string;
@@ -39,21 +34,19 @@ interface ErrorPayload {
   is_voice_command: boolean;
 }
 
-// Icons for prompt modes (emoji for most, null for dynamic which shows detected category)
+// Icons for prompt modes (bar characters for intensity, null for dynamic which shows detected category)
 const PROMPT_MODE_ICONS: Record<PromptMode, string | null> = {
   dynamic: null, // Uses detected category icon or ear icon
-  development: "💻",
-  conversation: "💬",
-  writing: "✍️",
-  email: "📧",
+  low: "▁",
+  medium: "▃",
+  high: "▅",
 };
 
 // Icons for category IDs (used in Dynamic mode to show detected category)
 const CATEGORY_ICONS: Record<string, string> = {
-  development: "💻",
-  conversation: "💬",
-  writing: "✍️",
-  email: "📧",
+  low: "▁",
+  medium: "▃",
+  high: "▅",
 };
 
 const RecordingOverlay: React.FC = () => {

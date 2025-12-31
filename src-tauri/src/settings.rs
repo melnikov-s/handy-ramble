@@ -184,27 +184,50 @@ pub enum RecordingRetentionPeriod {
     Months3,
 }
 
-/// Prompt mode selection - Dynamic auto-detects based on app, others are explicit overrides
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+/// Prompt mode selection - Dynamic auto-detects based on app, others are explicit processing levels
+#[derive(Serialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum PromptMode {
     #[default]
     Dynamic,
-    Development,
-    Conversation,
-    Writing,
-    Email,
+    /// Low processing: minimal intervention, just grammar and filler removal
+    Low,
+    /// Medium processing: standard polish, formatting, and structure
+    Medium,
+    /// High processing: intent extraction, aggressive restructuring
+    High,
+}
+
+// Custom deserialization to handle migration from old category names
+impl<'de> serde::Deserialize<'de> for PromptMode {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        Ok(match s.as_str() {
+            "dynamic" => PromptMode::Dynamic,
+            "low" => PromptMode::Low,
+            "medium" => PromptMode::Medium,
+            "high" => PromptMode::High,
+            // Migration: old category names → new processing levels
+            "development" => PromptMode::Medium,
+            "conversation" => PromptMode::Low,
+            "writing" => PromptMode::High,
+            "email" => PromptMode::Medium,
+            _ => PromptMode::Dynamic, // Fallback for any unknown values
+        })
+    }
 }
 
 impl PromptMode {
     /// Get the icon for this mode (used in overlay and tray menu)
     pub fn icon(&self) -> &'static str {
         match self {
-            PromptMode::Dynamic => "🔄",
-            PromptMode::Development => "💻",
-            PromptMode::Conversation => "💬",
-            PromptMode::Writing => "✍️",
-            PromptMode::Email => "📧",
+            PromptMode::Dynamic => "",
+            PromptMode::Low => "▁",
+            PromptMode::Medium => "▃",
+            PromptMode::High => "▅",
         }
     }
 
@@ -212,10 +235,9 @@ impl PromptMode {
     pub fn display_name(&self) -> &'static str {
         match self {
             PromptMode::Dynamic => "Dynamic",
-            PromptMode::Development => "Development",
-            PromptMode::Conversation => "Conversation",
-            PromptMode::Writing => "Writing",
-            PromptMode::Email => "Email",
+            PromptMode::Low => "Low",
+            PromptMode::Medium => "Medium",
+            PromptMode::High => "High",
         }
     }
 
@@ -223,10 +245,9 @@ impl PromptMode {
     pub fn category_id(&self) -> Option<&'static str> {
         match self {
             PromptMode::Dynamic => None, // Will be determined by app detection
-            PromptMode::Development => Some("development"),
-            PromptMode::Conversation => Some("conversation"),
-            PromptMode::Writing => Some("writing"),
-            PromptMode::Email => Some("email"),
+            PromptMode::Low => Some("low"),
+            PromptMode::Medium => Some("medium"),
+            PromptMode::High => Some("high"),
         }
     }
 }
@@ -472,7 +493,7 @@ pub struct AppSettings {
     #[serde(default = "default_hold_threshold_ms")]
     pub hold_threshold_ms: u64,
     // App-aware prompt settings
-    /// Current prompt mode (Dynamic, Development, Conversation, Writing, Email)
+    /// Current prompt mode (Dynamic, Low, Medium, High)
     #[serde(default)]
     pub prompt_mode: PromptMode,
     /// Prompt categories (built-in + user-defined)
@@ -682,7 +703,7 @@ fn default_hold_threshold_ms() -> u64 {
 }
 
 fn default_category_id() -> String {
-    "development".to_string()
+    "medium".to_string()
 }
 
 fn default_voice_command_model() -> String {
@@ -879,9 +900,102 @@ end tell"#.to_string()),
 fn default_prompt_categories() -> Vec<PromptCategory> {
     vec![
         PromptCategory {
-            id: "development".to_string(),
-            name: "Development".to_string(),
-            icon: "💻".to_string(),
+            id: "low".to_string(),
+            name: "Low".to_string(),
+            icon: "▁".to_string(),
+            is_builtin: true,
+            prompt: "You are cleaning up speech-to-text for a casual chat message.
+
+**Context:** The user is in ${application} (${category} mode). The output is a message to another human.
+
+IMPORTANT: You are the user's proxy. The message should sound exactly like the user would type it. Preserve the user's perspective: do not change pronouns or perspective. If the user addresses \"you\", keep it as \"you\".
+
+CRITICAL RULES:
+1. NEVER remove content unless the user explicitly instructs (\"hey Ramble, delete that\", \"scratch that\", \"never mind\")
+2. DO NOT start sentences with capital letters (like mobile autocorrect does) unless it's a proper noun or name
+3. NO em dashes (—). Use simple punctuation only: periods, commas, question marks, exclamation points
+4. NO formatting: no lists, no bullet points, no bold, no italics, no headers
+5. If the user wants formatting, they will say it explicitly (\"bold tomorrow\", \"emphasis on skills\")
+
+YOUR ONLY JOB:
+- Add appropriate punctuation where needed
+- Fix obvious typos or grammar issues
+- Convert spoken punctuation (\"period\", \"comma\", \"question mark\") to symbols
+- Keep emoji references if mentioned (\"smiley face\" → 😊, \"thumbs up\" → 👍)
+
+PRESERVE:
+- The user's casual speaking style
+- All content and meaning, do not condense or summarize
+- Humor, sarcasm, and informal language
+- Short, punchy message style
+
+INLINE COMMANDS (only these remove content):
+- \"hey Ramble, ...\" or \"Ramble: ...\" = direct instruction to you
+- \"scratch that\", \"delete that\", \"never mind\" = remove preceding content
+- \"actually\" followed by correction = keep only the correction
+
+Return ONLY the cleaned text. No preamble.
+
+---
+
+<selection>
+${selection}
+</selection>
+
+<transcript>
+${output}
+</transcript>".to_string(),
+        },
+        PromptCategory {
+            id: "medium".to_string(),
+            name: "Medium".to_string(),
+            icon: "▃".to_string(),
+            is_builtin: true,
+            prompt: "You are transforming rambling speech into polished written prose.
+
+**Context:** The user is in ${application} (${category} mode). The output is written content for human readers.
+
+IMPORTANT: You are the user's proxy. Write AS the user, not TO the user. Preserve the user's perspective: do not change pronouns or perspective. If the user addresses \"you\", keep it as \"you\".
+
+CRITICAL RULES:
+1. NO em dashes (—) ever. Use commas, periods, or restructure the sentence instead.
+2. Keep the author's voice while improving clarity
+3. Only remove content if the user explicitly instructs (\"scratch that\", \"delete that\", \"hey Ramble, remove...\")
+
+YOUR JOB:
+1. Create well-structured paragraphs with proper flow
+2. Fix grammar, punctuation, and sentence structure
+3. Remove filler words and verbal tics (um, uh, like, you know)
+4. Consolidate repeated ideas into single, clear statements
+5. Use appropriate paragraph breaks between distinct ideas
+
+FORMATTING:
+- Use markdown sparingly: headers, lists when explicitly requested
+- If user says \"bullet point\" or \"list this\", use bullets
+- If user says \"bold X\" or \"emphasis on X\", apply formatting
+- Otherwise, keep it as flowing prose
+
+INLINE COMMANDS:
+- \"hey Ramble, ...\" = direct instruction
+- \"scratch that\", \"delete that\", \"never mind\" = remove preceding content
+- \"actually\" followed by correction = keep only the correction
+
+Return ONLY the cleaned text. No preamble.
+
+---
+
+<selection>
+${selection}
+</selection>
+
+<transcript>
+${output}
+</transcript>".to_string(),
+        },
+        PromptCategory {
+            id: "high".to_string(),
+            name: "High".to_string(),
+            icon: "▅".to_string(),
             is_builtin: true,
             prompt: "You are transforming rambling speech into clean, well-structured text.
 
@@ -952,144 +1066,6 @@ ${selection}
 </selection>
 
 
-
-<transcript>
-${output}
-</transcript>".to_string(),
-        },
-        PromptCategory {
-            id: "conversation".to_string(),
-            name: "Conversation".to_string(),
-            icon: "💬".to_string(),
-            is_builtin: true,
-            prompt: "You are cleaning up speech-to-text for a casual chat message.
-
-**Context:** The user is in ${application} (${category} mode). The output is a message to another human.
-
-IMPORTANT: You are the user's proxy. The message should sound exactly like the user would type it. Preserve the user's perspective: do not change pronouns or perspective. If the user addresses \"you\", keep it as \"you\".
-
-CRITICAL RULES:
-1. NEVER remove content unless the user explicitly instructs (\"hey Ramble, delete that\", \"scratch that\", \"never mind\")
-2. DO NOT start sentences with capital letters (like mobile autocorrect does) unless it's a proper noun or name
-3. NO em dashes (—). Use simple punctuation only: periods, commas, question marks, exclamation points
-4. NO formatting: no lists, no bullet points, no bold, no italics, no headers
-5. If the user wants formatting, they will say it explicitly (\"bold tomorrow\", \"emphasis on skills\")
-
-YOUR ONLY JOB:
-- Add appropriate punctuation where needed
-- Fix obvious typos or grammar issues
-- Convert spoken punctuation (\"period\", \"comma\", \"question mark\") to symbols
-- Keep emoji references if mentioned (\"smiley face\" → 😊, \"thumbs up\" → 👍)
-
-PRESERVE:
-- The user's casual speaking style
-- All content and meaning, do not condense or summarize
-- Humor, sarcasm, and informal language
-- Short, punchy message style
-
-INLINE COMMANDS (only these remove content):
-- \"hey Ramble, ...\" or \"Ramble: ...\" = direct instruction to you
-- \"scratch that\", \"delete that\", \"never mind\" = remove preceding content
-- \"actually\" followed by correction = keep only the correction
-
-Return ONLY the cleaned text. No preamble.
-
----
-
-<selection>
-${selection}
-</selection>
-
-<transcript>
-${output}
-</transcript>".to_string(),
-        },
-        PromptCategory {
-            id: "writing".to_string(),
-            name: "Writing".to_string(),
-            icon: "✍️".to_string(),
-            is_builtin: true,
-            prompt: "You are transforming rambling speech into polished written prose.
-
-**Context:** The user is in ${application} (${category} mode). The output is written content for human readers.
-
-IMPORTANT: You are the user's proxy. Write AS the user, not TO the user. Preserve the user's perspective: do not change pronouns or perspective. If the user addresses \"you\", keep it as \"you\".
-
-CRITICAL RULES:
-1. NO em dashes (—) ever. Use commas, periods, or restructure the sentence instead.
-2. Keep the author's voice while improving clarity
-3. Only remove content if the user explicitly instructs (\"scratch that\", \"delete that\", \"hey Ramble, remove...\")
-
-YOUR JOB:
-1. Create well-structured paragraphs with proper flow
-2. Fix grammar, punctuation, and sentence structure
-3. Remove filler words and verbal tics (um, uh, like, you know)
-4. Consolidate repeated ideas into single, clear statements
-5. Use appropriate paragraph breaks between distinct ideas
-
-FORMATTING:
-- Use markdown sparingly: headers, lists when explicitly requested
-- If user says \"bullet point\" or \"list this\", use bullets
-- If user says \"bold X\" or \"emphasis on X\", apply formatting
-- Otherwise, keep it as flowing prose
-
-INLINE COMMANDS:
-- \"hey Ramble, ...\" = direct instruction
-- \"scratch that\", \"delete that\", \"never mind\" = remove preceding content
-- \"actually\" followed by correction = keep only the correction
-
-Return ONLY the cleaned text. No preamble.
-
----
-
-<selection>
-${selection}
-</selection>
-
-<transcript>
-${output}
-</transcript>".to_string(),
-        },
-        PromptCategory {
-            id: "email".to_string(),
-            name: "Email".to_string(),
-            icon: "📧".to_string(),
-            is_builtin: true,
-            prompt: "You are transforming rambling speech into a clear email message.
-
-**Context:** The user is in ${application} (${category} mode). The output is an email to another human.
-
-IMPORTANT: You are the user's proxy. Write AS the user, not TO the user. Preserve the user's perspective: do not change pronouns or perspective. If the user addresses \"you\", keep it as \"you\".
-
-CRITICAL RULES:
-1. NO em dashes (—) ever. Use commas or periods instead.
-2. Be concise but don't remove information unless explicitly asked
-3. Use professional but not overly formal tone
-4. Only remove content if the user explicitly instructs (\"scratch that\", \"delete that\")
-
-YOUR JOB:
-1. Get to the point quickly
-2. Remove filler words and self-corrections
-3. Structure clearly: greeting, main content, closing (if user mentions them)
-4. Preserve action items and deadlines exactly as stated
-5. If the user rambles about multiple topics, keep them but organize clearly
-
-FORMAT:
-- Keep paragraphs short (2-3 sentences max)
-- Use bullet points ONLY if user explicitly lists items or says \"bullet point\"
-- Don't add greetings or closings unless the user mentions them
-
-INLINE COMMANDS:
-- \"hey Ramble, ...\" = direct instruction
-- \"scratch that\", \"delete that\", \"never mind\" = remove preceding content
-
-Return ONLY the email body text. No preamble.
-
----
-
-<selection>
-${selection}
-</selection>
 
 <transcript>
 ${output}
@@ -1345,6 +1321,105 @@ fn default_coherent_prompts() -> Vec<LLMPrompt> {
             prompt: "You are transforming raw speech into clean, coherent text.\n\nThe input is unfiltered speech-to-text that contains:\n- Filler words (um, uh, like, you know, basically, so, I mean)\n- Thinking out loud and self-corrections\n- Backtracking (no wait, actually, I mean)\n- Repeated ideas phrased multiple ways\n- Run-on sentences and stream of consciousness\n\nYour task:\n1. Extract the core intent and requirements\n2. Remove ALL filler words and verbal tics\n3. When the speaker changes their mind, keep ONLY the final decision\n4. Consolidate repeated ideas into single clear statements\n5. Structure as clear, actionable points if appropriate\n6. Preserve technical terms and specific details exactly\n7. Keep the same language as input\n8. Preserve the user's perspective: do not change pronouns or perspective. If the user addresses \"you\", keep it as \"you\".\n\nReturn ONLY the cleaned, structured text. No preamble or explanation.\n\n<transcript>\n${output}\n</transcript>".to_string(),
         },
     ]
+}
+
+/// Migrate old prompt categories (development/conversation/writing/email) to new system (low/medium/high).
+/// Also migrates app_category_mappings and default_category_id.
+fn migrate_prompt_categories(settings: &mut AppSettings) -> bool {
+    let old_category_ids = ["development", "conversation", "writing", "email"];
+    let mut migrated = false;
+
+    // Check if we need to migrate by looking for old category IDs
+    let has_old_categories = settings
+        .prompt_categories
+        .iter()
+        .any(|c| old_category_ids.contains(&c.id.as_str()));
+
+    if has_old_categories {
+        debug!("Migrating old prompt categories to new Low/Medium/High system");
+        // Replace all categories with the new defaults (preserves user's custom categories if any)
+        let defaults = default_prompt_categories();
+        let mut new_categories = defaults;
+
+        // Keep any user-defined (non-builtin) categories that aren't old ones
+        for cat in &settings.prompt_categories {
+            if !cat.is_builtin && !old_category_ids.contains(&cat.id.as_str()) {
+                new_categories.push(cat.clone());
+            }
+        }
+
+        settings.prompt_categories = new_categories;
+        migrated = true;
+    }
+
+    // Migrate app_category_mappings to use new category IDs
+    for mapping in &mut settings.app_category_mappings {
+        let new_id = match mapping.category_id.as_str() {
+            "development" => Some("medium"),
+            "conversation" => Some("low"),
+            "writing" => Some("high"),
+            "email" => Some("medium"),
+            _ => None,
+        };
+        if let Some(new) = new_id {
+            debug!(
+                "Migrating app mapping {} from {} to {}",
+                mapping.display_name, mapping.category_id, new
+            );
+            mapping.category_id = new.to_string();
+            migrated = true;
+        }
+    }
+
+    // Migrate default_category_id
+    let new_default = match settings.default_category_id.as_str() {
+        "development" => Some("medium"),
+        "conversation" => Some("low"),
+        "writing" => Some("high"),
+        "email" => Some("medium"),
+        _ => None,
+    };
+    if let Some(new) = new_default {
+        debug!(
+            "Migrating default_category_id from {} to {}",
+            settings.default_category_id, new
+        );
+        settings.default_category_id = new.to_string();
+        migrated = true;
+    }
+
+    // Always ensure builtin categories are in correct order (Low, Medium, High)
+    // and have the latest prompt content
+    let defaults = default_prompt_categories();
+    let expected_order = ["low", "medium", "high"];
+
+    // Check if builtin categories need reordering or updating
+    let builtin_ids: Vec<&str> = settings
+        .prompt_categories
+        .iter()
+        .filter(|c| c.is_builtin)
+        .map(|c| c.id.as_str())
+        .collect();
+
+    let needs_reorder = builtin_ids != expected_order;
+
+    if needs_reorder {
+        debug!("Reordering prompt categories to Low, Medium, High");
+        // Keep user-defined categories
+        let user_categories: Vec<_> = settings
+            .prompt_categories
+            .iter()
+            .filter(|c| !c.is_builtin)
+            .cloned()
+            .collect();
+
+        // Replace with defaults + user categories
+        settings.prompt_categories = defaults;
+        settings.prompt_categories.extend(user_categories);
+        migrated = true;
+    }
+
+    migrated
 }
 
 /// Previously ensured default providers/models were present.
@@ -1627,6 +1702,12 @@ pub fn load_or_create_app_settings(app: &AppHandle) -> AppSettings {
     }
 
     if changed {
+        store.set("settings", serde_json::to_value(&settings).unwrap());
+    }
+
+    // Migration: Replace old prompt categories with new Low/Medium/High defaults
+    // and migrate app_category_mappings to use new category IDs
+    if migrate_prompt_categories(&mut settings) {
         store.set("settings", serde_json::to_value(&settings).unwrap());
     }
 

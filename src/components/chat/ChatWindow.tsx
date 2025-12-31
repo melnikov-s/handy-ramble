@@ -97,7 +97,7 @@ const InitialMessageLoader: React.FC<{
           "messages",
         );
         // Import messages into the thread using ExportedMessageRepository format
-        // Build messages with proper parent chain
+        // Build messages with proper parent chain and required metadata
         const exportedMessages = messages.map((msg, index) => ({
           message: {
             id: `forked-${index}`,
@@ -107,6 +107,8 @@ const InitialMessageLoader: React.FC<{
             content: [{ type: "text" as const, text: msg.content || "" }],
             createdAt: new Date(),
             status: { type: "complete" as const },
+            // Add metadata with unstable_state to satisfy @assistant-ui/react
+            metadata: {},
           },
           parentId: index === 0 ? null : `forked-${index - 1}`,
         }));

@@ -127,63 +127,56 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
     // Create prompt mode submenu items with checkmarks
     let current_mode = settings.prompt_mode;
 
+    let post_processing_label = MenuItem::with_id(
+        app,
+        "post_processing_label",
+        &strings.post_processing,
+        false,
+        None::<&str>,
+    )
+    .expect("failed to create post processing label item");
+
     let mode_dynamic = CheckMenuItem::with_id(
         app,
         "mode_dynamic",
-        format!("{} {}", PromptMode::Dynamic.icon(), &strings.dynamic),
+        format!("{} {}", PromptMode::Dynamic.icon(), &strings.dynamic)
+            .trim()
+            .to_string(),
         true,
         current_mode == PromptMode::Dynamic,
         None::<&str>,
     )
     .expect("failed to create dynamic mode item");
 
-    let mode_development = CheckMenuItem::with_id(
+    let mode_low = CheckMenuItem::with_id(
         app,
-        "mode_development",
-        format!(
-            "{} {}",
-            PromptMode::Development.icon(),
-            &strings.development
-        ),
+        "mode_low",
+        format!("{} {}", PromptMode::Low.icon(), &strings.low),
         true,
-        current_mode == PromptMode::Development,
+        current_mode == PromptMode::Low,
         None::<&str>,
     )
-    .expect("failed to create development mode item");
+    .expect("failed to create low mode item");
 
-    let mode_conversation = CheckMenuItem::with_id(
+    let mode_medium = CheckMenuItem::with_id(
         app,
-        "mode_conversation",
-        format!(
-            "{} {}",
-            PromptMode::Conversation.icon(),
-            &strings.conversation
-        ),
+        "mode_medium",
+        format!("{} {}", PromptMode::Medium.icon(), &strings.medium),
         true,
-        current_mode == PromptMode::Conversation,
+        current_mode == PromptMode::Medium,
         None::<&str>,
     )
-    .expect("failed to create conversation mode item");
+    .expect("failed to create medium mode item");
 
-    let mode_writing = CheckMenuItem::with_id(
+    let mode_high = CheckMenuItem::with_id(
         app,
-        "mode_writing",
-        format!("{} {}", PromptMode::Writing.icon(), &strings.writing),
+        "mode_high",
+        format!("{} {}", PromptMode::High.icon(), &strings.high),
         true,
-        current_mode == PromptMode::Writing,
+        current_mode == PromptMode::High,
         None::<&str>,
     )
-    .expect("failed to create writing mode item");
-
-    let mode_email = CheckMenuItem::with_id(
-        app,
-        "mode_email",
-        format!("{} {}", PromptMode::Email.icon(), &strings.email),
-        true,
-        current_mode == PromptMode::Email,
-        None::<&str>,
-    )
-    .expect("failed to create email mode item");
+    .expect("failed to create high mode item");
 
     let menu = match state {
         TrayIconState::Recording | TrayIconState::Transcribing => {
@@ -196,11 +189,11 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
                     &separator(),
                     &cancel_i,
                     &separator(),
+                    &post_processing_label,
                     &mode_dynamic,
-                    &mode_development,
-                    &mode_conversation,
-                    &mode_writing,
-                    &mode_email,
+                    &mode_low,
+                    &mode_medium,
+                    &mode_high,
                     &separator(),
                     &settings_i,
                     &check_updates_i,
@@ -215,11 +208,11 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
             &[
                 &version_i,
                 &separator(),
+                &post_processing_label,
                 &mode_dynamic,
-                &mode_development,
-                &mode_conversation,
-                &mode_writing,
-                &mode_email,
+                &mode_low,
+                &mode_medium,
+                &mode_high,
                 &separator(),
                 &settings_i,
                 &check_updates_i,
