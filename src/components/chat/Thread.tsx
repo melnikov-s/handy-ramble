@@ -51,7 +51,7 @@ export const Thread: FC<ThreadProps> = ({
 }) => {
   return (
     <ThreadPrimitive.Root className="aui-root flex h-full flex-col bg-[var(--color-background)]">
-      <ThreadPrimitive.Viewport className="flex flex-1 flex-col overflow-y-auto scroll-smooth px-4 pt-4 pb-24">
+      <ThreadPrimitive.Viewport className="flex flex-1 flex-col overflow-y-auto scroll-smooth px-4 pt-4 pb-[170px]">
         <ThreadPrimitive.Empty>
           <ThreadWelcome />
         </ThreadPrimitive.Empty>
@@ -64,7 +64,7 @@ export const Thread: FC<ThreadProps> = ({
         />
       </ThreadPrimitive.Viewport>
 
-      <div className="absolute bottom-0 left-0 right-0 mx-auto w-full max-w-2xl px-4 pb-4 bg-gradient-to-t from-[var(--color-background)] via-[var(--color-background)] to-transparent pt-8">
+      <div className="absolute bottom-0 left-0 right-0 mx-auto w-full max-w-2xl px-4 pb-4 bg-gradient-to-t from-[var(--color-background)] via-[var(--color-background)] to-transparent pt-8 pointer-events-none">
         <Composer
           attachments={attachments}
           setAttachments={setAttachments}
@@ -143,7 +143,7 @@ const Composer: FC<ThreadProps> = ({
   };
 
   return (
-    <div className="flex w-full flex-col gap-2">
+    <div className="flex w-full flex-col gap-2 pointer-events-auto">
       {/* Attachment Previews */}
       {attachments.length > 0 && (
         <div className="flex flex-wrap gap-2 rounded-lg border border-[var(--color-text)]/10 bg-[var(--color-text)]/5 p-2">
@@ -423,19 +423,19 @@ const AssistantActionBar: FC = () => {
       className="flex gap-1 text-[var(--color-text)]/50"
     >
       <ActionBarPrimitive.Copy asChild>
-        <button className="rounded p-1 hover:bg-[var(--color-text)]/10">
+        <button className="rounded p-1 hover:bg-[var(--color-text)]/10 active:scale-95 active:bg-[var(--color-text)]/20 transition-all">
           <CopyIcon className="h-4 w-4" />
         </button>
       </ActionBarPrimitive.Copy>
       <button
         onClick={handleFork}
-        className="rounded p-1 hover:bg-[var(--color-text)]/10"
+        className="rounded p-1 hover:bg-[var(--color-text)]/10 active:scale-95 active:bg-[var(--color-text)]/20 transition-all"
         title="Fork conversation from this message"
       >
         <GitForkIcon className="h-4 w-4" />
       </button>
       <ActionBarPrimitive.Reload asChild>
-        <button className="rounded p-1 hover:bg-[var(--color-text)]/10">
+        <button className="rounded p-1 hover:bg-[var(--color-text)]/10 active:scale-95 active:bg-[var(--color-text)]/20 transition-all">
           <RefreshCwIcon className="h-4 w-4" />
         </button>
       </ActionBarPrimitive.Reload>

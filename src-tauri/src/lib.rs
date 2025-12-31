@@ -206,17 +206,14 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             "mode_dynamic" => {
                 tray::set_prompt_mode(app, settings::PromptMode::Dynamic);
             }
-            "mode_development" => {
-                tray::set_prompt_mode(app, settings::PromptMode::Development);
+            "mode_low" => {
+                tray::set_prompt_mode(app, settings::PromptMode::Low);
             }
-            "mode_conversation" => {
-                tray::set_prompt_mode(app, settings::PromptMode::Conversation);
+            "mode_medium" => {
+                tray::set_prompt_mode(app, settings::PromptMode::Medium);
             }
-            "mode_writing" => {
-                tray::set_prompt_mode(app, settings::PromptMode::Writing);
-            }
-            "mode_email" => {
-                tray::set_prompt_mode(app, settings::PromptMode::Email);
+            "mode_high" => {
+                tray::set_prompt_mode(app, settings::PromptMode::High);
             }
             _ => {}
         })

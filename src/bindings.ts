@@ -1072,7 +1072,7 @@ coherent_use_vision?: boolean;
  */
 hold_threshold_ms?: number; 
 /**
- * Current prompt mode (Dynamic, Development, Conversation, Writing, Email)
+ * Current prompt mode (Dynamic, Low, Medium, High)
  */
 prompt_mode?: PromptMode; 
 /**
@@ -1203,9 +1203,21 @@ export type PasteMethod = "ctrl_v" | "direct" | "none" | "shift_insert" | "ctrl_
  */
 export type PromptCategory = { id: string; name: string; icon: string; prompt: string; is_builtin: boolean }
 /**
- * Prompt mode selection - Dynamic auto-detects based on app, others are explicit overrides
+ * Prompt mode selection - Dynamic auto-detects based on app, others are explicit processing levels
  */
-export type PromptMode = "dynamic" | "development" | "conversation" | "writing" | "email"
+export type PromptMode = "dynamic" | 
+/**
+ * Low processing: minimal intervention, just grammar and filler removal
+ */
+"low" | 
+/**
+ * Medium processing: standard polish, formatting, and structure
+ */
+"medium" | 
+/**
+ * High processing: intent extraction, aggressive restructuring
+ */
+"high"
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days_3" | "weeks_2" | "months_3"
 /**
  * Script type for bespoke commands

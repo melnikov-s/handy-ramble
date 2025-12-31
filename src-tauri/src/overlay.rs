@@ -498,12 +498,11 @@ pub fn emit_mode_determined(app_handle: &AppHandle, mode: &str) {
                             known_apps::find_known_app(&bundle_id)
                                 .map(|k| k.suggested_category.clone())
                         })
-                        .unwrap_or_else(|| "development".to_string())
+                        .unwrap_or_else(|| "medium".to_string())
                 }
-                PromptMode::Development => "development".to_string(),
-                PromptMode::Conversation => "conversation".to_string(),
-                PromptMode::Writing => "writing".to_string(),
-                PromptMode::Email => "email".to_string(),
+                PromptMode::Low => "low".to_string(),
+                PromptMode::Medium => "medium".to_string(),
+                PromptMode::High => "high".to_string(),
             };
             let _ = overlay_window.emit("category-detected", &category_id);
         }
