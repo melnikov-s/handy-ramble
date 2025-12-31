@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { cn } from "@/lib/utils/cn";
 
 export interface DropdownOption {
   value: string;
@@ -15,6 +16,7 @@ interface DropdownProps {
   placeholder?: string;
   disabled?: boolean;
   onRefresh?: () => void;
+  direction?: "up" | "down";
 }
 
 export const Dropdown: React.FC<DropdownProps> = ({
@@ -25,6 +27,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
   placeholder = "Select an option...",
   disabled = false,
   onRefresh,
+  direction = "down",
 }) => {
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
@@ -86,7 +89,12 @@ export const Dropdown: React.FC<DropdownProps> = ({
         </svg>
       </button>
       {isOpen && !disabled && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-background border border-mid-gray/80 rounded shadow-lg z-50 max-h-60 overflow-y-auto">
+        <div
+          className={cn(
+            "absolute left-0 right-0 bg-[var(--color-background)] border border-[var(--color-text)]/20 rounded-lg shadow-xl z-50 max-h-60 overflow-y-auto",
+            direction === "up" ? "bottom-full mb-1" : "top-full mt-1",
+          )}
+        >
           {options.length === 0 ? (
             <div className="px-2 py-1 text-sm text-mid-gray">
               {t("common.noOptionsFound")}

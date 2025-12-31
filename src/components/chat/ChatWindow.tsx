@@ -6,13 +6,126 @@ import {
 } from "@assistant-ui/react";
 import { Thread } from "./Thread";
 import { commands, LLMModel, LLMProvider, ChatMessage } from "@/bindings";
-import { XIcon, ChevronDownIcon, Loader2Icon } from "lucide-react";
+import {
+  XIcon,
+  ChevronDownIcon,
+  Loader2Icon,
+  CopyIcon,
+  CheckIcon,
+} from "lucide-react";
 import { cn } from "@/lib/utils/cn";
+import { useThreadRuntime, useThread } from "@assistant-ui/react";
+
+// Component to copy entire chat as markdown (must be inside AssistantRuntimeProvider)
+const CopyAllHeader: React.FC = () => {
+  const [copied, setCopied] = React.useState(false);
+  const thread = useThread();
+
+  const handleCopyAll = async () => {
+    const messages = thread.messages;
+    if (messages.length === 0) return;
+
+    // Format messages as markdown
+    const markdown = messages
+      .map((msg) => {
+        const role = msg.role === "user" ? "**User:**" : "**Assistant:**";
+        const content = msg.content
+          .filter(
+            (part): part is { type: "text"; text: string } =>
+              part.type === "text",
+          )
+          .map((part) => part.text)
+          .join("");
+        return `${role}\n\n${content}`;
+      })
+      .join("\n\n---\n\n");
+
+    try {
+      await navigator.clipboard.writeText(markdown);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      console.error("Failed to copy:", error);
+    }
+  };
+
+  // Don't show if no messages
+  if (thread.messages.length === 0) return null;
+
+  return (
+    <div className="sticky top-0 z-10 flex justify-end px-4 py-1">
+      <button
+        onClick={handleCopyAll}
+        className="flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-[var(--color-text)]/50 hover:bg-[var(--color-text)]/10 hover:text-[var(--color-text)] transition-colors"
+        title="Copy entire conversation as markdown"
+      >
+        {copied ? (
+          <>
+            <CheckIcon className="h-3.5 w-3.5 text-green-500" />
+            <span className="text-green-500">Copied!</span>
+          </>
+        ) : (
+          <>
+            <CopyIcon className="h-3.5 w-3.5" />
+            <span>Copy All</span>
+          </>
+        )}
+      </button>
+    </div>
+  );
+};
 
 interface ChatWindowProps {
   initialContext?: string;
+  initialMessages?: Array<{ role: string; content: string }>;
   onClose?: () => void;
 }
+
+// Component to load initial messages into the thread (for forked conversations)
+const InitialMessageLoader: React.FC<{
+  messages?: Array<{ role: string; content: string }>;
+}> = ({ messages }) => {
+  const runtime = useThreadRuntime();
+  const [loaded, setLoaded] = React.useState(false);
+
+  useEffect(() => {
+    if (messages && messages.length > 0 && !loaded && runtime) {
+      try {
+        console.log(
+          "InitialMessageLoader: Importing",
+          messages.length,
+          "messages",
+        );
+        // Import messages into the thread using ExportedMessageRepository format
+        // Build messages with proper parent chain
+        const exportedMessages = messages.map((msg, index) => ({
+          message: {
+            id: `forked-${index}`,
+            role: (msg.role === "user" ? "user" : "assistant") as
+              | "user"
+              | "assistant",
+            content: [{ type: "text" as const, text: msg.content || "" }],
+            createdAt: new Date(),
+            status: { type: "complete" as const },
+          },
+          parentId: index === 0 ? null : `forked-${index - 1}`,
+        }));
+
+        // Wait a frame to ensure runtime is fully initialized
+        const timer = setTimeout(() => {
+          runtime.import({ messages: exportedMessages } as any);
+          setLoaded(true);
+        }, 0);
+
+        return () => clearTimeout(timer);
+      } catch (err) {
+        console.error("InitialMessageLoader: Failed to import messages:", err);
+      }
+    }
+  }, [messages, runtime, loaded]);
+
+  return null;
+};
 
 // Remove internal createChatAdapter as it's now handled inside the stable runtime state
 
@@ -22,6 +135,7 @@ import { ModelsDropdown } from "../ui/ModelsDropdown";
 
 export const ChatWindow: React.FC<ChatWindowProps> = ({
   initialContext,
+  initialMessages,
   onClose,
 }) => {
   const [models, setModels] = useState<LLMModel[]>([]);
@@ -200,35 +314,6 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
 
   return (
     <div className="flex h-full flex-col bg-[var(--color-background)]">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-[var(--color-text)]/10 px-4 py-2">
-        <h2 className="text-sm font-medium text-[var(--color-text)]">
-          Ramble Chat
-        </h2>
-
-        <div className="flex items-center gap-2">
-          {/* Model selector */}
-          {isLoading ? (
-            <Loader2Icon className="h-4 w-4 animate-spin text-[var(--color-text)]/50" />
-          ) : (
-            <ModelsDropdown
-              selectedValue={selectedModelId}
-              onSelect={setSelectedModelId}
-              className="w-auto"
-            />
-          )}
-
-          {onClose && (
-            <button
-              onClick={onClose}
-              className="rounded p-1 text-[var(--color-text)]/50 hover:bg-[var(--color-text)]/10 hover:text-[var(--color-text)]"
-            >
-              <XIcon className="h-4 w-4" />
-            </button>
-          )}
-        </div>
-      </div>
-
       {/* Context indicator */}
       {initialContext && (
         <div className="border-b border-[var(--color-text)]/10 bg-[var(--color-text)]/5 px-4 py-2">
@@ -242,9 +327,18 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
       )}
 
       {/* Chat thread */}
-      <div className="flex h-screen flex-col overflow-hidden bg-app-base">
+      <div className="relative flex-1 overflow-hidden bg-app-base">
         <AssistantRuntimeProvider runtime={chatRuntime}>
-          <Thread attachments={attachments} setAttachments={setAttachments} />
+          <InitialMessageLoader messages={initialMessages} />
+          <CopyAllHeader />
+          <Thread
+            attachments={attachments}
+            setAttachments={setAttachments}
+            selectedModelId={selectedModelId}
+            setSelectedModelId={setSelectedModelId}
+            models={models}
+            isLoading={isLoading}
+          />
         </AssistantRuntimeProvider>
       </div>
     </div>

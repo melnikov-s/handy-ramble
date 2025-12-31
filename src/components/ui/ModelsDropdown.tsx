@@ -8,6 +8,7 @@ interface ModelsDropdownProps {
   placeholder?: string;
   disabled?: boolean;
   className?: string;
+  direction?: "up" | "down";
 }
 
 export const ModelsDropdown: React.FC<ModelsDropdownProps> = ({
@@ -16,6 +17,7 @@ export const ModelsDropdown: React.FC<ModelsDropdownProps> = ({
   placeholder = "Select a model",
   disabled = false,
   className = "",
+  direction = "down",
 }) => {
   const [llmModels, setLlmModels] = useState<LLMModel[]>([]);
   const [llmProviders, setLlmProviders] = useState<LLMProvider[]>([]);
@@ -70,6 +72,7 @@ export const ModelsDropdown: React.FC<ModelsDropdownProps> = ({
       }
       onRefresh={loadModels}
       className={className}
+      direction={direction}
     />
   );
 };

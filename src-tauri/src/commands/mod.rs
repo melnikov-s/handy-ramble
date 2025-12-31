@@ -76,6 +76,76 @@ pub fn open_chat_window(app: AppHandle, context: Option<String>) -> Result<Strin
     }
 }
 
+/// Message structure for forking conversations
+#[derive(Debug, serde::Serialize, serde::Deserialize, specta::Type, Clone)]
+pub struct ForkMessage {
+    pub role: String,
+    pub content: String,
+}
+
+/// Opens a new chat window with initial messages (for forking conversations)
+#[tauri::command]
+#[specta::specta]
+pub fn open_chat_window_with_messages(
+    app: AppHandle,
+    messages: Vec<ForkMessage>,
+) -> Result<String, String> {
+    let window_id = CHAT_WINDOW_COUNTER.fetch_add(1, Ordering::SeqCst);
+    let window_label = format!("chat_{}", window_id);
+
+    // Serialize messages to JSON and URL-encode them
+    let messages_json = serde_json::to_string(&messages)
+        .map_err(|e| format!("Failed to serialize messages: {}", e))?;
+    let encoded_messages = urlencoding::encode(&messages_json);
+    let url = format!("src/chat/index.html?messages={}", encoded_messages);
+
+    let mut builder =
+        WebviewWindowBuilder::new(&app, &window_label, tauri::WebviewUrl::App(url.into()))
+            .title("Ramble Chat (Forked)")
+            .inner_size(500.0, 600.0)
+            .min_inner_size(400.0, 400.0)
+            .resizable(true)
+            .visible(true)
+            .focused(true)
+            .always_on_top(true);
+
+    #[cfg(target_os = "macos")]
+    {
+        use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+        if let Ok(menu) = Menu::with_id(&app, "chat_menu") {
+            if let Ok(edit_menu) = Submenu::with_id(&app, "edit", "Edit", true) {
+                let _ = edit_menu.append_items(&[
+                    &PredefinedMenuItem::undo(&app, None).unwrap(),
+                    &PredefinedMenuItem::redo(&app, None).unwrap(),
+                    &PredefinedMenuItem::separator(&app).unwrap(),
+                    &PredefinedMenuItem::cut(&app, None).unwrap(),
+                    &PredefinedMenuItem::copy(&app, None).unwrap(),
+                    &PredefinedMenuItem::paste(&app, None).unwrap(),
+                    &PredefinedMenuItem::select_all(&app, None).unwrap(),
+                ]);
+                let _ = menu.append(&edit_menu);
+                builder = builder.menu(menu);
+            }
+        }
+    }
+
+    match builder.build() {
+        Ok(window) => {
+            log::info!(
+                "Forked chat window '{}' created with {} messages",
+                window_label,
+                messages.len()
+            );
+            let _ = window.set_focus();
+            Ok(window_label)
+        }
+        Err(e) => {
+            log::error!("Failed to create forked chat window: {}", e);
+            Err(format!("Failed to create forked chat window: {}", e))
+        }
+    }
+}
+
 #[tauri::command]
 #[specta::specta]
 pub fn cancel_operation(app: AppHandle) {

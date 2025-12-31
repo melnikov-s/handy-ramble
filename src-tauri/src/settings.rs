@@ -843,6 +843,36 @@ end tell"#.to_string()),
             model_override: None,
             is_builtin: true,
         },
+        VoiceCommand {
+            id: "lucky_search".to_string(),
+            name: "Lucky Search".to_string(),
+            phrases: vec![
+                "beads".to_string(),
+                "beach".to_string(),
+                "go to".to_string(),
+                "lucky search".to_string(),
+                "i'm feeling lucky".to_string(),
+            ],
+            command_type: VoiceCommandType::Custom,
+            description: Some(
+                "Searches Google and automatically clicks the first result.".to_string(),
+            ),
+            script_type: ScriptType::AppleScript,
+            script: Some(r#"tell application "Google Chrome"
+    activate
+    if (count of windows) is 0 then
+        make new window
+    end if
+    set newTab to make new tab at front window with properties {URL:"https://www.google.com/search?q=${transcription}"}
+    repeat until (loading of newTab is false)
+        delay 0.3
+    end repeat
+    delay 0.5
+    execute newTab javascript "var firstResult = document.querySelector('h3'); if (firstResult) { firstResult.click(); } else { var anchor = document.querySelector('a.zReHs'); if (anchor) anchor.click(); }"
+end tell"#.to_string()),
+            model_override: None,
+            is_builtin: true,
+        },
     ]
 }
 
