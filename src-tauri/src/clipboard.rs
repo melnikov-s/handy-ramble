@@ -248,3 +248,16 @@ pub fn get_selected_text(app_handle: &AppHandle) -> Result<Option<String>, Strin
         Ok(Some(selected_text))
     }
 }
+
+/// Gets the current clipboard content without modifying it.
+/// This is useful for the ${clipboard} variable in prompts.
+pub fn get_clipboard_content(app_handle: &AppHandle) -> Result<Option<String>, String> {
+    let clipboard = app_handle.clipboard();
+    let content = clipboard.read_text().unwrap_or_default();
+
+    if content.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(content))
+    }
+}

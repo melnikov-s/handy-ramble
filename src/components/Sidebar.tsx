@@ -22,6 +22,7 @@ import {
   RambleSettings,
   VoiceCommandSettings,
 } from "./settings";
+import { ChatHistorySettings } from "./settings/ChatHistorySettings";
 
 export type SidebarSection = keyof typeof SECTIONS_CONFIG;
 
@@ -45,6 +46,12 @@ export const SECTIONS_CONFIG = {
     labelKey: "sidebar.general",
     icon: RambleHand,
     component: GeneralSettings,
+    enabled: () => true,
+  },
+  chats: {
+    labelKey: "sidebar.chats",
+    icon: MessageSquare,
+    component: ChatHistorySettings,
     enabled: () => true,
   },
   ramble: {
@@ -108,7 +115,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     .map(([id, config]) => ({ id: id as SidebarSection, ...config }));
 
   return (
-    <div className="flex flex-col w-48 h-full border-r border-mid-gray/20 items-center px-2">
+    <div className="flex flex-col w-64 h-full border-r border-mid-gray/20 items-center px-2">
       <RambleTextLogo width={120} className="m-4" />
       <div className="flex flex-col w-full items-center gap-1 pt-2 border-t border-mid-gray/20">
         {availableSections.map((section) => {

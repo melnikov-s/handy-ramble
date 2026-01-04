@@ -340,6 +340,14 @@ async changeHoldThresholdSetting(thresholdMs: number) : Promise<Result<null, str
     else return { status: "error", error: e  as any };
 }
 },
+async changeClipboardContentCutoffSetting(cutoff: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_clipboard_content_cutoff_setting", { cutoff }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeUpdateChecksSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_update_checks_setting", { enabled }) };
@@ -909,6 +917,17 @@ async openChatWindowWithMessages(messages: ForkMessage[]) : Promise<Result<strin
 }
 },
 /**
+ * Opens a new chat window loading a saved chat from database
+ */
+async openSavedChat(chatId: number) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("open_saved_chat", { chatId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Command to capture a screenshot or region, hiding all app windows first
  */
 async captureScreenMode(region: boolean) : Promise<Result<string, string>> {
@@ -1033,6 +1052,78 @@ async setDefaultModel(feature: string, modelId: string | null) : Promise<Result<
  */
 async getDefaultModels() : Promise<DefaultModels> {
     return await TAURI_INVOKE("get_default_models");
+},
+async saveChat(title: string | null, messages: ChatMessage[]) : Promise<Result<number, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("save_chat", { title, messages }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async updateChat(id: number, messages: ChatMessage[]) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_chat", { id, messages }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async getChat(id: number) : Promise<Result<SavedChat | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("get_chat", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async listSavedChats() : Promise<Result<ChatSummary[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("list_saved_chats") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async deleteSavedChat(id: number) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("delete_saved_chat", { id }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async generateChatTitle(userMessage: string, assistantResponse: string) : Promise<Result<string, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("generate_chat_title", { userMessage, assistantResponse }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async updateChatTitle(id: number, title: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_chat_title", { id, title }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async speakText(text: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("speak_text", { text }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async stopTts() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("stop_tts") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 }
 }
 
@@ -1118,7 +1209,7 @@ voice_command_default_model?: string;
 /**
  * User-defined voice commands
  */
-voice_commands?: VoiceCommand[]; filler_word_filter?: string | null; 
+voice_commands?: VoiceCommand[]; tts_enabled?: boolean; tts_selected_model?: string | null; tts_speed?: number; tts_volume?: number; filler_word_filter?: string | null; 
 /**
  * Customizable initial prompt for the quick chat
  */
@@ -1135,11 +1226,17 @@ unknown_command_template?: string;
 /**
  * Terminal application to use (iTerm, Terminal, Warp)
  */
-unknown_command_terminal?: string }
+unknown_command_terminal?: string; 
+/**
+ * Maximum characters to include from clipboard content in ${clipboard} variable
+ * 0 = no cutoff (include all), other values = limit to N characters
+ */
+clipboard_content_cutoff?: number }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
 export type ChatMessage = { role: string; content: string; images: string[] | null }
 export type ChatResponse = { content: string; grounding_metadata: GroundingMetadata | null }
+export type ChatSummary = { id: number; title: string; created_at: number; updated_at: number; message_count: number }
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard"
 export type CustomSounds = { start: boolean; stop: boolean }
 export type DefaultModels = { chat: string | null; coherent: string | null; voice: string | null }
@@ -1147,14 +1244,14 @@ export type DefaultModels = { chat: string | null; coherent: string | null; voic
  * Detected app info (for tracking history)
  */
 export type DetectedApp = { bundle_identifier: string; display_name: string; last_seen: number }
-export type EngineType = "Whisper" | "Parakeet"
+export type EngineType = "Whisper" | "Parakeet" | "TTS"
 /**
  * Message structure for forking conversations
  */
 export type ForkMessage = { role: string; content: string }
 export type GroundingChunk = { uri: string | null; title: string | null }
 export type GroundingMetadata = { search_entry_point: string | null; chunks: GroundingChunk[] }
-export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null }
+export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; transcription_status: string; transcription_error: string | null }
 /**
  * Information about an installed application (from JSON)
  */
@@ -1248,6 +1345,7 @@ export type PromptMode = "dynamic" |
  */
 "high"
 export type RecordingRetentionPeriod = "never" | "preserve_limit" | "days_3" | "weeks_2" | "months_3"
+export type SavedChat = { id: number; title: string; created_at: number; updated_at: number; messages: ChatMessage[] }
 /**
  * Script type for bespoke commands
  */

@@ -25,15 +25,18 @@ mod tray_i18n;
 mod utils;
 mod vision;
 
+mod tts;
 mod voice_commands;
 use specta_typescript::{BigIntExportBehavior, Typescript};
 use tauri_specta::{collect_commands, Builder};
 
 use env_filter::Builder as EnvFilterBuilder;
 use managers::audio::AudioRecordingManager;
+use managers::chat_persistence::ChatPersistenceManager;
 use managers::history::HistoryManager;
 use managers::model::ModelManager;
 use managers::transcription::TranscriptionManager;
+use managers::tts::TTSManager;
 #[cfg(unix)]
 use signal_hook::consts::SIGUSR2;
 #[cfg(unix)]
@@ -136,12 +139,19 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     );
     let history_manager =
         Arc::new(HistoryManager::new(app_handle).expect("Failed to initialize history manager"));
+    let chat_persistence_manager = Arc::new(
+        ChatPersistenceManager::new(app_handle)
+            .expect("Failed to initialize chat persistence manager"),
+    );
+    let tts_manager = Arc::new(TTSManager::new(app_handle, model_manager.clone()));
 
     // Add managers to Tauri's managed state
     app_handle.manage(recording_manager.clone());
     app_handle.manage(model_manager.clone());
     app_handle.manage(transcription_manager.clone());
     app_handle.manage(history_manager.clone());
+    app_handle.manage(chat_persistence_manager.clone());
+    app_handle.manage(tts_manager.clone());
 
     // Initialize the unified key listener (for standalone modifier key bindings on macOS)
     #[cfg(target_os = "macos")]
@@ -300,6 +310,7 @@ pub fn run() {
         shortcut::change_ramble_vision_model_setting,
         shortcut::reset_ramble_prompt_to_default,
         shortcut::change_hold_threshold_setting,
+        shortcut::change_clipboard_content_cutoff_setting,
         shortcut::change_update_checks_setting,
         shortcut::change_prompt_mode_setting,
         shortcut::update_prompt_category,
@@ -374,6 +385,7 @@ pub fn run() {
         commands::chat::chat_completion,
         commands::open_chat_window,
         commands::open_chat_window_with_messages,
+        commands::open_saved_chat,
         commands::capture_screen_mode,
         commands::capture_region_command,
         commands::open_clipping_tool,
@@ -389,6 +401,15 @@ pub fn run() {
         commands::providers::delete_llm_model,
         commands::providers::set_default_model,
         commands::providers::get_default_models,
+        commands::chat_persistence::save_chat,
+        commands::chat_persistence::update_chat,
+        commands::chat_persistence::get_chat,
+        commands::chat_persistence::list_saved_chats,
+        commands::chat_persistence::delete_saved_chat,
+        commands::chat_persistence::generate_chat_title,
+        commands::chat_persistence::update_chat_title,
+        commands::tts::speak_text,
+        commands::tts::stop_tts,
     ]);
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds

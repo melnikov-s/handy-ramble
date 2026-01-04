@@ -31,6 +31,11 @@ static MIGRATIONS: &[M] = &[
     ),
     M::up("ALTER TABLE transcription_history ADD COLUMN post_processed_text TEXT;"),
     M::up("ALTER TABLE transcription_history ADD COLUMN post_process_prompt TEXT;"),
+    // Migration 4: Add transcription status tracking for error recovery
+    M::up(
+        "ALTER TABLE transcription_history ADD COLUMN transcription_status TEXT DEFAULT 'success';",
+    ),
+    M::up("ALTER TABLE transcription_history ADD COLUMN transcription_error TEXT;"),
 ];
 
 #[derive(Clone, Debug, Serialize, Deserialize, Type)]
@@ -43,6 +48,8 @@ pub struct HistoryEntry {
     pub transcription_text: String,
     pub post_processed_text: Option<String>,
     pub post_process_prompt: Option<String>,
+    pub transcription_status: String,
+    pub transcription_error: Option<String>,
 }
 
 pub struct HistoryManager {
@@ -224,11 +231,87 @@ impl HistoryManager {
     ) -> Result<()> {
         let conn = self.get_connection()?;
         conn.execute(
-            "INSERT INTO transcription_history (file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO transcription_history (file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, transcription_status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'success')",
             params![file_name, timestamp, false, title, transcription_text, post_processed_text, post_process_prompt],
         )?;
 
         debug!("Saved transcription to database");
+        Ok(())
+    }
+
+    /// Save just the recording (WAV file + minimal DB entry) before transcription.
+    /// Returns the entry ID for later update.
+    pub async fn save_recording_only(&self, audio_samples: &[f32]) -> Result<i64> {
+        let timestamp = Utc::now().timestamp();
+        let file_name = format!("ramble-{}.wav", timestamp);
+        let title = self.format_timestamp_title(timestamp);
+
+        // Save WAV file first - this is the critical part we don't want to lose
+        let file_path = self.recordings_dir.join(&file_name);
+        save_wav_file(file_path, audio_samples).await?;
+        info!("Saved recording to WAV file: {}", file_name);
+
+        // Save to database with 'pending' status and empty transcription
+        let conn = self.get_connection()?;
+        conn.execute(
+            "INSERT INTO transcription_history (file_name, timestamp, saved, title, transcription_text, transcription_status) VALUES (?1, ?2, ?3, ?4, '', 'pending')",
+            params![file_name, timestamp, false, title],
+        )?;
+
+        let id = conn.last_insert_rowid();
+        debug!(
+            "Saved recording to database with pending status, id: {}",
+            id
+        );
+
+        Ok(id)
+    }
+
+    /// Update an existing entry with successful transcription results.
+    pub async fn update_transcription(
+        &self,
+        id: i64,
+        transcription_text: String,
+        post_processed_text: Option<String>,
+        post_process_prompt: Option<String>,
+    ) -> Result<()> {
+        let conn = self.get_connection()?;
+        conn.execute(
+            "UPDATE transcription_history SET transcription_text = ?1, post_processed_text = ?2, post_process_prompt = ?3, transcription_status = 'success', transcription_error = NULL WHERE id = ?4",
+            params![transcription_text, post_processed_text, post_process_prompt, id],
+        )?;
+
+        debug!("Updated transcription for entry {}", id);
+
+        // Clean up old entries
+        self.cleanup_old_entries()?;
+
+        // Emit history updated event
+        if let Err(e) = self.app_handle.emit("history-updated", ()) {
+            error!("Failed to emit history-updated event: {}", e);
+        }
+
+        Ok(())
+    }
+
+    /// Update an existing entry with transcription error.
+    pub async fn update_transcription_error(&self, id: i64, error_message: String) -> Result<()> {
+        let conn = self.get_connection()?;
+        conn.execute(
+            "UPDATE transcription_history SET transcription_status = 'failed', transcription_error = ?1 WHERE id = ?2",
+            params![error_message, id],
+        )?;
+
+        debug!(
+            "Updated transcription error for entry {}: {}",
+            id, error_message
+        );
+
+        // Emit history updated event so UI can show the failed entry
+        if let Err(e) = self.app_handle.emit("history-updated", ()) {
+            error!("Failed to emit history-updated event: {}", e);
+        }
+
         Ok(())
     }
 
@@ -355,7 +438,7 @@ impl HistoryManager {
     pub async fn get_history_entries(&self) -> Result<Vec<HistoryEntry>> {
         let conn = self.get_connection()?;
         let mut stmt = conn.prepare(
-            "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt FROM transcription_history ORDER BY timestamp DESC"
+            "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, transcription_status, transcription_error FROM transcription_history ORDER BY timestamp DESC"
         )?;
 
         let rows = stmt.query_map([], |row| {
@@ -368,6 +451,10 @@ impl HistoryManager {
                 transcription_text: row.get("transcription_text")?,
                 post_processed_text: row.get("post_processed_text")?,
                 post_process_prompt: row.get("post_process_prompt")?,
+                transcription_status: row
+                    .get::<_, Option<String>>("transcription_status")?
+                    .unwrap_or_else(|| "success".to_string()),
+                transcription_error: row.get("transcription_error")?,
             })
         })?;
 
@@ -413,7 +500,7 @@ impl HistoryManager {
     pub async fn get_entry_by_id(&self, id: i64) -> Result<Option<HistoryEntry>> {
         let conn = self.get_connection()?;
         let mut stmt = conn.prepare(
-            "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt
+            "SELECT id, file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, transcription_status, transcription_error
              FROM transcription_history WHERE id = ?1",
         )?;
 
@@ -428,6 +515,10 @@ impl HistoryManager {
                     transcription_text: row.get("transcription_text")?,
                     post_processed_text: row.get("post_processed_text")?,
                     post_process_prompt: row.get("post_process_prompt")?,
+                    transcription_status: row
+                        .get::<_, Option<String>>("transcription_status")?
+                        .unwrap_or_else(|| "success".to_string()),
+                    transcription_error: row.get("transcription_error")?,
                 })
             })
             .optional()?;

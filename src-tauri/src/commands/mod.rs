@@ -1,15 +1,17 @@
 pub mod audio;
 pub mod chat;
+pub mod chat_persistence;
 pub mod history;
 pub mod models;
 pub mod providers;
 pub mod transcription;
+pub mod tts;
 
 use crate::settings::{get_settings, write_settings, AppSettings, LogLevel};
 use crate::utils::{cancel_current_operation, resume_current_operation};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Mutex;
-use tauri::{AppHandle, Emitter, Manager, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager, WebviewWindowBuilder};
 use tauri_plugin_opener::OpenerExt;
 
 // Counter for unique chat window labels
@@ -45,7 +47,7 @@ pub fn open_chat_window(app: AppHandle, context: Option<String>) -> Result<Strin
 
     #[cfg(target_os = "macos")]
     {
-        use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+        use tauri::menu::{Menu, PredefinedMenuItem, Submenu};
         if let Ok(menu) = Menu::with_id(&app, "chat_menu") {
             if let Ok(edit_menu) = Submenu::with_id(&app, "edit", "Edit", true) {
                 let _ = edit_menu.append_items(&[
@@ -111,7 +113,7 @@ pub fn open_chat_window_with_messages(
 
     #[cfg(target_os = "macos")]
     {
-        use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+        use tauri::menu::{Menu, PredefinedMenuItem, Submenu};
         if let Ok(menu) = Menu::with_id(&app, "chat_menu") {
             if let Ok(edit_menu) = Submenu::with_id(&app, "edit", "Edit", true) {
                 let _ = edit_menu.append_items(&[
@@ -142,6 +144,62 @@ pub fn open_chat_window_with_messages(
         Err(e) => {
             log::error!("Failed to create forked chat window: {}", e);
             Err(format!("Failed to create forked chat window: {}", e))
+        }
+    }
+}
+
+/// Opens a new chat window loading a saved chat from database
+#[tauri::command]
+#[specta::specta]
+pub fn open_saved_chat(app: AppHandle, chat_id: i64) -> Result<String, String> {
+    let window_id = CHAT_WINDOW_COUNTER.fetch_add(1, Ordering::SeqCst);
+    let window_label = format!("chat_{}", window_id);
+
+    let url = format!("src/chat/index.html?chatId={}", chat_id);
+
+    let mut builder =
+        WebviewWindowBuilder::new(&app, &window_label, tauri::WebviewUrl::App(url.into()))
+            .title("Ramble Chat")
+            .inner_size(500.0, 600.0)
+            .min_inner_size(400.0, 400.0)
+            .resizable(true)
+            .visible(true)
+            .focused(true)
+            .always_on_top(true);
+
+    #[cfg(target_os = "macos")]
+    {
+        use tauri::menu::{Menu, PredefinedMenuItem, Submenu};
+        if let Ok(menu) = Menu::with_id(&app, "chat_menu") {
+            if let Ok(edit_menu) = Submenu::with_id(&app, "edit", "Edit", true) {
+                let _ = edit_menu.append_items(&[
+                    &PredefinedMenuItem::undo(&app, None).unwrap(),
+                    &PredefinedMenuItem::redo(&app, None).unwrap(),
+                    &PredefinedMenuItem::separator(&app).unwrap(),
+                    &PredefinedMenuItem::cut(&app, None).unwrap(),
+                    &PredefinedMenuItem::copy(&app, None).unwrap(),
+                    &PredefinedMenuItem::paste(&app, None).unwrap(),
+                    &PredefinedMenuItem::select_all(&app, None).unwrap(),
+                ]);
+                let _ = menu.append(&edit_menu);
+                builder = builder.menu(menu);
+            }
+        }
+    }
+
+    match builder.build() {
+        Ok(window) => {
+            log::info!(
+                "Saved chat window '{}' created with id {}",
+                window_label,
+                chat_id
+            );
+            let _ = window.set_focus();
+            Ok(window_label)
+        }
+        Err(e) => {
+            log::error!("Failed to create saved chat window: {}", e);
+            Err(format!("Failed to create saved chat window: {}", e))
         }
     }
 }

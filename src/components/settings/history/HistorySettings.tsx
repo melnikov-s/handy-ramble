@@ -266,12 +266,26 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
 
   const formattedDate = formatDateTime(String(entry.timestamp), i18n.language);
   const hasRefinedText = !!entry.post_processed_text;
+  const isFailed = entry.transcription_status === "failed";
+  const isPending = entry.transcription_status === "pending";
 
   return (
     <div className="px-4 py-2 pb-5 flex flex-col gap-3">
       {/* Header with date and action buttons */}
       <div className="flex justify-between items-center">
-        <p className="text-sm font-medium">{formattedDate}</p>
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-medium">{formattedDate}</p>
+          {isFailed && (
+            <span className="text-xs bg-red-500/20 text-red-400 px-2 py-0.5 rounded">
+              {t("settings.history.failed")}
+            </span>
+          )}
+          {isPending && (
+            <span className="text-xs bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded">
+              {t("settings.history.processing")}
+            </span>
+          )}
+        </div>
         <div className="flex items-center gap-1">
           <button
             onClick={onToggleSaved}
@@ -302,41 +316,80 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
         </div>
       </div>
 
-      {/* Text content */}
-      {hasRefinedText ? (
-        // Two-section layout: Original + Refined
-        <div className="flex flex-col gap-3">
-          {/* Refined text - primary/prominent */}
-          <div className="border-l-2 border-logo-primary/60 pl-3">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium text-logo-primary/80 uppercase tracking-wide">
-                {t("settings.history.refined")}
-              </span>
-              <button
-                onClick={handleCopyRefined}
-                className="text-text/50 hover:text-logo-primary transition-colors cursor-pointer p-1"
-                title={t("settings.history.copyRefined")}
-              >
-                {showCopiedRefined ? (
-                  <Check width={14} height={14} />
-                ) : (
-                  <Copy width={14} height={14} />
-                )}
-              </button>
-            </div>
-            <p className="text-text/90 text-sm">{entry.post_processed_text}</p>
-          </div>
+      {/* Error message for failed transcriptions */}
+      {isFailed && entry.transcription_error && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
+          <p className="text-sm text-red-400">
+            {t("settings.history.transcriptionFailed")}
+          </p>
+          <p className="text-xs text-red-400/70 mt-1 font-mono">
+            {entry.transcription_error}
+          </p>
+        </div>
+      )}
 
-          {/* Original text - secondary/muted */}
-          <div className="border-l-2 border-mid-gray/40 pl-3">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-medium text-mid-gray uppercase tracking-wide">
-                {t("settings.history.original")}
-              </span>
+      {/* Text content - only show if not failed/pending */}
+      {!isFailed && !isPending && (
+        <>
+          {hasRefinedText ? (
+            // Two-section layout: Original + Refined
+            <div className="flex flex-col gap-3">
+              {/* Refined text - primary/prominent */}
+              <div className="border-l-2 border-logo-primary/60 pl-3">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-medium text-logo-primary/80 uppercase tracking-wide">
+                    {t("settings.history.refined")}
+                  </span>
+                  <button
+                    onClick={handleCopyRefined}
+                    className="text-text/50 hover:text-logo-primary transition-colors cursor-pointer p-1"
+                    title={t("settings.history.copyRefined")}
+                  >
+                    {showCopiedRefined ? (
+                      <Check width={14} height={14} />
+                    ) : (
+                      <Copy width={14} height={14} />
+                    )}
+                  </button>
+                </div>
+                <p className="text-text/90 text-sm">
+                  {entry.post_processed_text}
+                </p>
+              </div>
+
+              {/* Original text - secondary/muted */}
+              <div className="border-l-2 border-mid-gray/40 pl-3">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-medium text-mid-gray uppercase tracking-wide">
+                    {t("settings.history.original")}
+                  </span>
+                  <button
+                    onClick={handleCopyOriginal}
+                    className="text-text/50 hover:text-logo-primary transition-colors cursor-pointer p-1"
+                    title={t("settings.history.copyOriginal")}
+                  >
+                    {showCopiedOriginal ? (
+                      <Check width={14} height={14} />
+                    ) : (
+                      <Copy width={14} height={14} />
+                    )}
+                  </button>
+                </div>
+                <p className="italic text-text/60 text-sm">
+                  {entry.transcription_text}
+                </p>
+              </div>
+            </div>
+          ) : (
+            // Single-section layout: Original only (with copy button)
+            <div className="flex items-start justify-between gap-2">
+              <p className="italic text-text/90 text-sm flex-1">
+                {entry.transcription_text}
+              </p>
               <button
                 onClick={handleCopyOriginal}
-                className="text-text/50 hover:text-logo-primary transition-colors cursor-pointer p-1"
-                title={t("settings.history.copyOriginal")}
+                className="text-text/50 hover:text-logo-primary transition-colors cursor-pointer p-1 flex-shrink-0"
+                title={t("settings.history.copyToClipboard")}
               >
                 {showCopiedOriginal ? (
                   <Check width={14} height={14} />
@@ -345,29 +398,8 @@ const HistoryEntryComponent: React.FC<HistoryEntryProps> = ({
                 )}
               </button>
             </div>
-            <p className="italic text-text/60 text-sm">
-              {entry.transcription_text}
-            </p>
-          </div>
-        </div>
-      ) : (
-        // Single-section layout: Original only (with copy button)
-        <div className="flex items-start justify-between gap-2">
-          <p className="italic text-text/90 text-sm flex-1">
-            {entry.transcription_text}
-          </p>
-          <button
-            onClick={handleCopyOriginal}
-            className="text-text/50 hover:text-logo-primary transition-colors cursor-pointer p-1 flex-shrink-0"
-            title={t("settings.history.copyToClipboard")}
-          >
-            {showCopiedOriginal ? (
-              <Check width={14} height={14} />
-            ) : (
-              <Copy width={14} height={14} />
-            )}
-          </button>
-        </div>
+          )}
+        </>
       )}
 
       {audioUrl && <AudioPlayer src={audioUrl} className="w-full" />}

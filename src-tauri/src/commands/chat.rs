@@ -7,7 +7,7 @@ use async_openai::types::{
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
-#[derive(Debug, Serialize, Deserialize, specta::Type)]
+#[derive(Debug, Serialize, Deserialize, specta::Type, Clone)]
 pub struct ChatMessage {
     pub role: String,
     pub content: String,
@@ -43,7 +43,7 @@ pub async fn chat_completion(
     app: AppHandle,
     messages: Vec<ChatMessage>,
     model_id: Option<String>,
-    enable_grounding: bool,
+    _enable_grounding: bool,
 ) -> Result<ChatResponse, String> {
     let settings = get_settings(&app);
 

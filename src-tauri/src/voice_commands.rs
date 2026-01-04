@@ -18,8 +18,6 @@ pub enum CommandResult {
     Success,
     /// Command failed with an error message
     Error(String),
-    /// Internal command that should be handled by the caller
-    InternalCommand(String),
 }
 
 /// Execute a bespoke (user-defined script) command
@@ -46,12 +44,6 @@ pub fn execute_bespoke_command(
         "Executing bespoke command '{}' with script type {:?}",
         command.name, command.script_type
     );
-
-    // Check for internal commands (not actual shell/applescript)
-    if script == "open_chat_window" {
-        // This is handled specially by the caller
-        return CommandResult::InternalCommand("open_chat_window".to_string());
-    }
 
     // Substitute placeholders with actual text (escaped appropriately)
     let mut processed_script = script.clone();
@@ -247,10 +239,14 @@ COMMAND TYPES:
 - "builtin" commands: Have native handlers. Just match and return the command ID.
 - "custom" commands: Have user-defined scripts. Just match and return the command ID.
 
+SHELL COMMANDS:
+If the user is asking you to do something that can be done with a shell command (e.g., "list all files in my home directory", "create a folder called test", "show disk space", "find all python files"), and it does NOT match any available command above, return execution_type "shell" with the actual shell command.
+
 Respond with JSON:
 {
   "matched_command": "command_id" or null,
-  "execution_type": "builtin" | "custom" | "paste" | "unknown",
+  "execution_type": "builtin" | "custom" | "paste" | "shell" | "unknown",
+  "command": "the shell command" (only for execution_type "shell"),
   "explanation": "brief explanation"
 }
 
@@ -261,7 +257,14 @@ For text responses or information:
   "output": "text to paste"
 }
 
-IMPORTANT: If the command does NOT match any available command, return:
+For shell commands (system operations that can be done via terminal):
+{
+  "matched_command": null,
+  "execution_type": "shell",
+  "command": "ls -la ~"
+}
+
+IMPORTANT: If the command does NOT match any available command AND is NOT a shell command, return:
 {
   "matched_command": null,
   "execution_type": "unknown"

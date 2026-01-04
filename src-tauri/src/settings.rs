@@ -518,6 +518,15 @@ pub struct AppSettings {
     /// User-defined voice commands
     #[serde(default = "default_voice_commands")]
     pub voice_commands: Vec<VoiceCommand>,
+    // TTS Settings
+    #[serde(default = "default_tts_enabled")]
+    pub tts_enabled: bool,
+    #[serde(default)]
+    pub tts_selected_model: Option<String>,
+    #[serde(default = "default_tts_speed")]
+    pub tts_speed: f32,
+    #[serde(default = "default_tts_volume")]
+    pub tts_volume: f32,
     #[serde(default)]
     pub filler_word_filter: Option<String>,
     /// Customizable initial prompt for the quick chat
@@ -534,6 +543,10 @@ pub struct AppSettings {
     /// Terminal application to use (iTerm, Terminal, Warp)
     #[serde(default = "default_unknown_command_terminal")]
     pub unknown_command_terminal: String,
+    /// Maximum characters to include from clipboard content in ${clipboard} variable
+    /// 0 = no cutoff (include all), other values = limit to N characters
+    #[serde(default)]
+    pub clipboard_content_cutoff: u32,
 }
 
 fn default_model() -> String {
@@ -597,6 +610,18 @@ fn default_audio_feedback_volume() -> f32 {
 
 fn default_sound_theme() -> SoundTheme {
     SoundTheme::Marimba
+}
+
+fn default_tts_enabled() -> bool {
+    true
+}
+
+fn default_tts_speed() -> f32 {
+    1.0
+}
+
+fn default_tts_volume() -> f32 {
+    1.0
 }
 
 fn default_post_process_enabled() -> bool {
@@ -808,78 +833,6 @@ fn default_voice_commands() -> Vec<VoiceCommand> {
             ),
             script_type: ScriptType::Shell,
             script: None,
-            model_override: None,
-            is_builtin: true,
-        },
-        // CLI Launcher commands - open terminal with CLI pre-filled
-        VoiceCommand {
-            id: "cli_gemini".to_string(),
-            name: "Ask Gemini CLI".to_string(),
-            phrases: vec![
-                "ask gemini".to_string(),
-                "gemini cli".to_string(),
-                "gemini".to_string(),
-            ],
-            command_type: VoiceCommandType::Custom,
-            description: Some(
-                "Opens iTerm with Gemini CLI pre-filled with the selected text as the prompt."
-                    .to_string(),
-            ),
-            script_type: ScriptType::AppleScript,
-            script: Some(r#"tell application "iTerm"
-    activate
-    create window with default profile
-    tell current session of current window
-        write text "gemini \"${selection}\"" without newline
-    end tell
-end tell"#.to_string()),
-            model_override: None,
-            is_builtin: true,
-        },
-        VoiceCommand {
-            id: "cli_claude".to_string(),
-            name: "Ask Claude CLI".to_string(),
-            phrases: vec![
-                "ask claude".to_string(),
-                "claude cli".to_string(),
-            ],
-            command_type: VoiceCommandType::Custom,
-            description: Some(
-                "Opens iTerm with Claude CLI pre-filled with the selected text as the prompt."
-                    .to_string(),
-            ),
-            script_type: ScriptType::AppleScript,
-            script: Some(r#"tell application "iTerm"
-    activate
-    create window with default profile
-    tell current session of current window
-        write text "claude \"${selection}\"" without newline
-    end tell
-end tell"#.to_string()),
-            model_override: None,
-            is_builtin: true,
-        },
-        VoiceCommand {
-            id: "cli_cloudcode".to_string(),
-            name: "Cloud Code".to_string(),
-            phrases: vec![
-                "cloud code".to_string(),
-                "cloudcode".to_string(),
-                "code with cloud".to_string(),
-            ],
-            command_type: VoiceCommandType::Custom,
-            description: Some(
-                "Opens iTerm with Cloud Code CLI pre-filled with the selected text as the prompt."
-                    .to_string(),
-            ),
-            script_type: ScriptType::AppleScript,
-            script: Some(r#"tell application "iTerm"
-    activate
-    create window with default profile
-    tell current session of current window
-        write text "cloudcode \"${selection}\"" without newline
-    end tell
-end tell"#.to_string()),
             model_override: None,
             is_builtin: true,
         },
@@ -1533,6 +1486,16 @@ pub fn get_default_settings() -> AppSettings {
             current_binding: "".to_string(),
         },
     );
+    bindings.insert(
+        "speak_selection".to_string(),
+        ShortcutBinding {
+            id: "speak_selection".to_string(),
+            name: "Speak Selection".to_string(),
+            description: "Reads the currently selected text aloud using AI.".to_string(),
+            default_binding: "Option+S".to_string(),
+            current_binding: "Option+S".to_string(),
+        },
+    );
 
     // Note: ramble_to_coherent is no longer a separate binding.
     // Unified hotkey: hold transcribe key = raw, quick tap = coherent.
@@ -1588,12 +1551,19 @@ pub fn get_default_settings() -> AppSettings {
         voice_commands_enabled: false,
         voice_command_default_model: default_voice_command_model(),
         voice_commands: default_voice_commands(),
+        // TTS Settings
+        tts_enabled: default_tts_enabled(),
+        tts_selected_model: None,
+        tts_speed: default_tts_speed(),
+        tts_volume: default_tts_volume(),
         filler_word_filter: default_filler_word_filter(),
         quick_chat_initial_prompt: default_quick_chat_initial_prompt(),
         // Unknown command agent settings
         unknown_command_agent_enabled: false,
         unknown_command_template: default_unknown_command_template(),
         unknown_command_terminal: default_unknown_command_terminal(),
+        // Clipboard settings
+        clipboard_content_cutoff: 0,
     }
 }
 

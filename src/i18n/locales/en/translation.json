@@ -17,6 +17,7 @@
     "advanced": "Advanced",
     "postProcessing": "Post Process",
     "history": "History",
+    "chats": "Chats",
     "debug": "Debug",
     "about": "About"
   },
@@ -292,7 +293,10 @@
       "save": "Save transcription",
       "unsave": "Remove from saved",
       "delete": "Delete entry",
-      "deleteError": "Failed to delete entry. Please try again."
+      "deleteError": "Failed to delete entry. Please try again.",
+      "failed": "Failed",
+      "processing": "Processing",
+      "transcriptionFailed": "Transcription failed. Your recording has been saved and can be played or downloaded below."
     },
     "debug": {
       "title": "Debug",

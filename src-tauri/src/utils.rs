@@ -1,4 +1,5 @@
 use crate::managers::audio::AudioRecordingManager;
+use crate::managers::tts::TTSManager;
 use crate::ManagedToggleState;
 use log::{info, warn};
 use std::sync::Arc;
@@ -31,6 +32,13 @@ pub fn cancel_current_operation(app: &AppHandle) {
     // Cancel any ongoing recording
     let audio_manager = app.state::<Arc<AudioRecordingManager>>();
     audio_manager.cancel_recording();
+
+    // Stop any ongoing TTS
+    let tts_manager = app.state::<Arc<TTSManager>>();
+    let tts_manager_cloned = tts_manager.inner().clone();
+    tokio::spawn(async move {
+        let _ = tts_manager_cloned.stop().await;
+    });
 
     // Update tray icon and hide overlay
     change_tray_icon(app, crate::tray::TrayIconState::Idle);

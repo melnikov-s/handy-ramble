@@ -5254,6 +5254,7 @@ version = "0.6.8"
 dependencies = [
  "anyhow",
  "async-openai 0.30.1",
+ "async-trait",
  "base64 0.22.1",
  "chrono",
  "core-foundation 0.10.1",
@@ -5268,7 +5269,9 @@ dependencies = [
  "image",
  "log",
  "natural",
+ "ndarray",
  "once_cell",
+ "ort",
  "rdev",
  "regex",
  "reqwest",

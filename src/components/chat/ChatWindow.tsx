@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils/cn";
 import { useThreadRuntime, useThread } from "@assistant-ui/react";
+import { useChatPersistence } from "../../hooks/useChatPersistence";
 
 // Component to copy entire chat as markdown (must be inside AssistantRuntimeProvider)
 const CopyAllHeader: React.FC = () => {
@@ -143,14 +144,40 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
   const [models, setModels] = useState<LLMModel[]>([]);
   const [providers, setProviders] = useState<LLMProvider[]>([]);
   const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
+  const [currentInitialMessages, setCurrentInitialMessages] = useState<
+    Array<{ role: string; content: string }> | undefined
+  >(initialMessages);
   const [isLoading, setIsLoading] = useState(true);
   const [initialPrompt, setInitialPrompt] = useState("");
   const [attachments, setAttachments] = useState<string[]>([]);
+  const [chatIdState, setChatIdState] = useState<number | null>(null);
+  const { saveChat, updateChat, getChat, generateTitle, updateChatTitle } =
+    useChatPersistence();
 
-  // Load models and providers on mount
+  // Load models, providers and saved chat on mount
   useEffect(() => {
     const loadData = async () => {
       try {
+        // Check for chatId in URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlChatId = urlParams.get("chatId");
+        let messagesToLoad = initialMessages;
+
+        if (urlChatId) {
+          const id = parseInt(urlChatId);
+          if (!isNaN(id)) {
+            const savedChat = await getChat(id);
+            if (savedChat) {
+              setChatIdState(id);
+              const msgs = savedChat.messages.map((msg) => ({
+                role: msg.role,
+                content: msg.content,
+              }));
+              setCurrentInitialMessages(msgs);
+              console.log("ChatWindow: Loaded saved chat", id);
+            }
+          }
+        }
         const [
           modelsResult,
           providersResult,
@@ -221,13 +248,21 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
   const selectedModelIdRef = useRef(selectedModelId);
   const initialPromptRef = useRef(initialPrompt);
   const initialContextRef = useRef(initialContext);
+  const chatIdStateRef = useRef(chatIdState);
 
   useEffect(() => {
     attachmentsRef.current = attachments;
     selectedModelIdRef.current = selectedModelId;
     initialPromptRef.current = initialPrompt;
     initialContextRef.current = initialContext;
-  }, [attachments, selectedModelId, initialPrompt, initialContext]);
+    chatIdStateRef.current = chatIdState;
+  }, [
+    attachments,
+    selectedModelId,
+    initialPrompt,
+    initialContext,
+    chatIdState,
+  ]);
 
   const [runtime] = useState(() => {
     const adapter: ChatModelAdapter = {
@@ -281,8 +316,63 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
 
           if (response.status === "ok") {
             setAttachments([]);
+            const assistantContent = response.data.content;
+
+            // Auto-save logic
+            setTimeout(async () => {
+              try {
+                const currentMessages = formattedMessages.map((msg) => ({
+                  role: msg.role,
+                  content: msg.content,
+                  images: msg.images || null,
+                }));
+
+                // Add the new assistant message
+                currentMessages.push({
+                  role: "assistant",
+                  content: assistantContent,
+                  images: null,
+                });
+
+                if (chatIdStateRef.current) {
+                  await updateChat(chatIdStateRef.current, currentMessages);
+                } else {
+                  // New chat - save and generate title
+                  const newId = await saveChat(currentMessages, "New Chat");
+                  setChatIdState(newId);
+
+                  // Generate title after first user msg + assistant resp
+                  // Only if this is the FIRST exchange (messages count will be 3: system, user, assistant)
+                  if (currentMessages.length <= 3) {
+                    const userMsg = messages[messages.length - 1];
+                    const userText =
+                      typeof userMsg.content === "string"
+                        ? userMsg.content
+                        : userMsg.content
+                            .filter((p) => p.type === "text")
+                            .map((p) => (p as any).text)
+                            .join("");
+
+                    try {
+                      const title = await generateTitle(
+                        userText,
+                        assistantContent,
+                      );
+                      if (title) {
+                        await updateChatTitle(newId, title);
+                      }
+                    } catch (titleErr) {
+                      console.error("Failed to generate title:", titleErr);
+                    }
+                  }
+                }
+              } catch (saveErr) {
+                console.error("Failed to auto-save chat:", saveErr);
+              }
+            }, 0);
+
             yield {
-              content: [{ type: "text" as const, text: response.data.content }],
+              content: [{ type: "text" as const, text: assistantContent }],
               metadata: {
                 custom: {
                   groundingMetadata: response.data.grounding_metadata,
@@ -331,7 +421,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
       {/* Chat thread */}
       <div className="relative flex-1 overflow-hidden bg-app-base">
         <AssistantRuntimeProvider runtime={chatRuntime}>
-          <InitialMessageLoader messages={initialMessages} />
+          <InitialMessageLoader messages={currentInitialMessages} />
           <CopyAllHeader />
           <Thread
             attachments={attachments}

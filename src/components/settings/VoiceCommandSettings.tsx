@@ -36,7 +36,11 @@ export const VoiceCommandSettings: React.FC = () => {
   // Current selected voice command model
   const selectedModelId = defaultModels?.voice || null;
 
-  const voiceCommands = (settings as any)?.voice_commands ?? [];
+  // Filter out deprecated CLI commands that were removed
+  const deprecatedCommandIds = ["cli_gemini", "cli_claude", "cli_cloudcode"];
+  const voiceCommands = ((settings as any)?.voice_commands ?? []).filter(
+    (cmd: VoiceCommand) => !deprecatedCommandIds.includes(cmd.id),
+  );
   const voiceCommandBinding =
     settings?.bindings?.["voice_command"]?.current_binding ?? "right_command";
 
