@@ -64,7 +64,7 @@ export const Thread: FC<ThreadProps> = ({
         />
       </ThreadPrimitive.Viewport>
 
-      <div className="absolute bottom-0 left-0 right-0 mx-auto w-full max-w-2xl px-4 pb-4 bg-gradient-to-t from-[var(--color-background)] via-[var(--color-background)] to-transparent pt-8 pointer-events-none">
+      <div className="absolute bottom-0 left-0 right-0 mx-auto w-full max-w-[900px] px-4 pb-4 bg-gradient-to-t from-[var(--color-background)] via-[var(--color-background)] to-transparent pt-8 pointer-events-none">
         <Composer
           attachments={attachments}
           setAttachments={setAttachments}
@@ -225,7 +225,7 @@ const Composer: FC<ThreadProps> = ({
 const UserMessage: FC = () => {
   return (
     <MessagePrimitive.Root className="mb-4 flex justify-end">
-      <div className="max-w-[80%] rounded-lg bg-[var(--color-logo-primary)] px-4 py-2 text-white">
+      <div className="max-w-[900px] rounded-lg bg-[var(--color-logo-primary)] px-4 py-2 text-white">
         <MessagePrimitive.Content />
       </div>
     </MessagePrimitive.Root>
@@ -241,12 +241,36 @@ const AssistantMessage: FC = () => {
 
   return (
     <MessagePrimitive.Root className="mb-4 flex flex-col group">
-      <div className="w-fit max-w-[80%]">
-        <div className="rounded-lg bg-[var(--color-text)]/10 px-4 py-2 text-[var(--color-text)] [&_p]:my-1 [&_ul]:list-disc [&_ul]:pl-4 [&_ol]:list-decimal [&_ol]:pl-4 [&_code]:bg-black/10 [&_code]:rounded [&_code]:px-1 [&_pre]:bg-black/10 [&_pre]:p-2 [&_pre]:rounded [&_pre]:overflow-x-auto">
+      <div className="w-fit max-w-[900px]">
+        <div className="rounded-lg bg-[var(--color-text)]/10 px-4 py-3 text-[var(--color-text)] [&_p]:my-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ul]:my-3 [&_ul_li]:my-1.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_ol]:my-3 [&_ol_li]:my-1.5 [&_h1]:mt-4 [&_h1]:mb-2 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:mt-3 [&_h2]:mb-2 [&_h2]:font-semibold [&_h3]:mt-2 [&_h3]:mb-1 [&_h3]:font-medium [&_code]:bg-black/10 [&_code]:rounded [&_code]:px-1.5 [&_code]:py-0.5 [&_pre]:bg-black/10 [&_pre]:p-3 [&_pre]:rounded [&_pre]:overflow-x-auto [&_pre]:my-3 [&_blockquote]:border-l-2 [&_blockquote]:border-[var(--color-text)]/30 [&_blockquote]:pl-3 [&_blockquote]:my-3 [&_blockquote]:italic">
           <MessagePrimitive.Content
             components={{
               Text: ({ text }) => (
-                <Markdown remarkPlugins={[remarkGfm]}>{text}</Markdown>
+                <Markdown
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    a: ({ node, ...props }) => (
+                      <a
+                        {...props}
+                        href={props.href}
+                        onClick={async (e) => {
+                          e.preventDefault();
+                          if (props.href) {
+                            try {
+                              await openUrl(props.href);
+                            } catch (err) {
+                              console.error("Failed to open URL:", err);
+                              window.open(props.href, "_blank");
+                            }
+                          }
+                        }}
+                        className="text-[var(--color-primary)] hover:underline cursor-pointer"
+                      />
+                    ),
+                  }}
+                >
+                  {text}
+                </Markdown>
               ),
             }}
           />
@@ -262,11 +286,13 @@ const AssistantMessage: FC = () => {
           <div className="flex-1">
             <AssistantActionBar />
           </div>
-          {groundingMetadata && (
-            <div className="flex-shrink-0">
-              <SearchGrounding metadata={groundingMetadata} />
-            </div>
-          )}
+          {groundingMetadata &&
+            (groundingMetadata.chunks?.length > 0 ||
+              groundingMetadata.search_entry_point) && (
+              <div className="flex-shrink-0">
+                <SearchGrounding metadata={groundingMetadata} />
+              </div>
+            )}
         </div>
       </div>
     </MessagePrimitive.Root>
@@ -276,7 +302,7 @@ const AssistantMessage: FC = () => {
 const SearchGrounding: FC<{ metadata: GroundingMetadata }> = ({ metadata }) => {
   const [isOpen, setIsOpen] = useState(false);
 
-  if (!metadata.chunks || metadata.chunks.length === 0) return null;
+  if (!metadata.chunks && !metadata.search_entry_point) return null;
 
   return (
     <div className="relative">
@@ -291,22 +317,35 @@ const SearchGrounding: FC<{ metadata: GroundingMetadata }> = ({ metadata }) => {
         />
       </button>
       {isOpen && (
-        <div className="absolute bottom-full right-0 mb-2 z-50 flex max-h-[300px] w-80 flex-col gap-1.5 overflow-y-auto rounded-lg border border-[var(--color-text)]/20 bg-[var(--color-background)] p-3 shadow-xl">
+        <div className="absolute bottom-full right-0 mb-2 z-50 flex max-h-[400px] w-80 flex-col gap-1.5 overflow-y-auto rounded-lg border border-[var(--color-text)]/20 bg-[var(--color-background)] p-3 shadow-xl">
           <div className="mb-2 flex items-center justify-between border-b border-[var(--color-text)]/10 pb-1">
             <span className="text-xs font-semibold">Search Sources</span>
             <button onClick={() => setIsOpen(false)}>
               <XIcon className="h-3 w-3" />
             </button>
           </div>
-          {metadata.search_entry_point &&
-            metadata.search_entry_point.includes("google-search-chip") && (
-              <div
-                className="mb-1 overflow-x-auto pb-2 [&_a]:text-[var(--color-primary)] [&_a]:hover:underline [&_.google-search-chip]:whitespace-nowrap [&_.google-search-chip]:inline-block"
-                dangerouslySetInnerHTML={{
-                  __html: metadata.search_entry_point,
-                }}
-              />
-            )}
+          {metadata.search_entry_point && (
+            <div
+              className="mb-1 overflow-x-auto pb-2 [&_a]:text-[var(--color-primary)] [&_a]:hover:underline [&_.google-search-chip]:whitespace-nowrap [&_.google-search-chip]:inline-block"
+              onClick={async (e) => {
+                const target = e.target as HTMLElement;
+                const anchor = target.closest("a");
+                if (anchor && anchor.href) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  try {
+                    await openUrl(anchor.href);
+                  } catch (err) {
+                    console.error("Failed to open URL from chip:", err);
+                    window.open(anchor.href, "_blank");
+                  }
+                }
+              }}
+              dangerouslySetInnerHTML={{
+                __html: metadata.search_entry_point,
+              }}
+            />
+          )}
           {metadata.chunks.map((chunk, i) => {
             let displayUrl = "";
             let actualLink = chunk.uri || "#";

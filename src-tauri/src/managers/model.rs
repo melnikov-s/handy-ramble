@@ -14,10 +14,11 @@ use std::sync::Mutex;
 use tar::Archive;
 use tauri::{AppHandle, Emitter, Manager};
 
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
+#[derive(Debug, Clone, Serialize, Deserialize, Type, PartialEq)]
 pub enum EngineType {
     Whisper,
     Parakeet,
+    TTS,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
@@ -180,6 +181,29 @@ impl ModelManager {
                 engine_type: EngineType::Parakeet,
                 accuracy_score: 0.80,
                 speed_score: 0.85,
+            },
+        );
+
+        // Add Kokoro TTS model (ONNX)
+        available_models.insert(
+            "kokoro-82m".to_string(),
+            ModelInfo {
+                id: "kokoro-82m".to_string(),
+                name: "Kokoro 82M".to_string(),
+                description: "Extremely natural high-quality TTS".to_string(),
+                filename: "kokoro-v1.0.onnx".to_string(),
+                url: Some(
+                    "https://huggingface.co/hexgrad/Kokoro-82M/resolve/main/kokoro-v1.0.onnx"
+                        .to_string(),
+                ),
+                size_mb: 82,
+                is_downloaded: false,
+                is_downloading: false,
+                partial_size: 0,
+                is_directory: false,
+                engine_type: EngineType::TTS,
+                accuracy_score: 0.95,
+                speed_score: 0.90,
             },
         );
 

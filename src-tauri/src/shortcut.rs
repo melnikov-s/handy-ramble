@@ -858,6 +858,15 @@ pub fn change_hold_threshold_setting(app: AppHandle, threshold_ms: u64) -> Resul
     Ok(())
 }
 
+#[tauri::command]
+#[specta::specta]
+pub fn change_clipboard_content_cutoff_setting(app: AppHandle, cutoff: u32) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.clipboard_content_cutoff = cutoff;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
 // Prompt mode and category commands
 
 #[tauri::command]

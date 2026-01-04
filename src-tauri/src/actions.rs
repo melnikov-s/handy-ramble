@@ -1,9 +1,11 @@
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
 use crate::apple_intelligence;
 use crate::audio_feedback::{play_feedback_sound, play_feedback_sound_blocking, SoundType};
+use crate::clipboard;
 use crate::managers::audio::AudioRecordingManager;
 use crate::managers::history::HistoryManager;
 use crate::managers::transcription::TranscriptionManager;
+use crate::managers::tts::TTSManager;
 use crate::settings::{
     get_settings, write_settings, AppSettings, DetectedApp, PromptMode,
     APPLE_INTELLIGENCE_PROVIDER_ID,
@@ -504,12 +506,6 @@ impl ShortcutAction for TranscribeAction {
         // Play audio feedback for recording stop
         play_feedback_sound(app, SoundType::Stop);
 
-        // Unmute before playing audio feedback so the stop sound is audible
-        rm.remove_mute();
-
-        // Play audio feedback for recording stop
-        play_feedback_sound(app, SoundType::Stop);
-
         let binding_id = binding_id.to_string(); // Clone binding_id for the async task
 
         // CRITICAL: Stop recording synchronously to transition state to Idle immediately.
@@ -530,142 +526,231 @@ impl ShortcutAction for TranscribeAction {
 
             if let Some(samples) = samples {
                 debug!("Processing {} samples for transcription", samples.len());
-                let transcription_time = Instant::now();
-                let samples_clone = samples.clone(); // Clone for history saving
-                match tm.transcribe(samples) {
-                    Ok(transcription) => {
-                        debug!(
-                            "Transcription completed in {:?}: '{}'",
-                            transcription_time.elapsed(),
-                            transcription
-                        );
-                        if !transcription.is_empty() {
-                            let settings = get_settings(&ah);
-                            let mut final_text = transcription.clone();
-                            let mut post_processed_text: Option<String> = None;
-                            let mut post_process_prompt: Option<String> = None;
 
-                            // Check if coherent mode is enabled (unified hotkey: quick press)
-                            let coherent_mode = rm.get_coherent_mode();
-                            let selection_context = rm.get_selection_context();
-
-                            if coherent_mode {
-                                // Coherent mode: route through LLM refinement
-                                debug!("Coherent mode enabled - routing through ramble processing");
-                                show_making_coherent_overlay(&ah);
-                                // Get prompt from coherent_prompts based on selected ID
-                                if let Some(prompt_id) = &settings.coherent_selected_prompt_id {
-                                    if let Some(p) = settings
-                                        .coherent_prompts
-                                        .iter()
-                                        .find(|p| &p.id == prompt_id)
-                                    {
-                                        post_process_prompt = Some(p.prompt.clone());
-                                    }
-                                }
-
-                                // Apply filler word filter before refinement
-                                let filtered_transcription = filter_filler_words(
-                                    &transcription,
-                                    settings.filler_word_filter.as_deref(),
-                                );
-
-                                match process_ramble_to_coherent(
-                                    &ah,
-                                    &settings,
-                                    &filtered_transcription,
-                                    selection_context,
-                                )
-                                .await
-                                {
-                                    Ok(Some(processed)) => {
-                                        final_text = processed.clone();
-                                        post_processed_text = Some(processed);
-                                    }
-                                    Ok(None) => {
-                                        // Ramble processing skipped, use original
-                                    }
-                                    Err(error_msg) => {
-                                        // Show error overlay but fall back to raw text output
-                                        error!("Coherent processing failed: {}", error_msg);
-                                        utils::show_error_overlay(&ah, &error_msg, false);
-                                        // Continue with raw text - final_text already contains the original
-                                        // filtered transcription, so we just let the code continue to paste it
-                                    }
-                                }
-                            } else {
-                                // Raw mode: standard processing path
-                                // Raw mode NEVER does LLM post-processing - that's the whole point
-                                // Apply filler word filter to raw transcription
-                                let filtered_raw = filter_filler_words(
-                                    &transcription,
-                                    settings.filler_word_filter.as_deref(),
-                                );
-                                if filtered_raw != transcription {
-                                    final_text = filtered_raw.clone();
-                                }
-
-                                // Chinese variant conversion is allowed in raw mode
-                                if let Some(converted_text) =
-                                    maybe_convert_chinese_variant(&settings, &filtered_raw).await
-                                {
-                                    final_text = converted_text.clone();
-                                    post_processed_text = Some(converted_text);
-                                }
-                                // No LLM post-processing in raw mode - just use the filtered text
-                            }
-
-                            // Save to history with post-processed text and prompt
-                            let hm_clone = Arc::clone(&hm);
-                            let transcription_for_history = transcription.clone();
-                            tauri::async_runtime::spawn(async move {
-                                if let Err(e) = hm_clone
-                                    .save_transcription(
-                                        samples_clone,
-                                        transcription_for_history,
-                                        post_processed_text,
-                                        post_process_prompt,
-                                    )
-                                    .await
-                                {
-                                    error!("Failed to save transcription to history: {}", e);
-                                }
-                            });
-
-                            // Paste the final text (either processed or original)
-                            // We do NOT run this on the main thread because utils::paste contains sleep calls
-                            // that would block the main event loop, preventing the app's own windows (like quick chat)
-                            // from receiving the simulated paste events before the clipboard is restored.
-                            let paste_time = Instant::now();
-                            match utils::paste(final_text, ah.clone()) {
-                                Ok(()) => {
-                                    debug!("Text pasted successfully in {:?}", paste_time.elapsed())
-                                }
-                                Err(e) => error!("Failed to paste transcription: {}", e),
-                            }
-
-                            // Perform UI updates on the main thread
-                            let ah_clone = ah.clone();
-                            ah.run_on_main_thread(move || {
-                                // Hide the overlay after transcription is complete
-                                utils::hide_recording_overlay(&ah_clone);
-                                change_tray_icon(&ah_clone, TrayIconState::Idle);
-                            })
-                            .unwrap_or_else(|e| {
-                                error!("Failed to update UI on main thread: {:?}", e);
-                                utils::hide_recording_overlay(&ah);
-                                change_tray_icon(&ah, TrayIconState::Idle);
-                            });
-                        } else {
-                            utils::hide_recording_overlay(&ah);
-                            change_tray_icon(&ah, TrayIconState::Idle);
-                        }
+                // CRITICAL: Save recording FIRST, before attempting transcription
+                // This ensures audio is never lost, even if transcription fails
+                let entry_id = match hm.save_recording_only(&samples).await {
+                    Ok(id) => {
+                        debug!("Saved recording with entry id: {}", id);
+                        id
                     }
-                    Err(err) => {
-                        debug!("Global Shortcut Transcription error: {}", err);
+                    Err(e) => {
+                        error!("Failed to save recording: {}", e);
+                        // Critical failure - can't even save the audio
+                        utils::show_error_overlay(
+                            &ah,
+                            &format!("Failed to save recording: {}", e),
+                            false,
+                        );
                         utils::hide_recording_overlay(&ah);
                         change_tray_icon(&ah, TrayIconState::Idle);
+                        return;
                     }
+                };
+
+                let transcription_time = Instant::now();
+
+                // Try transcription with fallback chain: Parakeet -> Whisper -> Chunked -> Error
+                let transcription_result = tm.transcribe(samples.clone());
+
+                let transcription = match transcription_result {
+                    Ok(text) => {
+                        debug!(
+                            "Transcription succeeded in {:?}",
+                            transcription_time.elapsed()
+                        );
+                        text
+                    }
+                    Err(primary_err) => {
+                        warn!(
+                            "Primary transcription failed: {}. Attempting fallbacks...",
+                            primary_err
+                        );
+
+                        // Fallback 1: Try Whisper if available
+                        let whisper_result = tm.transcribe_with_fallback(samples.clone()).await;
+                        match whisper_result {
+                            Ok(text) => {
+                                info!("Whisper fallback succeeded");
+                                text
+                            }
+                            Err(whisper_err) => {
+                                warn!(
+                                    "Whisper fallback failed: {}. Trying chunked transcription...",
+                                    whisper_err
+                                );
+
+                                // Fallback 2: Try chunked transcription
+                                match tm.transcribe_chunked(samples.clone()) {
+                                    Ok(text) => {
+                                        info!("Chunked transcription succeeded");
+                                        text
+                                    }
+                                    Err(chunk_err) => {
+                                        // All fallbacks failed - save error and show overlay
+                                        let error_msg = format!(
+                                            "Transcription failed. Primary: {}. Whisper: {}. Chunked: {}",
+                                            primary_err, whisper_err, chunk_err
+                                        );
+                                        error!("{}", error_msg);
+
+                                        // Update entry with error status
+                                        if let Err(e) = hm
+                                            .update_transcription_error(entry_id, error_msg.clone())
+                                            .await
+                                        {
+                                            error!("Failed to update transcription error: {}", e);
+                                        }
+
+                                        // Show error overlay to user
+                                        utils::show_error_overlay(
+                                            &ah,
+                                            "Transcription failed. Recording saved to history.",
+                                            false,
+                                        );
+                                        utils::hide_recording_overlay(&ah);
+                                        change_tray_icon(&ah, TrayIconState::Idle);
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                };
+
+                debug!(
+                    "Transcription completed in {:?}: '{}'",
+                    transcription_time.elapsed(),
+                    transcription
+                );
+
+                if !transcription.is_empty() {
+                    let settings = get_settings(&ah);
+                    let mut final_text = transcription.clone();
+                    let mut post_processed_text: Option<String> = None;
+                    let mut post_process_prompt: Option<String> = None;
+
+                    // Check if coherent mode is enabled (unified hotkey: quick press)
+                    let coherent_mode = rm.get_coherent_mode();
+                    let selection_context = rm.get_selection_context();
+
+                    if coherent_mode {
+                        // Coherent mode: route through LLM refinement
+                        debug!("Coherent mode enabled - routing through ramble processing");
+                        show_making_coherent_overlay(&ah);
+                        // Get prompt from coherent_prompts based on selected ID
+                        if let Some(prompt_id) = &settings.coherent_selected_prompt_id {
+                            if let Some(p) = settings
+                                .coherent_prompts
+                                .iter()
+                                .find(|p| &p.id == prompt_id)
+                            {
+                                post_process_prompt = Some(p.prompt.clone());
+                            }
+                        }
+
+                        // Apply filler word filter before refinement
+                        let filtered_transcription = filter_filler_words(
+                            &transcription,
+                            settings.filler_word_filter.as_deref(),
+                        );
+
+                        match process_ramble_to_coherent(
+                            &ah,
+                            &settings,
+                            &filtered_transcription,
+                            selection_context,
+                        )
+                        .await
+                        {
+                            Ok(Some(processed)) => {
+                                final_text = processed.clone();
+                                post_processed_text = Some(processed);
+                            }
+                            Ok(None) => {
+                                // Ramble processing skipped, use original
+                            }
+                            Err(error_msg) => {
+                                // Show error overlay but fall back to raw text output
+                                error!("Coherent processing failed: {}", error_msg);
+                                utils::show_error_overlay(&ah, &error_msg, false);
+                                // Continue with raw text - final_text already contains the original
+                                // filtered transcription, so we just let the code continue to paste it
+                            }
+                        }
+                    } else {
+                        // Raw mode: standard processing path
+                        // Raw mode NEVER does LLM post-processing - that's the whole point
+                        // Apply filler word filter to raw transcription
+                        let filtered_raw = filter_filler_words(
+                            &transcription,
+                            settings.filler_word_filter.as_deref(),
+                        );
+                        if filtered_raw != transcription {
+                            final_text = filtered_raw.clone();
+                        }
+
+                        // Chinese variant conversion is allowed in raw mode
+                        if let Some(converted_text) =
+                            maybe_convert_chinese_variant(&settings, &filtered_raw).await
+                        {
+                            final_text = converted_text.clone();
+                            post_processed_text = Some(converted_text);
+                        }
+                        // No LLM post-processing in raw mode - just use the filtered text
+                    }
+
+                    // Update the history entry with transcription results
+                    let hm_clone = Arc::clone(&hm);
+                    let transcription_for_history = transcription.clone();
+                    tauri::async_runtime::spawn(async move {
+                        if let Err(e) = hm_clone
+                            .update_transcription(
+                                entry_id,
+                                transcription_for_history,
+                                post_processed_text,
+                                post_process_prompt,
+                            )
+                            .await
+                        {
+                            error!("Failed to update transcription in history: {}", e);
+                        }
+                    });
+
+                    // Paste the final text (either processed or original)
+                    // We do NOT run this on the main thread because utils::paste contains sleep calls
+                    // that would block the main event loop, preventing the app's own windows (like quick chat)
+                    // from receiving the simulated paste events before the clipboard is restored.
+                    let paste_time = Instant::now();
+                    match utils::paste(final_text, ah.clone()) {
+                        Ok(()) => {
+                            debug!("Text pasted successfully in {:?}", paste_time.elapsed())
+                        }
+                        Err(e) => error!("Failed to paste transcription: {}", e),
+                    }
+
+                    // Perform UI updates on the main thread
+                    let ah_clone = ah.clone();
+                    ah.run_on_main_thread(move || {
+                        // Hide the overlay after transcription is complete
+                        utils::hide_recording_overlay(&ah_clone);
+                        change_tray_icon(&ah_clone, TrayIconState::Idle);
+                    })
+                    .unwrap_or_else(|e| {
+                        error!("Failed to update UI on main thread: {:?}", e);
+                        utils::hide_recording_overlay(&ah);
+                        change_tray_icon(&ah, TrayIconState::Idle);
+                    });
+                } else {
+                    // Empty transcription - update entry with empty text (but still success)
+                    if let Err(e) = hm
+                        .update_transcription(entry_id, String::new(), None, None)
+                        .await
+                    {
+                        error!("Failed to update empty transcription: {}", e);
+                    }
+                    utils::hide_recording_overlay(&ah);
+                    change_tray_icon(&ah, TrayIconState::Idle);
                 }
             } else {
                 debug!("No samples retrieved from recording stop");
@@ -678,6 +763,53 @@ impl ShortcutAction for TranscribeAction {
             "TranscribeAction::stop completed in {:?}",
             stop_time.elapsed()
         );
+    }
+}
+
+pub struct SpeakSelectionAction;
+
+impl ShortcutAction for SpeakSelectionAction {
+    fn interaction_behavior(&self) -> InteractionBehavior {
+        InteractionBehavior::Instant
+    }
+
+    fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) -> bool {
+        let app_handle = app.clone();
+        let tts_manager = app.state::<Arc<TTSManager>>().inner().clone();
+
+        tokio::spawn(async move {
+            debug!("[TTS] SpeakSelectionAction started");
+
+            // 1. Get selected text
+            match clipboard::get_selected_text(&app_handle) {
+                Ok(Some(text)) => {
+                    if text.trim().is_empty() {
+                        debug!("[TTS] Selected text is empty");
+                        return;
+                    }
+
+                    // 2. Speak via TTSManager
+                    if let Err(e) = tts_manager.speak(&text).await {
+                        error!("[TTS] Failed to speak: {}", e);
+                    }
+                }
+                Ok(None) => {
+                    debug!("[TTS] No text selected");
+                }
+                Err(e) => {
+                    error!("[TTS] Failed to get selected text: {}", e);
+                }
+            }
+        });
+
+        true
+    }
+
+    fn stop(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
+        let tts_manager = app.state::<Arc<TTSManager>>().inner().clone();
+        tokio::spawn(async move {
+            let _ = tts_manager.stop().await;
+        });
     }
 }
 
@@ -827,7 +959,30 @@ async fn process_ramble_to_coherent(
     // ${category} - The category name
     // ${selection} - Selected text captured before recording
     // ${output} - The transcribed speech
+    // ${clipboard} - Current clipboard content
     // ${screen_context} - (REMOVED) - was OCR text from screen capture
+
+    // Get clipboard content and apply cutoff if configured
+    let clipboard_content = match clipboard::get_clipboard_content(app) {
+        Ok(Some(content)) => {
+            let cutoff = settings.clipboard_content_cutoff;
+            if cutoff > 0 && content.len() > cutoff as usize {
+                debug!(
+                    "Clipboard content truncated from {} to {} chars",
+                    content.len(),
+                    cutoff
+                );
+                content.chars().take(cutoff as usize).collect::<String>()
+            } else {
+                content
+            }
+        }
+        Ok(None) => String::new(),
+        Err(e) => {
+            debug!("Failed to get clipboard content: {}", e);
+            String::new()
+        }
+    };
 
     let processed_prompt = if let Some(selection) = selection_context {
         if prompt.contains("${selection}") {
@@ -837,6 +992,7 @@ async fn process_ramble_to_coherent(
                 .replace("${category}", &category_id)
                 .replace("${output}", transcription)
                 .replace("${selection}", &selection)
+                .replace("${clipboard}", &clipboard_content)
                 .replace("${screen_context}", "")
         } else {
             // User hasn't included ${selection}, so we ignore it to respect "not combined" requested by user unless explicit.
@@ -845,6 +1001,7 @@ async fn process_ramble_to_coherent(
                 .replace("${application}", &app_name)
                 .replace("${category}", &category_id)
                 .replace("${output}", transcription)
+                .replace("${clipboard}", &clipboard_content)
                 .replace("${screen_context}", "")
         }
     } else {
@@ -854,6 +1011,7 @@ async fn process_ramble_to_coherent(
             .replace("${category}", &category_id)
             .replace("${output}", transcription)
             .replace("${selection}", "")
+            .replace("${clipboard}", &clipboard_content)
             .replace("${screen_context}", "")
     };
 
@@ -1200,29 +1358,6 @@ impl ShortcutAction for VoiceCommandAction {
                                             utils::show_error_overlay(&ah, &msg, true);
                                             change_tray_icon(&ah, TrayIconState::Idle);
                                         }
-                                        crate::voice_commands::CommandResult::InternalCommand(
-                                            cmd,
-                                        ) => {
-                                            if cmd == "open_chat_window" {
-                                                // Open chat window with selection context
-                                                let selection_context = rm.get_selection_context();
-                                                match crate::commands::open_chat_window(
-                                                    ah.clone(),
-                                                    selection_context,
-                                                ) {
-                                                    Ok(label) => {
-                                                        debug!("Opened chat window: {}", label)
-                                                    }
-                                                    Err(e) => {
-                                                        error!("Failed to open chat window: {}", e)
-                                                    }
-                                                }
-                                            } else {
-                                                warn!("Unknown internal command: {}", cmd);
-                                            }
-                                            utils::hide_recording_overlay(&ah);
-                                            change_tray_icon(&ah, TrayIconState::Idle);
-                                        }
                                     }
                                 }
                                 Err(e) => {
@@ -1478,17 +1613,43 @@ async fn execute_via_llm(
 
                     return match exec_type {
                         "applescript" => Ok(execute_applescript_command(command)),
+                        "paste" => {
+                            let output = json
+                                .get("output")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("No output");
+                            Ok(crate::voice_commands::CommandResult::PasteOutput(
+                                output.to_string(),
+                            ))
+                        }
+                        "shell" => {
+                            // Shell command: open terminal with command pre-filled for user review
+                            let shell_command =
+                                json.get("command").and_then(|v| v.as_str()).unwrap_or("");
+                            if !shell_command.is_empty() {
+                                info!("Shell command recognized: {}", shell_command);
+                                return type_command_in_terminal(app, shell_command, settings);
+                            }
+                            Ok(crate::voice_commands::CommandResult::Error(
+                                "No shell command provided".to_string(),
+                            ))
+                        }
                         _ => Ok(execute_shell_command(command)),
                     };
                 }
 
                 // No executable command found
                 Ok(crate::voice_commands::CommandResult::Error(format!(
-                    "Command '{}' not found",
+                    "LLM matched command '{}' but it could not be executed.",
                     matched_id
                 )))
             } else {
-                // No match - check execution type
+                // No command ID matched, but LLM provided an execution type and command string
+                // This path is for "unknown" commands that the LLM interprets as a direct action
+                debug!(
+                    "LLM did not match a command ID, but suggested execution type: {}",
+                    exec_type
+                );
                 if exec_type == "paste" {
                     let output = json
                         .get("output")
@@ -1496,6 +1657,16 @@ async fn execute_via_llm(
                         .unwrap_or("No output");
                     Ok(crate::voice_commands::CommandResult::PasteOutput(
                         output.to_string(),
+                    ))
+                } else if exec_type == "shell" {
+                    // Shell command: open terminal with command pre-filled for user review
+                    let shell_command = json.get("command").and_then(|v| v.as_str()).unwrap_or("");
+                    if !shell_command.is_empty() {
+                        info!("Shell command recognized: {}", shell_command);
+                        return type_command_in_terminal(app, shell_command, settings);
+                    }
+                    Ok(crate::voice_commands::CommandResult::Error(
+                        "No shell command provided".to_string(),
                     ))
                 } else {
                     // "unknown" or any unrecognized type - launch CLI agent
@@ -1510,6 +1681,114 @@ async fn execute_via_llm(
             ))
         }
     }
+}
+
+/// Type a command in a terminal for user review before execution
+/// Opens the configured terminal and types the command, but does NOT execute it
+fn type_command_in_terminal(
+    app: &AppHandle,
+    command: &str,
+    settings: &AppSettings,
+) -> Result<crate::voice_commands::CommandResult, String> {
+    // Strip newlines to prevent premature execution
+    let command_clean = command.replace('\n', " ").replace('\r', " ");
+
+    info!("Opening terminal with shell command: {}", command_clean);
+
+    // Check if the configured terminal is installed
+    let configured_terminal = settings.unknown_command_terminal.as_str();
+    let mut actual_terminal = configured_terminal;
+
+    if configured_terminal != "Terminal" {
+        let check_script = format!("id of application \"{}\"", configured_terminal);
+        let output = std::process::Command::new("osascript")
+            .arg("-e")
+            .arg(&check_script)
+            .output();
+
+        if let Ok(output) = output {
+            if !output.status.success() {
+                warn!(
+                    "Configured terminal '{}' not found, falling back to Terminal.app",
+                    configured_terminal
+                );
+                actual_terminal = "Terminal";
+            }
+        }
+    }
+
+    info!("Using terminal '{}' for shell command", actual_terminal);
+
+    // Activate terminal and open window
+    let script = match actual_terminal {
+        "Terminal" => {
+            "tell application \"Terminal\"
+    activate
+    do script \"\"
+end tell"
+        }
+        "Warp" => "tell application \"Warp\" to activate",
+        _ => {
+            "tell application \"iTerm\"
+    activate
+    try
+        create window with default profile
+    on error
+        -- Window might already be open or iTerm behaves differently
+    end try
+end tell"
+        }
+    };
+
+    match std::process::Command::new("osascript")
+        .arg("-e")
+        .arg(script)
+        .output()
+    {
+        Ok(output) if !output.status.success() => {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            warn!("AppleScript activation warning: {}", stderr);
+        }
+        Err(e) => {
+            error!("Failed to execute activation AppleScript: {}", e);
+        }
+        _ => {}
+    }
+
+    // Use Enigo to type the command
+    let enigo_state = app
+        .try_state::<crate::input::EnigoState>()
+        .ok_or_else(|| "Failed to get Enigo state".to_string())?;
+    let mut enigo = enigo_state
+        .0
+        .lock()
+        .map_err(|e| format!("Failed to lock Enigo: {}", e))?;
+
+    use enigo::{Direction, Key, Keyboard};
+    use std::thread::sleep;
+    use std::time::Duration;
+
+    // Small delay to let terminal focus
+    sleep(Duration::from_millis(500));
+
+    if actual_terminal == "Warp" {
+        #[cfg(target_os = "macos")]
+        {
+            let _ = enigo.key(Key::Meta, Direction::Press);
+            let _ = enigo.key(Key::Unicode('n'), Direction::Click);
+            let _ = enigo.key(Key::Meta, Direction::Release);
+            sleep(Duration::from_millis(500));
+        }
+    }
+
+    // Type the command (without executing)
+    info!("Typing shell command into terminal: {}", command_clean);
+    if let Err(e) = enigo.text(&command_clean) {
+        error!("Failed to type command via Enigo: {}", e);
+        return Err(format!("Failed to type command: {}", e));
+    }
+
+    Ok(crate::voice_commands::CommandResult::Success)
 }
 
 /// Launch a terminal with CLI agent for unknown commands
@@ -1755,6 +2034,10 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
     map.insert(
         "quick_chat".to_string(),
         Arc::new(QuickChatAction) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "speak_selection".to_string(),
+        Arc::new(SpeakSelectionAction) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "test".to_string(),

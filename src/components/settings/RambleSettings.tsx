@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Plus,
   Trash2,
+  Info,
 } from "lucide-react";
 import {
   commands,
@@ -217,6 +218,47 @@ export const RambleSettings: React.FC = () => {
             )}
           </p>
         </div>
+
+        <SettingContainer
+          title={t(
+            "settings.ramble.clipboardCutoff.title",
+            "Clipboard Content Cutoff",
+          )}
+          description={t(
+            "settings.ramble.clipboardCutoff.description",
+            "Limit how many characters from your clipboard are included when using ${clipboard} in prompts. Set to 0 for no limit.",
+          )}
+          descriptionMode="tooltip"
+          layout="horizontal"
+          grouped={true}
+        >
+          <select
+            value={settings?.clipboard_content_cutoff ?? 0}
+            onChange={async (e) => {
+              const value = parseInt(e.target.value, 10);
+              try {
+                await commands.changeClipboardContentCutoffSetting(value);
+                await refreshSettings();
+              } catch (error) {
+                console.error("Failed to update clipboard cutoff:", error);
+              }
+            }}
+            className="px-3 py-2 bg-background border border-mid-gray/30 rounded-lg text-sm focus:outline-none focus:border-logo-primary min-w-[160px]"
+          >
+            <option value={0}>
+              {t("settings.ramble.clipboardCutoff.noLimit", "No limit")}
+            </option>
+            <option value={500}>
+              {t("settings.ramble.clipboardCutoff.chars500", "500 characters")}
+            </option>
+            <option value={5000}>
+              {t(
+                "settings.ramble.clipboardCutoff.chars5000",
+                "5000 characters",
+              )}
+            </option>
+          </select>
+        </SettingContainer>
       </SettingsGroup>
 
       <SettingsGroup
@@ -303,14 +345,64 @@ export const RambleSettings: React.FC = () => {
                   )}
                   className="w-full min-h-[200px] p-3 bg-background border border-mid-gray/30 rounded-lg text-sm focus:outline-none focus:border-logo-primary resize-y font-mono"
                 />
-                <div className="flex items-center justify-between text-xs text-mid-gray">
-                  <span>
-                    {t(
-                      "settings.ramble.categories.variables",
-                      "Variables: ${output}, ${selection}, ${application}, ${category}",
-                    )}
-                  </span>
-                  <div className="flex items-center gap-2">
+                <div className="space-y-2 text-xs text-mid-gray">
+                  <div className="flex items-center gap-1">
+                    <Info className="h-3 w-3" />
+                    <span className="font-medium">
+                      {t(
+                        "settings.ramble.categories.availableVariables",
+                        "Available Variables:",
+                      )}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 pl-4">
+                    <code className="bg-mid-gray/10 px-1 rounded">
+                      ${"${output}"}
+                    </code>
+                    <span>
+                      {t(
+                        "settings.ramble.variables.output",
+                        "Transcribed speech",
+                      )}
+                    </span>
+                    <code className="bg-mid-gray/10 px-1 rounded">
+                      ${"${selection}"}
+                    </code>
+                    <span>
+                      {t(
+                        "settings.ramble.variables.selection",
+                        "Text selected before recording",
+                      )}
+                    </span>
+                    <code className="bg-mid-gray/10 px-1 rounded">
+                      ${"${clipboard}"}
+                    </code>
+                    <span>
+                      {t(
+                        "settings.ramble.variables.clipboard",
+                        "Current clipboard content",
+                      )}
+                    </span>
+                    <code className="bg-mid-gray/10 px-1 rounded">
+                      ${"${application}"}
+                    </code>
+                    <span>
+                      {t(
+                        "settings.ramble.variables.application",
+                        "Active application name",
+                      )}
+                    </span>
+                    <code className="bg-mid-gray/10 px-1 rounded">
+                      ${"${category}"}
+                    </code>
+                    <span>
+                      {t(
+                        "settings.ramble.variables.category",
+                        "Current prompt category",
+                      )}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-end gap-2 pt-2">
                     {category.is_builtin && (
                       <button
                         onClick={() => handleResetCategoryPrompt(category.id)}

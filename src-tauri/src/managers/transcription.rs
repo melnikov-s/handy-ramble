@@ -245,6 +245,10 @@ impl TranscriptionManager {
                     })?;
                 LoadedEngine::Parakeet(engine)
             }
+            EngineType::TTS => {
+                let error_msg = format!("Engine type TTS is not supported for transcription");
+                return Err(anyhow::anyhow!(error_msg));
+            }
         };
 
         // Update the current engine and model ID
@@ -452,6 +456,97 @@ impl TranscriptionManager {
         }
 
         Ok(final_result)
+    }
+
+    /// Try Whisper fallback if available
+    /// This attempts to load and use a Whisper model if the primary transcription failed
+    pub async fn transcribe_with_fallback(&self, audio: Vec<f32>) -> Result<String> {
+        // Check if there's a Whisper model available
+        let whisper_model = self
+            .model_manager
+            .get_available_models()
+            .iter()
+            .find(|m| m.engine_type == EngineType::Whisper && m.is_downloaded)
+            .map(|m| m.id.clone());
+
+        match whisper_model {
+            Some(model_id) => {
+                info!("Attempting Whisper fallback with model: {}", model_id);
+
+                // Store current model ID to restore later
+                let original_model = self.get_current_model();
+
+                // Load Whisper model
+                self.load_model(&model_id)?;
+
+                // Try transcription with Whisper
+                let result = self.transcribe(audio);
+
+                // Restore original model if there was one
+                if let Some(ref original) = original_model {
+                    let _ = self.load_model(original);
+                }
+
+                result
+            }
+            None => Err(anyhow::anyhow!("No Whisper model available for fallback")),
+        }
+    }
+
+    /// Transcribe audio in chunks to avoid ORT memory errors on long recordings
+    /// Splits audio into ~2 minute segments and transcribes each separately
+    pub fn transcribe_chunked(&self, audio: Vec<f32>) -> Result<String> {
+        // 2 minutes at 16kHz = 1,920,000 samples
+        // But our audio is at the model's sample rate (usually 16kHz)
+        const CHUNK_DURATION_SAMPLES: usize = 1_920_000; // 2 minutes at 16kHz
+
+        if audio.len() <= CHUNK_DURATION_SAMPLES {
+            // Audio is short enough, try normal transcription
+            return self.transcribe(audio);
+        }
+
+        info!(
+            "Chunked transcription: splitting {} samples into {} chunks",
+            audio.len(),
+            (audio.len() + CHUNK_DURATION_SAMPLES - 1) / CHUNK_DURATION_SAMPLES
+        );
+
+        let mut transcriptions = Vec::new();
+        let mut start = 0;
+
+        while start < audio.len() {
+            let end = (start + CHUNK_DURATION_SAMPLES).min(audio.len());
+            let chunk = audio[start..end].to_vec();
+
+            debug!("Transcribing chunk: samples {}-{}", start, end);
+
+            match self.transcribe(chunk) {
+                Ok(text) => {
+                    if !text.is_empty() {
+                        transcriptions.push(text);
+                    }
+                }
+                Err(e) => {
+                    // If even a single chunk fails, return error
+                    return Err(anyhow::anyhow!(
+                        "Chunk transcription failed at offset {}: {}",
+                        start,
+                        e
+                    ));
+                }
+            }
+
+            start = end;
+        }
+
+        let combined = transcriptions.join(" ");
+        info!(
+            "Chunked transcription complete: {} chunks, {} chars",
+            (audio.len() + CHUNK_DURATION_SAMPLES - 1) / CHUNK_DURATION_SAMPLES,
+            combined.len()
+        );
+
+        Ok(combined)
     }
 }
 

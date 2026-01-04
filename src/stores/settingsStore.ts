@@ -124,6 +124,8 @@ const settingUpdaters: {
     commands.changeAppendTrailingSpaceSetting(value as boolean),
   log_level: (value) => commands.setLogLevel(value as any),
   app_language: (value) => commands.changeAppLanguageSetting(value as string),
+  clipboard_content_cutoff: (value) =>
+    commands.changeClipboardContentCutoffSetting(value as number),
 };
 
 export const useSettingsStore = create<SettingsStore>()(
