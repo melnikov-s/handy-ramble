@@ -260,6 +260,9 @@ pub struct PromptCategory {
     pub icon: String,
     pub prompt: String,
     pub is_builtin: bool,
+    /// Optional model override for this category (None = use default coherent model)
+    #[serde(default)]
+    pub model_override: Option<String>,
 }
 
 /// Maps an application to a category
@@ -876,6 +879,7 @@ fn default_prompt_categories() -> Vec<PromptCategory> {
             name: "Low".to_string(),
             icon: "▁".to_string(),
             is_builtin: true,
+            model_override: None,
             prompt: "You are cleaning up speech-to-text for a casual chat message.
 
 **Context:** The user is in ${application} (${category} mode). The output is a message to another human.
@@ -923,6 +927,7 @@ ${output}
             name: "Medium".to_string(),
             icon: "▃".to_string(),
             is_builtin: true,
+            model_override: None,
             prompt: "You are transforming rambling speech into polished written prose.
 
 **Context:** The user is in ${application} (${category} mode). The output is written content for human readers.
@@ -969,6 +974,7 @@ ${output}
             name: "High".to_string(),
             icon: "▅".to_string(),
             is_builtin: true,
+            model_override: None,
             prompt: "You are transforming rambling speech into clean, well-structured text.
 
 **Context:** The user is in ${application} (${category} mode). The output will be used in developer tools or sent to AI assistants.

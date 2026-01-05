@@ -964,6 +964,7 @@ pub fn add_prompt_category(
         icon,
         prompt,
         is_builtin: false,
+        model_override: None,
     };
     
     settings.prompt_categories.push(new_category.clone());
@@ -1019,6 +1020,25 @@ pub fn update_prompt_category_details(
     if let Some(category) = settings.prompt_categories.iter_mut().find(|c| c.id == id) {
         category.name = name;
         category.icon = icon;
+        settings::write_settings(&app, settings);
+        Ok(())
+    } else {
+        Err(format!("Category with id '{}' not found", id))
+    }
+}
+
+/// Update a category's model override (None = use default coherent model)
+#[tauri::command]
+#[specta::specta]
+pub fn update_prompt_category_model_override(
+    app: AppHandle,
+    id: String,
+    model_id: Option<String>,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    
+    if let Some(category) = settings.prompt_categories.iter_mut().find(|c| c.id == id) {
+        category.model_override = model_id;
         settings::write_settings(&app, settings);
         Ok(())
     } else {
