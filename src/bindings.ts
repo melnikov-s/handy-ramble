@@ -421,6 +421,17 @@ async updatePromptCategoryDetails(id: string, name: string, icon: string) : Prom
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Update a category's model override (None = use default coherent model)
+ */
+async updatePromptCategoryModelOverride(id: string, modelId: string | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("update_prompt_category_model_override", { id, modelId }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeVoiceCommandsEnabledSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_voice_commands_enabled_setting", { enabled }) };
@@ -1327,7 +1338,11 @@ export type PasteMethod = "ctrl_v" | "direct" | "none" | "shift_insert" | "ctrl_
 /**
  * A prompt category that groups applications and defines processing style
  */
-export type PromptCategory = { id: string; name: string; icon: string; prompt: string; is_builtin: boolean }
+export type PromptCategory = { id: string; name: string; icon: string; prompt: string; is_builtin: boolean; 
+/**
+ * Optional model override for this category (None = use default coherent model)
+ */
+model_override?: string | null }
 /**
  * Prompt mode selection - Dynamic auto-detects based on app, others are explicit processing levels
  */

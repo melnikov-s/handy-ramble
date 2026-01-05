@@ -305,6 +305,63 @@ export const RambleSettings: React.FC = () => {
           </select>
         </SettingContainer>
 
+        {/* Available Variables - shown once for all categories */}
+        <div className="px-4 py-3 border-t border-mid-gray/10">
+          <div className="space-y-2 text-xs text-mid-gray">
+            <div className="flex items-center gap-1">
+              <Info className="h-3 w-3" />
+              <span className="font-medium">
+                {t(
+                  "settings.ramble.categories.availableVariables",
+                  "Available Variables:",
+                )}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 pl-4">
+              <code className="bg-mid-gray/10 px-1 rounded">{"${output}"}</code>
+              <span>
+                {t("settings.ramble.variables.output", "Transcribed speech")}
+              </span>
+              <code className="bg-mid-gray/10 px-1 rounded">
+                {"${selection}"}
+              </code>
+              <span>
+                {t(
+                  "settings.ramble.variables.selection",
+                  "Text selected before recording",
+                )}
+              </span>
+              <code className="bg-mid-gray/10 px-1 rounded">
+                {"${clipboard}"}
+              </code>
+              <span>
+                {t(
+                  "settings.ramble.variables.clipboard",
+                  "Current clipboard content",
+                )}
+              </span>
+              <code className="bg-mid-gray/10 px-1 rounded">
+                {"${application}"}
+              </code>
+              <span>
+                {t(
+                  "settings.ramble.variables.application",
+                  "Active application name",
+                )}
+              </span>
+              <code className="bg-mid-gray/10 px-1 rounded">
+                {"${category}"}
+              </code>
+              <span>
+                {t(
+                  "settings.ramble.variables.category",
+                  "Current prompt category",
+                )}
+              </span>
+            </div>
+          </div>
+        </div>
+
         {(settings?.prompt_categories ?? []).map((category: PromptCategory) => (
           <div key={category.id} className="border-t border-mid-gray/10">
             <button
@@ -332,7 +389,41 @@ export const RambleSettings: React.FC = () => {
             </button>
 
             {expandedCategory === category.id && (
-              <div className="px-4 pb-4 space-y-2">
+              <div className="px-4 pb-4 space-y-3">
+                {/* Model Override */}
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-mid-gray">
+                    {t(
+                      "settings.ramble.categories.modelOverride",
+                      "Model Override",
+                    )}
+                  </span>
+                  <ModelsDropdown
+                    selectedValue={category.model_override || null}
+                    onSelect={async (modelId) => {
+                      try {
+                        // "default" means use the global default (null)
+                        const override = modelId === "" ? null : modelId;
+                        await commands.updatePromptCategoryModelOverride(
+                          category.id,
+                          override,
+                        );
+                        await refreshSettings();
+                      } catch (error) {
+                        console.error(
+                          "Failed to update model override:",
+                          error,
+                        );
+                      }
+                    }}
+                    placeholder={t(
+                      "settings.ramble.categories.useDefault",
+                      "Default (use global model)",
+                    )}
+                    className="min-w-[240px]"
+                  />
+                </div>
+
                 <textarea
                   value={categoryPrompts[category.id] ?? ""}
                   onChange={(e) =>
@@ -345,85 +436,27 @@ export const RambleSettings: React.FC = () => {
                   )}
                   className="w-full min-h-[200px] p-3 bg-background border border-mid-gray/30 rounded-lg text-sm focus:outline-none focus:border-logo-primary resize-y font-mono"
                 />
-                <div className="space-y-2 text-xs text-mid-gray">
-                  <div className="flex items-center gap-1">
-                    <Info className="h-3 w-3" />
-                    <span className="font-medium">
-                      {t(
-                        "settings.ramble.categories.availableVariables",
-                        "Available Variables:",
-                      )}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-1 pl-4">
-                    <code className="bg-mid-gray/10 px-1 rounded">
-                      ${"${output}"}
-                    </code>
-                    <span>
-                      {t(
-                        "settings.ramble.variables.output",
-                        "Transcribed speech",
-                      )}
-                    </span>
-                    <code className="bg-mid-gray/10 px-1 rounded">
-                      ${"${selection}"}
-                    </code>
-                    <span>
-                      {t(
-                        "settings.ramble.variables.selection",
-                        "Text selected before recording",
-                      )}
-                    </span>
-                    <code className="bg-mid-gray/10 px-1 rounded">
-                      ${"${clipboard}"}
-                    </code>
-                    <span>
-                      {t(
-                        "settings.ramble.variables.clipboard",
-                        "Current clipboard content",
-                      )}
-                    </span>
-                    <code className="bg-mid-gray/10 px-1 rounded">
-                      ${"${application}"}
-                    </code>
-                    <span>
-                      {t(
-                        "settings.ramble.variables.application",
-                        "Active application name",
-                      )}
-                    </span>
-                    <code className="bg-mid-gray/10 px-1 rounded">
-                      ${"${category}"}
-                    </code>
-                    <span>
-                      {t(
-                        "settings.ramble.variables.category",
-                        "Current prompt category",
-                      )}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-end gap-2 pt-2">
-                    {category.is_builtin && (
-                      <button
-                        onClick={() => handleResetCategoryPrompt(category.id)}
-                        disabled={isUpdating}
-                        className="flex items-center gap-1 px-2 py-1 bg-mid-gray/10 hover:bg-mid-gray/20 rounded transition-colors disabled:opacity-50"
-                      >
-                        <RotateCcw className="h-3 w-3" />
-                        {t("settings.ramble.categories.reset", "Reset")}
-                      </button>
-                    )}
-                    {!category.is_builtin && (
-                      <button
-                        onClick={() => handleDeleteCategory(category.id)}
-                        disabled={isUpdating}
-                        className="flex items-center gap-1 px-2 py-1 text-red-500 bg-red-500/10 hover:bg-red-500/20 rounded transition-colors disabled:opacity-50"
-                      >
-                        <Trash2 className="h-3 w-3" />
-                        {t("settings.ramble.categories.delete", "Delete")}
-                      </button>
-                    )}
-                  </div>
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  {category.is_builtin && (
+                    <button
+                      onClick={() => handleResetCategoryPrompt(category.id)}
+                      disabled={isUpdating}
+                      className="flex items-center gap-1 px-2 py-1 bg-mid-gray/10 hover:bg-mid-gray/20 rounded transition-colors disabled:opacity-50"
+                    >
+                      <RotateCcw className="h-3 w-3" />
+                      {t("settings.ramble.categories.reset", "Reset")}
+                    </button>
+                  )}
+                  {!category.is_builtin && (
+                    <button
+                      onClick={() => handleDeleteCategory(category.id)}
+                      disabled={isUpdating}
+                      className="flex items-center gap-1 px-2 py-1 text-red-500 bg-red-500/10 hover:bg-red-500/20 rounded transition-colors disabled:opacity-50"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      {t("settings.ramble.categories.delete", "Delete")}
+                    </button>
+                  )}
                 </div>
               </div>
             )}

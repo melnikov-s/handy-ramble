@@ -319,6 +319,7 @@ pub fn run() {
         shortcut::add_prompt_category,
         shortcut::delete_prompt_category,
         shortcut::update_prompt_category_details,
+        shortcut::update_prompt_category_model_override,
         shortcut::change_voice_commands_enabled_setting,
         shortcut::change_voice_command_default_model_setting,
         shortcut::reset_voice_commands_to_default,
