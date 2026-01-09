@@ -36,7 +36,7 @@ pub fn cancel_current_operation(app: &AppHandle) {
     // Stop any ongoing TTS
     let tts_manager = app.state::<Arc<TTSManager>>();
     let tts_manager_cloned = tts_manager.inner().clone();
-    tokio::spawn(async move {
+    tauri::async_runtime::spawn(async move {
         let _ = tts_manager_cloned.stop().await;
     });
 
