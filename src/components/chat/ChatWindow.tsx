@@ -16,6 +16,7 @@ import {
 import { cn } from "@/lib/utils/cn";
 import { useThreadRuntime, useThread } from "@assistant-ui/react";
 import { useChatPersistence } from "../../hooks/useChatPersistence";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 
 // Component to copy entire chat as markdown (must be inside AssistantRuntimeProvider)
 const CopyAllHeader: React.FC = () => {
@@ -175,6 +176,10 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
               }));
               setCurrentInitialMessages(msgs);
               console.log("ChatWindow: Loaded saved chat", id);
+              // Set window title to the saved chat's title
+              if (savedChat.title && savedChat.title !== "New Chat") {
+                getCurrentWindow().setTitle(savedChat.title);
+              }
             }
           }
         }
@@ -360,6 +365,8 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
                       );
                       if (title) {
                         await updateChatTitle(newId, title);
+                        // Update window title to match the chat title
+                        getCurrentWindow().setTitle(title);
                       }
                     } catch (titleErr) {
                       console.error("Failed to generate title:", titleErr);
