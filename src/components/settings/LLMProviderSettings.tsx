@@ -8,101 +8,25 @@ import { SettingContainer } from "../ui/SettingContainer";
 import { Button } from "../ui/Button";
 import { ModelsDropdown } from "../ui/ModelsDropdown";
 
-// Known provider presets with their models
+// Known provider presets (models are fetched dynamically via API)
 const PROVIDER_PRESETS: Record<
   string,
   {
     name: string;
     base_url: string;
-    models: { id: string; name: string; vision?: boolean }[];
   }
 > = {
   openai: {
     name: "OpenAI",
     base_url: "https://api.openai.com/v1",
-    models: [
-      { id: "gpt-4o", name: "gpt-4o", vision: true },
-      { id: "gpt-4o-mini", name: "gpt-4o-mini", vision: true },
-      { id: "gpt-4-turbo", name: "gpt-4-turbo", vision: true },
-      { id: "o1", name: "o1", vision: true },
-      { id: "o1-mini", name: "o1-mini" },
-      { id: "o3-mini", name: "o3-mini" },
-    ],
   },
   anthropic: {
     name: "Anthropic",
     base_url: "https://api.anthropic.com/v1",
-    models: [
-      {
-        id: "claude-sonnet-4-20250514",
-        name: "claude-sonnet-4-20250514",
-        vision: true,
-      },
-      {
-        id: "claude-3-5-sonnet-latest",
-        name: "claude-3-5-sonnet-latest",
-        vision: true,
-      },
-      {
-        id: "claude-3-5-haiku-latest",
-        name: "claude-3-5-haiku-latest",
-        vision: true,
-      },
-      {
-        id: "claude-3-opus-latest",
-        name: "claude-3-opus-latest",
-        vision: true,
-      },
-    ],
   },
   gemini: {
     name: "Google Gemini",
     base_url: "https://generativelanguage.googleapis.com/v1beta/openai",
-    models: [
-      // Gemini 3 (latest)
-      {
-        id: "gemini-3-flash-preview",
-        name: "gemini-3-flash-preview",
-        vision: true,
-      },
-      // Gemini 2.5 series
-      { id: "gemini-2.5-pro", name: "gemini-2.5-pro", vision: true },
-      { id: "gemini-2.5-pro-lite", name: "gemini-2.5-pro-lite", vision: true },
-      { id: "gemini-2.5-flash", name: "gemini-2.5-flash", vision: true },
-
-      // Gemini 2.0 series
-      { id: "gemini-2.0-flash", name: "gemini-2.0-flash", vision: true },
-      {
-        id: "gemini-2.0-flash-lite",
-        name: "gemini-2.0-flash-lite",
-        vision: true,
-      },
-      // Gemini 1.5 series
-      { id: "gemini-1.5-flash", name: "gemini-1.5-flash", vision: true },
-      { id: "gemini-1.5-pro", name: "gemini-1.5-pro", vision: true },
-    ],
-  },
-  openrouter: {
-    name: "OpenRouter",
-    base_url: "https://openrouter.ai/api/v1",
-    models: [
-      {
-        id: "anthropic/claude-sonnet-4",
-        name: "anthropic/claude-sonnet-4",
-        vision: true,
-      },
-      { id: "openai/gpt-4o", name: "openai/gpt-4o", vision: true },
-      {
-        id: "google/gemini-2.0-flash-001",
-        name: "google/gemini-2.0-flash-001",
-        vision: true,
-      },
-      { id: "deepseek/deepseek-r1", name: "deepseek/deepseek-r1" },
-      {
-        id: "meta-llama/llama-3.3-70b-instruct",
-        name: "meta-llama/llama-3.3-70b-instruct",
-      },
-    ],
   },
 };
 
@@ -119,7 +43,7 @@ interface ProviderDialogProps {
     enabledModelIds: Set<string>,
   ) => void;
   onDelete?: () => void;
-  existingProviderIds: string[];
+  existingProviders: LLMProvider[];
 }
 
 const ProviderDialog: React.FC<ProviderDialogProps> = ({
@@ -130,7 +54,7 @@ const ProviderDialog: React.FC<ProviderDialogProps> = ({
   onClose,
   onSave,
   onDelete,
-  existingProviderIds,
+  existingProviders,
 }) => {
   const [providerType, setProviderType] = useState<"preset" | "custom">(
     "preset",
@@ -139,7 +63,7 @@ const ProviderDialog: React.FC<ProviderDialogProps> = ({
   const [customName, setCustomName] = useState("");
   const [customUrl, setCustomUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
-  const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set());
+  let [selectedModels, setSelectedModels] = useState<Set<string>>(new Set());
   const [customModels, setCustomModels] = useState("");
 
   // Initialize form when dialog opens
@@ -161,11 +85,16 @@ const ProviderDialog: React.FC<ProviderDialogProps> = ({
           providerModels.filter((m) => m.enabled).map((m) => m.model_id),
         );
         setSelectedModels(enabledIds);
+        // For custom providers, load existing models into text field
+        if (provider.is_custom && providerModels.length > 0) {
+          const modelNames = providerModels.map((m) => m.model_id).join(", ");
+          setCustomModels(modelNames);
+        }
       } else {
         // Adding new provider
         // If no presets available, default to custom
         const hasAvailablePresets = Object.keys(PROVIDER_PRESETS).some(
-          (id) => !existingProviderIds.includes(id),
+          (id) => !existingProviders.some((p) => p.id === id && p.api_key),
         );
         setProviderType(hasAvailablePresets ? "preset" : "custom");
         setSelectedPreset("");
@@ -178,23 +107,14 @@ const ProviderDialog: React.FC<ProviderDialogProps> = ({
     }
   }, [isOpen, mode, provider, providerModels]);
 
-  // Available presets (filter out already added, unless editing that one)
+  // Available presets (filter out providers that already have an API key configured)
   const availablePresets = Object.entries(PROVIDER_PRESETS).filter(
     ([id]) =>
-      !existingProviderIds.includes(id) ||
+      !existingProviders.some((p) => p.id === id && p.api_key) ||
       (mode === "edit" && provider?.id === id),
   );
 
-  // Get models for current selection
-  const getModels = (): { id: string; name: string; vision?: boolean }[] => {
-    if (providerType === "preset" && selectedPreset) {
-      return PROVIDER_PRESETS[selectedPreset]?.models || [];
-    }
-    return [];
-  };
-
-  const currentModels = getModels();
-
+  // For custom providers editing, still need model management
   const toggleModel = (modelId: string) => {
     const newSet = new Set(selectedModels);
     if (newSet.has(modelId)) {
@@ -203,14 +123,6 @@ const ProviderDialog: React.FC<ProviderDialogProps> = ({
       newSet.add(modelId);
     }
     setSelectedModels(newSet);
-  };
-
-  const selectAllModels = () => {
-    setSelectedModels(new Set(currentModels.map((m) => m.id)));
-  };
-
-  const deselectAllModels = () => {
-    setSelectedModels(new Set());
   };
 
   const handleSave = () => {
@@ -227,7 +139,8 @@ const ProviderDialog: React.FC<ProviderDialogProps> = ({
         supports_vision: true,
         is_custom: false,
       };
-      models = currentModels;
+      // Preset providers: no hardcoded models, they're fetched via API after saving
+      models = [];
     } else if (providerType === "custom" && customName && customUrl) {
       providerData = {
         id: provider?.id || crypto.randomUUID(),
@@ -237,13 +150,15 @@ const ProviderDialog: React.FC<ProviderDialogProps> = ({
         supports_vision: true,
         is_custom: true,
       };
-      // Parse custom models
+      // Parse custom models and auto-select them all
       if (customModels.trim()) {
         models = customModels.split(",").map((m) => ({
           id: m.trim(),
           name: m.trim(),
           vision: false,
         }));
+        // Auto-select all custom models so they get saved as enabled
+        selectedModels = new Set(models.map((m) => m.id));
       }
     } else {
       return;
@@ -343,51 +258,16 @@ const ProviderDialog: React.FC<ProviderDialogProps> = ({
                 />
               </div>
 
-              {/* Model Selection */}
-              {(selectedPreset || mode === "edit") &&
-                currentModels.length > 0 && (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-sm font-medium">Models</label>
-                      <div className="flex gap-2 text-xs">
-                        <button
-                          onClick={selectAllModels}
-                          className="text-logo-primary hover:underline"
-                        >
-                          Select All
-                        </button>
-                        <span className="text-mid-gray">|</span>
-                        <button
-                          onClick={deselectAllModels}
-                          className="text-mid-gray hover:text-foreground"
-                        >
-                          Clear
-                        </button>
-                      </div>
-                    </div>
-                    <div className="border border-mid-gray/20 rounded-lg max-h-48 overflow-y-auto">
-                      {currentModels.map((model) => (
-                        <label
-                          key={model.id}
-                          className="flex items-center gap-2 px-3 py-2 hover:bg-mid-gray/5 cursor-pointer"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={selectedModels.has(model.id)}
-                            onChange={() => toggleModel(model.id)}
-                            className="h-4 w-4 rounded"
-                          />
-                          <span className="text-sm flex-1">{model.name}</span>
-                          {model.vision && (
-                            <span className="text-[10px] text-mid-gray">
-                              vision
-                            </span>
-                          )}
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                )}
+              {/* Info about model fetching for preset providers */}
+              {(selectedPreset || mode === "edit") && (
+                <div className="p-3 bg-mid-gray/5 border border-mid-gray/20 rounded-lg">
+                  <p className="text-sm text-mid-gray">
+                    After saving, click the <strong>Refresh</strong> button in
+                    any model dropdown to fetch available models from this
+                    provider.
+                  </p>
+                </div>
+              )}
             </>
           ) : (
             <>
@@ -683,7 +563,7 @@ export const LLMProviderSettings: React.FC = () => {
         onClose={() => setDialogOpen(false)}
         onSave={handleSaveProvider}
         onDelete={handleDeleteProvider}
-        existingProviderIds={providers.map((p) => p.id)}
+        existingProviders={providers}
       />
     </div>
   );

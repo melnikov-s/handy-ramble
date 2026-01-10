@@ -1064,6 +1064,18 @@ async setDefaultModel(feature: string, modelId: string | null) : Promise<Result<
 async getDefaultModels() : Promise<DefaultModels> {
     return await TAURI_INVOKE("get_default_models");
 },
+/**
+ * Refresh models for ALL configured providers with API keys
+ * Returns the complete updated list of models
+ */
+async refreshAllModels() : Promise<Result<LLMModel[], string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("refresh_all_models") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async saveChat(title: string | null, messages: ChatMessage[]) : Promise<Result<number, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("save_chat", { title, messages }) };

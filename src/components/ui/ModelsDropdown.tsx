@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { commands, LLMModel, LLMProvider } from "@/bindings";
+import { commands, LLMModel } from "@/bindings";
 import { Dropdown, DropdownOption } from "./Dropdown";
 
 interface ModelsDropdownProps {
@@ -20,22 +20,38 @@ export const ModelsDropdown: React.FC<ModelsDropdownProps> = ({
   direction = "down",
 }) => {
   const [llmModels, setLlmModels] = useState<LLMModel[]>([]);
-  const [llmProviders, setLlmProviders] = useState<LLMProvider[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
+  // Load models from persisted settings
   const loadModels = async () => {
     try {
       setIsLoading(true);
-      const [models, providers] = await Promise.all([
-        commands.getLlmModels(),
-        commands.getLlmProviders(),
-      ]);
+      const models = await commands.getLlmModels();
       setLlmModels(models);
-      setLlmProviders(providers);
     } catch (error) {
       console.error("Failed to load LLM models:", error);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Refresh models from provider APIs
+  const handleRefresh = async () => {
+    try {
+      setIsRefreshing(true);
+      const result = await commands.refreshAllModels();
+      if (result.status === "ok") {
+        setLlmModels(result.data);
+      } else {
+        console.error("Failed to refresh models:", result.error);
+        // Still reload from settings in case some models were saved
+        await loadModels();
+      }
+    } catch (error) {
+      console.error("Failed to refresh models:", error);
+    } finally {
+      setIsRefreshing(false);
     }
   };
 
@@ -46,31 +62,30 @@ export const ModelsDropdown: React.FC<ModelsDropdownProps> = ({
   // Filter for enabled models and deduplicate
   const enabledModels = llmModels.filter((m) => m.enabled);
 
-  // Format options with raw provider_id / model_id label
+  // Format options with provider / model label
   const modelOptions: DropdownOption[] = enabledModels
-    .map((m) => {
-      return {
-        value: m.id,
-        label: `${m.provider_id} / ${m.model_id}`,
-      };
-    })
-    // Deduplicate in frontend as a safeguard
+    .map((m) => ({
+      value: m.id,
+      label: `${m.provider_id} / ${m.model_id}`,
+    }))
+    // Deduplicate as safeguard
     .filter((v, i, a) => a.findIndex((t) => t.value === v.value) === i);
+
+  const getPlaceholder = () => {
+    if (isLoading) return "Loading...";
+    if (isRefreshing) return "Refreshing from providers...";
+    if (modelOptions.length === 0) return "No models - click refresh";
+    return placeholder;
+  };
 
   return (
     <Dropdown
       selectedValue={selectedValue}
       options={modelOptions}
       onSelect={onSelect}
-      disabled={disabled || isLoading || modelOptions.length === 0}
-      placeholder={
-        isLoading
-          ? "Loading models..."
-          : modelOptions.length === 0
-            ? "No models enabled - check AI Providers"
-            : placeholder
-      }
-      onRefresh={loadModels}
+      disabled={disabled || isLoading || isRefreshing}
+      placeholder={getPlaceholder()}
+      onRefresh={handleRefresh}
       className={className}
       direction={direction}
     />

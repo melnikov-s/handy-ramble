@@ -402,6 +402,8 @@ pub fn run() {
         commands::providers::delete_llm_model,
         commands::providers::set_default_model,
         commands::providers::get_default_models,
+        // Dynamic model fetching
+        commands::fetch_models::refresh_all_models,
         commands::chat_persistence::save_chat,
         commands::chat_persistence::update_chat,
         commands::chat_persistence::get_chat,
