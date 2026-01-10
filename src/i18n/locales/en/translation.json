@@ -8,7 +8,8 @@
     "dynamic": "Dynamic",
     "low": "Low",
     "medium": "Medium",
-    "high": "High"
+    "high": "High",
+    "copyLastTranscription": "Copy Last Transcription"
   },
   "sidebar": {
     "general": "General",

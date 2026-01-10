@@ -557,6 +557,29 @@ impl HistoryManager {
         Ok(())
     }
 
+    /// Get the latest successful transcription text.
+    /// Returns the post-processed text if available, otherwise the raw transcription text.
+    pub fn get_latest_transcription(&self) -> Option<String> {
+        let conn = self.get_connection().ok()?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT transcription_text, post_processed_text FROM transcription_history 
+                 WHERE transcription_status = 'success' AND transcription_text != ''
+                 ORDER BY timestamp DESC LIMIT 1",
+            )
+            .ok()?;
+
+        stmt.query_row([], |row| {
+            let transcription_text: String = row.get("transcription_text")?;
+            let post_processed_text: Option<String> = row.get("post_processed_text")?;
+            // Prefer post-processed text if available and non-empty
+            Ok(post_processed_text
+                .filter(|s| !s.is_empty())
+                .unwrap_or(transcription_text))
+        })
+        .ok()
+    }
+
     fn format_timestamp_title(&self, timestamp: i64) -> String {
         if let Some(utc_datetime) = DateTime::from_timestamp(timestamp, 0) {
             // Convert UTC to local timezone
