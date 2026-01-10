@@ -1,6 +1,7 @@
 pub mod audio;
 pub mod chat;
 pub mod chat_persistence;
+pub mod fetch_models;
 pub mod history;
 pub mod models;
 pub mod providers;
