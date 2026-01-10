@@ -225,6 +225,24 @@ fn initialize_core_logic(app_handle: &AppHandle) {
             "mode_high" => {
                 tray::set_prompt_mode(app, settings::PromptMode::High);
             }
+            "copy_last_transcription" => {
+                use crate::managers::history::HistoryManager;
+                use std::sync::Arc;
+                use tauri_plugin_clipboard_manager::ClipboardExt;
+
+                // Get the history manager from state
+                let history_manager = app.state::<Arc<HistoryManager>>();
+                if let Some(text) = history_manager.get_latest_transcription() {
+                    // Copy to clipboard using tauri plugin
+                    if let Err(e) = app.clipboard().write_text(&text) {
+                        log::error!("Failed to copy last transcription to clipboard: {}", e);
+                    } else {
+                        log::info!("Copied last transcription to clipboard");
+                    }
+                } else {
+                    log::info!("No transcription available to copy");
+                }
+            }
             _ => {}
         })
         .build(app_handle)

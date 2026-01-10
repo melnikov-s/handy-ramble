@@ -31,6 +31,7 @@ import { cn } from "@/lib/utils/cn";
 import { Button } from "@/components/ui/Button";
 
 import { ModelsDropdown } from "@/components/ui/ModelsDropdown";
+import { Mermaid } from "./Mermaid";
 
 interface ThreadProps {
   attachments: string[];
@@ -249,6 +250,29 @@ const AssistantMessage: FC = () => {
                 <Markdown
                   remarkPlugins={[remarkGfm]}
                   components={{
+                    code({ node, className, children, ...props }) {
+                      const content = String(children);
+                      const match = /language-(\w+)/.exec(className || "");
+                      const language = match?.[1];
+
+                      const isMermaid =
+                        language === "mermaid" ||
+                        (!language &&
+                          content.includes("\n") &&
+                          /^\s*(graph|flowchart|stateDiagram|sequenceDiagram|classDiagram|erDiagram|gantt|pie|gitGraph|journey|mindmap|timeline)/.test(
+                            content,
+                          ));
+
+                      if (isMermaid) {
+                        return <Mermaid chart={content.replace(/\n$/, "")} />;
+                      }
+
+                      return (
+                        <code className={className} {...props}>
+                          {children}
+                        </code>
+                      );
+                    },
                     a: ({ node, ...props }) => (
                       <a
                         {...props}

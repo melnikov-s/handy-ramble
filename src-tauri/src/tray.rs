@@ -178,6 +178,16 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
     )
     .expect("failed to create high mode item");
 
+    // Create the "Copy Last Transcription" menu item
+    let copy_last_i = MenuItem::with_id(
+        app,
+        "copy_last_transcription",
+        &strings.copy_last_transcription,
+        true,
+        None::<&str>,
+    )
+    .expect("failed to create copy last transcription item");
+
     let menu = match state {
         TrayIconState::Recording | TrayIconState::Transcribing => {
             let cancel_i = MenuItem::with_id(app, "cancel", &strings.cancel, true, None::<&str>)
@@ -186,6 +196,8 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
                 app,
                 &[
                     &version_i,
+                    &separator(),
+                    &copy_last_i,
                     &separator(),
                     &cancel_i,
                     &separator(),
@@ -207,6 +219,8 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
             app,
             &[
                 &version_i,
+                &separator(),
+                &copy_last_i,
                 &separator(),
                 &post_processing_label,
                 &mode_dynamic,
