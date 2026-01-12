@@ -1164,7 +1164,7 @@ fn validate_shortcut_string(raw: &str) -> Result<(), String> {
 
     let modifiers = [
         "ctrl", "control", "shift", "alt", "option", "meta", "command", "cmd", "super", "win",
-        "windows",
+        "windows", "left_shift", "right_shift", "left_option", "right_option", "left_command", "right_command",
     ];
     let has_non_modifier = raw
         .split('+')

@@ -4,6 +4,8 @@ mod app_detection;
 mod apple_intelligence;
 mod audio_feedback;
 pub mod audio_toolkit;
+#[cfg(target_os = "macos")]
+mod chats_menu;
 mod clipboard;
 mod commands;
 
@@ -47,8 +49,8 @@ use std::sync::{Arc, Mutex};
 use tauri::image::Image;
 
 use tauri::tray::TrayIconBuilder;
-use tauri::Emitter;
 use tauri::{AppHandle, Manager};
+use tauri::{Emitter, Listener};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_log::{Builder as LogBuilder, RotationStrategy, Target, TargetKind};
 
@@ -241,6 +243,22 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                     }
                 } else {
                     log::info!("No transcription available to copy");
+                }
+            }
+            "chats_new" => {
+                // Open a new empty chat
+                if let Err(e) = commands::open_chat_window(app.clone(), None) {
+                    log::error!("Failed to open new chat: {}", e);
+                }
+            }
+            id if id.starts_with("chat_open_") => {
+                // Open a saved chat by ID
+                if let Some(id_str) = id.strip_prefix("chat_open_") {
+                    if let Ok(chat_id) = id_str.parse::<i64>() {
+                        if let Err(e) = commands::open_saved_chat(app.clone(), chat_id) {
+                            log::error!("Failed to open saved chat {}: {}", chat_id, e);
+                        }
+                    }
                 }
             }
             _ => {}
@@ -499,6 +517,12 @@ pub fn run() {
             let app_handle = app.handle().clone();
 
             initialize_core_logic(&app_handle);
+
+            // Listen for chats-updated event to refresh the menu
+            let app_handle_clone = app_handle.clone();
+            app_handle.listen("chats-updated", move |_| {
+                tray::update_tray_menu(&app_handle_clone, &tray::TrayIconState::Idle, None);
+            });
 
             // Show main window only if not starting hidden
             if !settings.start_hidden {
