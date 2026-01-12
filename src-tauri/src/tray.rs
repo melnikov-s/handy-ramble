@@ -1,7 +1,9 @@
+use crate::managers::chat_persistence::ChatPersistenceManager;
 use crate::settings::{self, PromptMode};
 use crate::tray_i18n::get_tray_translations;
+use std::sync::Arc;
 use tauri::image::Image;
-use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIcon;
 use tauri::{AppHandle, Manager, Theme};
 
@@ -188,6 +190,45 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
     )
     .expect("failed to create copy last transcription item");
 
+    // Create the Chats submenu
+    let chats_submenu = Submenu::with_id(app, "chats_menu", &strings.chats, true)
+        .expect("failed to create chats submenu");
+
+    // Add "New Chat" item to submenu
+    let new_chat_i = MenuItem::with_id(app, "chats_new", &strings.new_chat, true, None::<&str>)
+        .expect("failed to create new chat item");
+    let _ = chats_submenu.append(&new_chat_i);
+    let _ = chats_submenu.append(&separator());
+
+    // Get recent chats from persistence manager
+    if let Some(manager) = app.try_state::<Arc<ChatPersistenceManager>>() {
+        if let Ok(chats) = manager.list_chats() {
+            if chats.is_empty() {
+                let no_chats_i = MenuItem::with_id(
+                    app,
+                    "no_chats",
+                    &strings.no_saved_chats,
+                    false,
+                    None::<&str>,
+                )
+                .expect("failed to create no chats item");
+                let _ = chats_submenu.append(&no_chats_i);
+            } else {
+                for chat in chats.into_iter().take(20) {
+                    let title = if chat.title.len() > 30 {
+                        format!("{}...", &chat.title[..27])
+                    } else {
+                        chat.title.clone()
+                    };
+                    let item_id = format!("chat_open_{}", chat.id);
+                    let chat_i = MenuItem::with_id(app, &item_id, &title, true, None::<&str>)
+                        .expect("failed to create chat item");
+                    let _ = chats_submenu.append(&chat_i);
+                }
+            }
+        }
+    }
+
     let menu = match state {
         TrayIconState::Recording | TrayIconState::Transcribing => {
             let cancel_i = MenuItem::with_id(app, "cancel", &strings.cancel, true, None::<&str>)
@@ -198,6 +239,8 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
                     &version_i,
                     &separator(),
                     &copy_last_i,
+                    &separator(),
+                    &chats_submenu,
                     &separator(),
                     &cancel_i,
                     &separator(),
@@ -221,6 +264,8 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
                 &version_i,
                 &separator(),
                 &copy_last_i,
+                &separator(),
+                &chats_submenu,
                 &separator(),
                 &post_processing_label,
                 &mode_dynamic,

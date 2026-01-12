@@ -9,7 +9,10 @@
     "low": "Low",
     "medium": "Medium",
     "high": "High",
-    "copyLastTranscription": "Copy Last Transcription"
+    "copyLastTranscription": "Copy Last Transcription",
+    "chats": "Chats",
+    "newChat": "New Chat",
+    "noSavedChats": "No Saved Chats"
   },
   "sidebar": {
     "general": "General",

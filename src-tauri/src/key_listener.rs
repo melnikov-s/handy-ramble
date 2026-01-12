@@ -53,6 +53,8 @@ pub fn is_raw_modifier_binding(binding: &str) -> bool {
         "left_option",
         "right_command",
         "left_command",
+        "right_shift",
+        "left_shift",
     ];
 
     binding
@@ -98,7 +100,8 @@ struct KeyListenerState {
     app_handle: Option<AppHandle>,
 
     // Modifier Tracking
-    shift_pressed: bool,
+    shift_left_pressed: bool,
+    shift_right_pressed: bool,
     ctrl_pressed: bool,
     alt_pressed: bool,        // Left Option on Mac
     alt_gr_pressed: bool,     // Right Option on Mac
@@ -113,7 +116,8 @@ impl KeyListenerState {
             bindings: HashMap::new(),
             suspended: std::collections::HashSet::new(),
             app_handle: None,
-            shift_pressed: false,
+            shift_left_pressed: false,
+            shift_right_pressed: false,
             ctrl_pressed: false,
             alt_pressed: false,
             alt_gr_pressed: false,
@@ -246,7 +250,8 @@ fn handle_key_press(key: Key) {
     // 1. Update Modifier State & Build Modifier String
     if let Ok(mut guard) = get_state().lock() {
         match key {
-            Key::ShiftLeft | Key::ShiftRight => guard.shift_pressed = true,
+            Key::ShiftLeft => guard.shift_left_pressed = true,
+            Key::ShiftRight => guard.shift_right_pressed = true,
             Key::ControlLeft | Key::ControlRight => guard.ctrl_pressed = true,
             Key::Alt => guard.alt_pressed = true,
             Key::AltGr => guard.alt_gr_pressed = true,
@@ -256,8 +261,11 @@ fn handle_key_press(key: Key) {
         }
 
         // Build current chord string for identification
-        if guard.shift_pressed {
-            current_modifiers.push("shift");
+        if guard.shift_left_pressed {
+            current_modifiers.push("left_shift");
+        }
+        if guard.shift_right_pressed {
+            current_modifiers.push("right_shift");
         }
         if guard.ctrl_pressed {
             current_modifiers.push("ctrl");
@@ -302,8 +310,11 @@ fn handle_key_release(key: Key) {
 
     // 1. Get snapshot of modifiers BEFORE we update them for release
     if let Ok(guard) = get_state().lock() {
-        if guard.shift_pressed {
-            current_modifiers.push("shift");
+        if guard.shift_left_pressed {
+            current_modifiers.push("left_shift");
+        }
+        if guard.shift_right_pressed {
+            current_modifiers.push("right_shift");
         }
         if guard.ctrl_pressed {
             current_modifiers.push("ctrl");
@@ -333,7 +344,8 @@ fn handle_key_release(key: Key) {
     // 4. Update Global Modifier State
     if let Ok(mut guard) = get_state().lock() {
         match key {
-            Key::ShiftLeft | Key::ShiftRight => guard.shift_pressed = false,
+            Key::ShiftLeft => guard.shift_left_pressed = false,
+            Key::ShiftRight => guard.shift_right_pressed = false,
             Key::ControlLeft | Key::ControlRight => guard.ctrl_pressed = false,
             Key::Alt => guard.alt_pressed = false,
             Key::AltGr => guard.alt_gr_pressed = false,
@@ -351,7 +363,8 @@ fn key_to_binding_string_chord(key: Key, modifiers: &[&str]) -> Option<String> {
         Key::AltGr => "right_option",
         Key::MetaLeft => "left_command",
         Key::MetaRight => "right_command",
-        Key::ShiftLeft | Key::ShiftRight => "shift",
+        Key::ShiftLeft => "left_shift",
+        Key::ShiftRight => "right_shift",
         Key::ControlLeft | Key::ControlRight => "ctrl",
         Key::Space => "space",
         Key::KeyQ => "q",
@@ -674,7 +687,7 @@ fn handle_vision() {
             ListenerState::Recording { .. } | ListenerState::Paused { .. }
         );
         // Only trigger if a modifier is held (to avoid accidental triggers while typing)
-        let has_modifier = guard.shift_pressed; // Could add more modifiers
+        let has_modifier = guard.shift_left_pressed || guard.shift_right_pressed; // Could add more modifiers
 
         (guard.app_handle.clone(), is_active, has_modifier)
     };
@@ -707,7 +720,7 @@ fn handle_pause() {
             guard.state,
             ListenerState::Recording { .. } | ListenerState::Paused { .. }
         );
-        let has_modifier = guard.shift_pressed;
+        let has_modifier = guard.shift_left_pressed || guard.shift_right_pressed;
 
         (guard.app_handle.clone(), is_active, has_modifier)
     };

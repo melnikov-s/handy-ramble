@@ -45,6 +45,10 @@ export const getKeyName = (
     ): string => {
       switch (baseModifier) {
         case "shift":
+          // On macOS, distinguish left/right Shift for standalone modifier binding support
+          if (osType === "macos" && side) {
+            return side === "left" ? "left_shift" : "right_shift";
+          }
           return "shift";
         case "ctrl":
           return osType === "macos" ? "ctrl" : "ctrl";
@@ -68,10 +72,10 @@ export const getKeyName = (
     };
 
     const modifierMap: Record<string, string> = {
-      ShiftLeft: getModifierName("shift"),
-      ShiftRight: getModifierName("shift"),
-      ControlLeft: getModifierName("ctrl"),
-      ControlRight: getModifierName("ctrl"),
+      ShiftLeft: getModifierName("shift", "left"),
+      ShiftRight: getModifierName("shift", "right"),
+      ControlLeft: getModifierName("ctrl", "left"),
+      ControlRight: getModifierName("ctrl", "right"),
       AltLeft: getModifierName("alt", "left"),
       AltRight: getModifierName("alt", "right"),
       MetaLeft: getModifierName("meta", "left"),
@@ -184,8 +188,10 @@ export const formatKeyCombination = (
  * Note: left_option and right_option are preserved for macOS standalone modifier bindings
  */
 export const normalizeKey = (key: string): string => {
-  // Preserve side-specific option and command keys for macOS standalone modifier binding support
+  // Preserve side-specific shift, option and command keys for macOS standalone modifier binding support
   if (
+    key === "left_shift" ||
+    key === "right_shift" ||
     key === "left_option" ||
     key === "right_option" ||
     key === "left_command" ||
