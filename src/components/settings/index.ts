@@ -7,6 +7,7 @@ export { AboutSettings } from "./about/AboutSettings";
 export { PostProcessingSettings } from "./post-processing/PostProcessingSettings";
 export { RambleSettings } from "./RambleSettings";
 export { VoiceCommandSettings } from "./VoiceCommandSettings";
+export { TextToSpeechSettings } from "./TextToSpeechSettings";
 
 // Individual setting components
 export { MicrophoneSelector } from "./MicrophoneSelector";

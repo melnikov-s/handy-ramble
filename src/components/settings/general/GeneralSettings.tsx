@@ -1,7 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
 import { MicrophoneSelector } from "../MicrophoneSelector";
-import { LanguageSelector } from "../LanguageSelector";
 import { RambleShortcut } from "../RambleShortcut";
 import { SettingsGroup } from "../../ui/SettingsGroup";
 import { OutputDeviceSelector } from "../OutputDeviceSelector";
@@ -9,7 +8,6 @@ import { AudioFeedback } from "../AudioFeedback";
 import { useSettings } from "../../../hooks/useSettings";
 import { VolumeSlider } from "../VolumeSlider";
 import { LLMProviderSettings } from "../LLMProviderSettings";
-import { TTSSettings } from "../TTSSettings";
 
 export const GeneralSettings: React.FC = () => {
   const { t } = useTranslation();
@@ -22,7 +20,6 @@ export const GeneralSettings: React.FC = () => {
         <RambleShortcut shortcutId="voice_command" grouped={true} />
         <RambleShortcut shortcutId="quick_chat" grouped={true} />
         <RambleShortcut shortcutId="pause_toggle" grouped={true} />
-        <LanguageSelector descriptionMode="tooltip" grouped={true} />
       </SettingsGroup>
       <LLMProviderSettings />
       <SettingsGroup title={t("settings.sound.title")}>
@@ -35,7 +32,6 @@ export const GeneralSettings: React.FC = () => {
         />
         <VolumeSlider disabled={!audioFeedbackEnabled} />
       </SettingsGroup>
-      <TTSSettings />
     </div>
   );
 };

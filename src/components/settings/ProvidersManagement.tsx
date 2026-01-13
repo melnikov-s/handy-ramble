@@ -6,6 +6,7 @@ import { commands, LLMProvider, LLMModel, DefaultModels } from "@/bindings";
 import { SettingsGroup } from "../ui/SettingsGroup";
 import { SettingContainer } from "../ui/SettingContainer";
 import { Button } from "../ui/Button";
+import { ModelsDropdown } from "../ui/ModelsDropdown";
 import { Dropdown } from "../ui/Dropdown";
 
 // Available provider presets
@@ -245,6 +246,7 @@ export const ProvidersManagement: React.FC = () => {
       await commands.setDefaultModel("chat", modelId);
       await commands.setDefaultModel("coherent", modelId);
       await commands.setDefaultModel("voice", modelId);
+      await commands.setDefaultModel("context_chat", modelId);
       await loadData();
     } catch (error) {
       console.error("Failed to set default model:", error);
@@ -371,7 +373,6 @@ export const ProvidersManagement: React.FC = () => {
           )}
         </div>
       </SettingsGroup>
-
       {/* Model Selection */}
       <SettingsGroup title="Available Models">
         <div className="px-4 py-3 text-sm text-mid-gray">
@@ -415,16 +416,9 @@ export const ProvidersManagement: React.FC = () => {
           layout="horizontal"
           grouped={true}
         >
-          <Dropdown
+          <ModelsDropdown
             selectedValue={defaultModels?.chat || null}
-            options={defaultModelOptions}
-            onSelect={(value) => handleSetDefaultModel(value)}
-            placeholder={
-              enabledModels.length === 0
-                ? "No models enabled"
-                : "Select default model..."
-            }
-            disabled={enabledModels.length === 0}
+            onSelect={handleSetDefaultModel}
             className="min-w-[300px]"
           />
         </SettingContainer>

@@ -851,6 +851,15 @@ pub fn reset_ramble_prompt_to_default(_app: AppHandle) -> Result<String, String>
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_context_chat_prompt_setting(app: AppHandle, prompt: String) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.context_chat_prompt = prompt;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn change_hold_threshold_setting(app: AppHandle, threshold_ms: u64) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.hold_threshold_ms = threshold_ms;

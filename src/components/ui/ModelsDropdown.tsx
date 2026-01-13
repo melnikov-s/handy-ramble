@@ -1,14 +1,16 @@
-import React, { useEffect, useState } from "react";
-import { commands, LLMModel } from "@/bindings";
+import React from "react";
+import { useSettings } from "../../hooks/useSettings";
 import { Dropdown, DropdownOption } from "./Dropdown";
 
 interface ModelsDropdownProps {
   selectedValue: string | null;
-  onSelect: (value: string) => void;
+  onSelect: (value: string | null) => void;
   placeholder?: string;
   disabled?: boolean;
   className?: string;
   direction?: "up" | "down";
+  allowDefault?: boolean;
+  defaultLabel?: string;
 }
 
 export const ModelsDropdown: React.FC<ModelsDropdownProps> = ({
@@ -18,74 +20,69 @@ export const ModelsDropdown: React.FC<ModelsDropdownProps> = ({
   disabled = false,
   className = "",
   direction = "down",
+  allowDefault = false,
+  defaultLabel = "Use Default",
 }) => {
-  const [llmModels, setLlmModels] = useState<LLMModel[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  const { settings, isLoading } = useSettings();
 
-  // Load models from persisted settings
-  const loadModels = async () => {
-    try {
-      setIsLoading(true);
-      const models = await commands.getLlmModels();
-      setLlmModels(models);
-    } catch (error) {
-      console.error("Failed to load LLM models:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  // Filter for enabled models, deduplicate, and ensure provider has API key
+  const providers = settings?.llm_providers || [];
+  const models = settings?.llm_models || [];
 
-  // Refresh models from provider APIs
-  const handleRefresh = async () => {
-    try {
-      setIsRefreshing(true);
-      const result = await commands.refreshAllModels();
-      if (result.status === "ok") {
-        setLlmModels(result.data);
-      } else {
-        console.error("Failed to refresh models:", result.error);
-        // Still reload from settings in case some models were saved
-        await loadModels();
-      }
-    } catch (error) {
-      console.error("Failed to refresh models:", error);
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
-
-  useEffect(() => {
-    loadModels();
-  }, []);
-
-  // Filter for enabled models and deduplicate
-  const enabledModels = llmModels.filter((m) => m.enabled);
+  const configuredProviderIds = new Set(
+    providers
+      .filter((p) => p.api_key && p.api_key.trim() !== "")
+      .map((p) => p.id),
+  );
+  const enabledModels = models.filter(
+    (m) =>
+      m.enabled === true &&
+      m.provider_id &&
+      configuredProviderIds.has(m.provider_id),
+  );
 
   // Format options with provider / model label
   const modelOptions: DropdownOption[] = enabledModels
-    .map((m) => ({
-      value: m.id,
-      label: `${m.provider_id} / ${m.model_id}`,
-    }))
+    .map((m) => {
+      const provider = providers.find((p) => p.id === m.provider_id);
+      return {
+        value: m.id,
+        label: `${provider?.name || m.provider_id} / ${m.model_id}`,
+      };
+    })
     // Deduplicate as safeguard
     .filter((v, i, a) => a.findIndex((t) => t.value === v.value) === i);
 
+  if (allowDefault) {
+    modelOptions.unshift({
+      value: "__default__",
+      label: defaultLabel,
+    });
+  }
+
   const getPlaceholder = () => {
     if (isLoading) return "Loading...";
-    if (isRefreshing) return "Refreshing from providers...";
-    if (modelOptions.length === 0) return "No models - click refresh";
+    if (modelOptions.length === 0) return "No models configured";
     return placeholder;
+  };
+
+  const handleSelect = (value: string) => {
+    if (value === "__default__") {
+      onSelect(null);
+    } else {
+      onSelect(value);
+    }
   };
 
   return (
     <Dropdown
-      selectedValue={selectedValue}
+      selectedValue={
+        selectedValue === null && allowDefault ? "__default__" : selectedValue
+      }
       options={modelOptions}
-      onSelect={onSelect}
-      disabled={disabled || isLoading || isRefreshing}
+      onSelect={handleSelect}
+      disabled={disabled || isLoading}
       placeholder={getPlaceholder()}
-      onRefresh={handleRefresh}
       className={className}
       direction={direction}
     />

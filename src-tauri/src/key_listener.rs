@@ -599,7 +599,7 @@ fn handle_behavior_release(binding_string: &str) {
             } else {
                 // Toggle ON - Tap
                 // Check which action this is - voice commands should NOT switch to refining mode
-                let is_voice_command = binding_id == "voice_command";
+                let is_voice_command = binding_id == "voice_command" || binding_id == "context_chat";
 
                 if is_voice_command {
                     // Voice commands stay in voice command mode, no refining

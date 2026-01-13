@@ -26,16 +26,12 @@ type PostProcessProviderState = {
   handleProviderSelect: (providerId: string) => void;
   handleModelSelect: (value: string) => void;
   handleModelCreate: (value: string) => void;
-  handleRefreshModels: () => void;
 };
 
 const APPLE_PROVIDER_ID = "apple_intelligence";
 
 export const usePostProcessProviderState = (): PostProcessProviderState => {
   const { settings, isUpdating } = useSettings();
-  const [fetchedModels, setFetchedModels] = useState<Record<string, string[]>>(
-    {},
-  );
   const [selectedProviderId, setSelectedProviderId] = useState<string>("");
 
   // Use unified llm_providers instead of deprecated post_process_providers
@@ -187,23 +183,6 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
     [handleModelSelect],
   );
 
-  const handleRefreshModels = useCallback(async () => {
-    if (isAppleProvider) return;
-    try {
-      const result = await commands.fetchPostProcessModels(selectedProviderId);
-      if (result.status === "ok") {
-        setFetchedModels((prev) => ({
-          ...prev,
-          [selectedProviderId]: result.data,
-        }));
-      }
-    } catch (error) {
-      console.error("Failed to fetch models:", error);
-    }
-  }, [isAppleProvider, selectedProviderId]);
-
-  const availableModelsRaw = fetchedModels[selectedProviderId] || [];
-
   const modelOptions = useMemo<ModelOption[]>(() => {
     const seen = new Set<string>();
     const options: ModelOption[] = [];
@@ -215,16 +194,17 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
       options.push({ value: trimmed, label: trimmed });
     };
 
-    // Add available models from API fetch
-    for (const candidate of availableModelsRaw) {
-      upsert(candidate);
-    }
-
-    // Add models from settings for this provider
-    const settingsModels = settings?.llm_models || [];
-    for (const m of settingsModels) {
-      if (m.provider_id === selectedProviderId) {
-        upsert(m.model_id);
+    // Add models from settings for this provider ONLY if they are enabled
+    // AND the provider has an API key
+    const configuredProvider = providers.find(
+      (p) => p.id === selectedProviderId,
+    );
+    if (configuredProvider?.api_key) {
+      const settingsModels = settings?.llm_models || [];
+      for (const m of settingsModels) {
+        if (m.provider_id === selectedProviderId && m.enabled) {
+          upsert(m.model_id);
+        }
       }
     }
 
@@ -232,7 +212,7 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
     upsert(model);
 
     return options;
-  }, [availableModelsRaw, settings, selectedProviderId, model]);
+  }, [settings, selectedProviderId, model]);
 
   const isBaseUrlUpdating = isUpdating(`llm_provider:${selectedProviderId}`);
   const isApiKeyUpdating = isUpdating(`provider_api_key:${selectedProviderId}`);
@@ -260,6 +240,5 @@ export const usePostProcessProviderState = (): PostProcessProviderState => {
     handleProviderSelect,
     handleModelSelect,
     handleModelCreate,
-    handleRefreshModels,
   };
 };

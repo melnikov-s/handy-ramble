@@ -15,26 +15,8 @@ export const VoiceCommandSettings: React.FC = () => {
 
   const [isUpdating, setIsUpdating] = useState(false);
 
-  // Default models state for current selection
-  const [defaultModels, setDefaultModels] = useState<DefaultModels | null>(
-    null,
-  );
-
-  // Load defaults on mount
-  useEffect(() => {
-    const loadDefaults = async () => {
-      try {
-        const defaults = await commands.getDefaultModels();
-        setDefaultModels(defaults);
-      } catch (error) {
-        console.error("Failed to load default models:", error);
-      }
-    };
-    loadDefaults();
-  }, []);
-
   // Current selected voice command model
-  const selectedModelId = defaultModels?.voice || null;
+  const selectedModelId = settings?.default_voice_model_id || null;
 
   // Filter out deprecated CLI commands that were removed
   const deprecatedCommandIds = ["cli_gemini", "cli_claude", "cli_cloudcode"];
@@ -49,8 +31,7 @@ export const VoiceCommandSettings: React.FC = () => {
     setIsUpdating(true);
     try {
       await commands.setDefaultModel("voice", modelId);
-      const defaults = await commands.getDefaultModels();
-      setDefaultModels(defaults);
+      await refreshSettings();
     } catch (error) {
       console.error("Failed to change voice command model:", error);
     } finally {

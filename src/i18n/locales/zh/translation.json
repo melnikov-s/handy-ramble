@@ -3,10 +3,10 @@
     "settings": "设置...",
     "checkUpdates": "检查更新...",
     "quit": "退出",
-    "cancel": "取消"
+    "cancel": "Cancel", "postProcessing": "Post Processing", "dynamic": "Dynamic", "low": "Low", "medium": "Medium", "high": "High", "copyLastTranscription": "Copy Last Transcription", "copyLastVoiceInteraction": "Copy Last Voice Interaction", "voiceInteractions": "Voice Interactions", "speechToText": "Speech to Text", "chats": "Chats", "newChat": "New Chat", "noSavedChats": "No Saved Chats"
   },
   "sidebar": {
-    "general": "通用",
+    "ramble": "Ramble to Coherent", "textToSpeech": "Text to Speech", "general": "通用",
     "advanced": "高级",
     "postProcessing": "后处理",
     "history": "历史记录",
@@ -77,7 +77,7 @@
     "deleteModel": "删除 {{modelName}}"
   },
   "settings": {
-    "general": {
+    "ramble": "Ramble to Coherent", "textToSpeech": "Text to Speech", "general": {
       "title": "通用",
       "shortcut": {
         "title": "Ramble 快捷键",
@@ -255,7 +255,7 @@
         "updatePrompt": "更新提示词",
         "deletePrompt": "删除提示词",
         "createPrompt": "创建提示词",
-        "cancel": "取消",
+        "cancel": "Cancel", "postProcessing": "Post Processing", "dynamic": "Dynamic", "low": "Low", "medium": "Medium", "high": "High", "copyLastTranscription": "Copy Last Transcription", "copyLastVoiceInteraction": "Copy Last Voice Interaction", "voiceInteractions": "Voice Interactions", "speechToText": "Speech to Text", "chats": "Chats", "newChat": "New Chat", "noSavedChats": "No Saved Chats",
         "selectToEdit": "选择上方的提示词以查看和编辑其详细信息。",
         "createFirst": "点击上方的「创建新提示词」来创建您的第一个后处理提示词。"
       }
@@ -385,7 +385,7 @@
   "common": {
     "loading": "加载中...",
     "save": "保存",
-    "cancel": "取消",
+    "cancel": "Cancel", "postProcessing": "Post Processing", "dynamic": "Dynamic", "low": "Low", "medium": "Medium", "high": "High", "copyLastTranscription": "Copy Last Transcription", "copyLastVoiceInteraction": "Copy Last Voice Interaction", "voiceInteractions": "Voice Interactions", "speechToText": "Speech to Text", "chats": "Chats", "newChat": "New Chat", "noSavedChats": "No Saved Chats",
     "reset": "重置",
     "add": "添加",
     "remove": "移除",

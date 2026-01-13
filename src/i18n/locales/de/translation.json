@@ -3,10 +3,10 @@
     "settings": "Einstellungen...",
     "checkUpdates": "Nach Updates suchen...",
     "quit": "Beenden",
-    "cancel": "Abbrechen"
+    "cancel": "Cancel", "postProcessing": "Post Processing", "dynamic": "Dynamic", "low": "Low", "medium": "Medium", "high": "High", "copyLastTranscription": "Copy Last Transcription", "copyLastVoiceInteraction": "Copy Last Voice Interaction", "voiceInteractions": "Voice Interactions", "speechToText": "Speech to Text", "chats": "Chats", "newChat": "New Chat", "noSavedChats": "No Saved Chats"
   },
   "sidebar": {
-    "general": "Allgemein",
+    "ramble": "Ramble to Coherent", "textToSpeech": "Text to Speech", "general": "Allgemein",
     "advanced": "Erweitert",
     "postProcessing": "Nachbearbeitung",
     "history": "Verlauf",
@@ -77,7 +77,7 @@
     "deleteModel": "{{modelName}} löschen"
   },
   "settings": {
-    "general": {
+    "ramble": "Ramble to Coherent", "textToSpeech": "Text to Speech", "general": {
       "title": "Allgemein",
       "shortcut": {
         "title": "Ramble-Tastenkürzel",
@@ -255,7 +255,7 @@
         "updatePrompt": "Prompt aktualisieren",
         "deletePrompt": "Prompt löschen",
         "createPrompt": "Prompt erstellen",
-        "cancel": "Abbrechen",
+        "cancel": "Cancel", "postProcessing": "Post Processing", "dynamic": "Dynamic", "low": "Low", "medium": "Medium", "high": "High", "copyLastTranscription": "Copy Last Transcription", "copyLastVoiceInteraction": "Copy Last Voice Interaction", "voiceInteractions": "Voice Interactions", "speechToText": "Speech to Text", "chats": "Chats", "newChat": "New Chat", "noSavedChats": "No Saved Chats",
         "selectToEdit": "Wähle oben einen Prompt aus, um dessen Details anzuzeigen und zu bearbeiten.",
         "createFirst": "Klicke oben auf 'Neuen Prompt erstellen', um deinen ersten Nachbearbeitungs-Prompt zu erstellen."
       }
@@ -385,7 +385,7 @@
   "common": {
     "loading": "Wird geladen...",
     "save": "Speichern",
-    "cancel": "Abbrechen",
+    "cancel": "Cancel", "postProcessing": "Post Processing", "dynamic": "Dynamic", "low": "Low", "medium": "Medium", "high": "High", "copyLastTranscription": "Copy Last Transcription", "copyLastVoiceInteraction": "Copy Last Voice Interaction", "voiceInteractions": "Voice Interactions", "speechToText": "Speech to Text", "chats": "Chats", "newChat": "New Chat", "noSavedChats": "No Saved Chats",
     "reset": "Zurücksetzen",
     "add": "Hinzufügen",
     "remove": "Entfernen",

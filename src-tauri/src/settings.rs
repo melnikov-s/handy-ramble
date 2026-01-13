@@ -550,6 +550,15 @@ pub struct AppSettings {
     /// 0 = no cutoff (include all), other values = limit to N characters
     #[serde(default)]
     pub clipboard_content_cutoff: u32,
+    /// Prompt for the context chat mode
+    #[serde(default = "default_context_chat_prompt")]
+    pub context_chat_prompt: String,
+    /// The last response from a voice interaction (Context Chat)
+    #[serde(default)]
+    pub last_voice_interaction: Option<String>,
+    /// Default model ID for context chat mode
+    #[serde(default)]
+    pub default_context_chat_model_id: Option<String>,
 }
 
 fn default_model() -> String {
@@ -765,6 +774,18 @@ fn default_unknown_command_template() -> String {
 
 fn default_unknown_command_terminal() -> String {
     "Terminal".to_string()
+}
+
+fn default_context_chat_prompt() -> String {
+    "You are a helpful assistant. You are given some context from the user's screen or selection to help you answer their questions.
+
+CONTEXT FROM USER:
+Selection: ${selection}
+Clipboard: ${clipboard}
+
+User Question: ${prompt}
+
+Answer the user's question clearly and concisely. If no specific question is asked, summarize the context.".to_string()
 }
 
 fn default_voice_commands() -> Vec<VoiceCommand> {
@@ -1332,6 +1353,16 @@ pub fn get_default_settings() -> AppSettings {
             current_binding: "Option+S".to_string(),
         },
     );
+    bindings.insert(
+        "context_chat".to_string(),
+        ShortcutBinding {
+            id: "context_chat".to_string(),
+            name: "Voice Interaction".to_string(),
+            description: "Talk to an AI about your current context (selection, clipboard, screen).".to_string(),
+            default_binding: "left_shift+right_command".to_string(),
+            current_binding: "left_shift+right_command".to_string(),
+        },
+    );
 
     // Note: ramble_to_coherent is no longer a separate binding.
     // Unified hotkey: hold transcribe key = raw, quick tap = coherent.
@@ -1366,6 +1397,7 @@ pub fn get_default_settings() -> AppSettings {
         default_chat_model_id: Some("gemini-flash".to_string()),
         default_coherent_model_id: Some("gemini-flash".to_string()),
         default_voice_model_id: Some("gemini-flash".to_string()),
+        default_context_chat_model_id: None,
         // Other settings
         paste_method: PasteMethod::default(),
         clipboard_handling: ClipboardHandling::default(),
@@ -1400,6 +1432,8 @@ pub fn get_default_settings() -> AppSettings {
         unknown_command_terminal: default_unknown_command_terminal(),
         // Clipboard settings
         clipboard_content_cutoff: 0,
+        context_chat_prompt: default_context_chat_prompt(),
+        last_voice_interaction: None,
     }
 }
 

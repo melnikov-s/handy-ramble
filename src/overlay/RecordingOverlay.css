@@ -47,6 +47,24 @@
   color: #a855f7;
 }
 
+/* Context Chat mode - Gold/Amber theme */
+.recording-overlay.context-chat-mode {
+  background: linear-gradient(135deg, #261a00cc 0%, #332200cc 100%);
+  border: 1px solid #f59e0b44;
+}
+
+.recording-overlay.context-chat-mode .bar {
+  background: #fbbf24;
+}
+
+.recording-overlay.context-chat-mode .mode-label {
+  color: #fbbf24;
+}
+
+.recording-overlay.context-chat-mode .refining-dot {
+  background: #f59e0b;
+}
+
 .overlay-left {
   display: flex;
   align-items: center;
@@ -201,7 +219,6 @@
   filter: drop-shadow(0 0 4px #10b98188);
 }
 
-
 /* Refining dots indicator */
 .refining-indicator {
   display: flex;
@@ -316,7 +333,9 @@
 
 /* Screenshot flash animation */
 .recording-overlay.screenshot-flash {
-  box-shadow: 0 0 15px #93c5fd, inset 0 0 15px #93c5fd;
+  box-shadow:
+    0 0 15px #93c5fd,
+    inset 0 0 15px #93c5fd;
   border-color: #93c5fd;
   transition: all 100ms ease-out;
 }
@@ -389,7 +408,8 @@
   flex: 1;
   color: #e0e0e0;
   font-size: 13px;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   line-height: 1.5;
   max-height: 300px;
   overflow-y: auto;
@@ -408,7 +428,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: color 0.15s, background 0.15s;
+  transition:
+    color 0.15s,
+    background 0.15s;
 }
 
 .toast-dismiss:hover {

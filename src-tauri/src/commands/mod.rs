@@ -11,7 +11,7 @@ pub mod tts;
 use crate::settings::{get_settings, write_settings, AppSettings, LogLevel};
 use crate::utils::{cancel_current_operation, resume_current_operation};
 use std::sync::atomic::{AtomicU32, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Manager, WebviewWindowBuilder};
 use tauri_plugin_opener::OpenerExt;
 
@@ -525,6 +525,29 @@ pub fn restore_app_visibility(app: AppHandle) -> Result<(), String> {
     set_chat_window_visibility(&app, true);
     crate::overlay::set_overlay_visibility(&app, true);
     Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn add_context_image(app: AppHandle, base64: String) -> Result<(), String> {
+    let audio_manager = app.state::<Arc<crate::managers::audio::AudioRecordingManager>>();
+    audio_manager.add_vision_context(base64);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
+pub fn copy_last_voice_interaction(app: AppHandle) -> Result<(), String> {
+    use tauri_plugin_clipboard_manager::ClipboardExt;
+    let settings = crate::settings::get_settings(&app);
+    if let Some(text) = settings.last_voice_interaction {
+        app.clipboard()
+            .write_text(&text)
+            .map_err(|e| format!("Failed to copy to clipboard: {}", e))?;
+        Ok(())
+    } else {
+        Err("No voice interaction available to copy".to_string())
+    }
 }
 
 #[tauri::command]

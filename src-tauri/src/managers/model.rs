@@ -193,10 +193,10 @@ impl ModelManager {
                 description: "Extremely natural high-quality TTS".to_string(),
                 filename: "kokoro-v1.0.onnx".to_string(),
                 url: Some(
-                    "https://huggingface.co/hexgrad/Kokoro-82M/resolve/main/kokoro-v1.0.onnx"
+                    "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/model_quantized.onnx"
                         .to_string(),
                 ),
-                size_mb: 82,
+                size_mb: 92,
                 is_downloaded: false,
                 is_downloading: false,
                 partial_size: 0,
@@ -672,12 +672,12 @@ impl ModelManager {
 
     pub fn get_model_path(&self, model_id: &str) -> Result<PathBuf> {
         let model_info = self
-            .get_model_info(model_id)
+            .available_models
+            .lock()
+            .unwrap()
+            .get(model_id)
+            .cloned()
             .ok_or_else(|| anyhow::anyhow!("Model not found: {}", model_id))?;
-
-        if !model_info.is_downloaded {
-            return Err(anyhow::anyhow!("Model not available: {}", model_id));
-        }
 
         // Ensure we don't return partial files/directories
         if model_info.is_downloading {
@@ -713,6 +713,10 @@ impl ModelManager {
                 ))
             }
         }
+    }
+
+    pub fn get_models_dir(&self) -> PathBuf {
+        self.models_dir.clone()
     }
 
     pub fn cancel_download(&self, model_id: &str) -> Result<()> {

@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
-import { Plus, Trash2, X, Settings2 } from "lucide-react";
+import { Plus, Trash2, X, Settings2, RefreshCcw } from "lucide-react";
 import { commands, LLMProvider, LLMModel, DefaultModels } from "@/bindings";
 
 import { SettingsGroup } from "../ui/SettingsGroup";
 import { SettingContainer } from "../ui/SettingContainer";
 import { Button } from "../ui/Button";
 import { ModelsDropdown } from "../ui/ModelsDropdown";
+import { useSettings } from "../../hooks/useSettings";
 
 // Known provider presets (models are fetched dynamically via API)
 const PROVIDER_PRESETS: Record<
@@ -63,12 +64,17 @@ const ProviderDialog: React.FC<ProviderDialogProps> = ({
   const [customName, setCustomName] = useState("");
   const [customUrl, setCustomUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
-  let [selectedModels, setSelectedModels] = useState<Set<string>>(new Set());
+  const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set());
   const [customModels, setCustomModels] = useState("");
+  const [isFetchingModels, setIsFetchingModels] = useState(false);
+  const [fetchedModels, setFetchedModels] = useState<string[]>([]);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   // Initialize form when dialog opens
   useEffect(() => {
     if (isOpen) {
+      setFetchError(null);
+      setFetchedModels([]);
       if (mode === "edit" && provider) {
         // Editing existing provider
         if (provider.is_custom) {
@@ -107,6 +113,58 @@ const ProviderDialog: React.FC<ProviderDialogProps> = ({
     }
   }, [isOpen, mode, provider, providerModels]);
 
+  const handleFetchModels = async () => {
+    let providerIdToUse = provider?.id;
+
+    setIsFetchingModels(true);
+    setFetchError(null);
+    try {
+      // First, we must ensure the provider is saved with the current API key/URL
+      // so the backend can use them to fetch models.
+      let currentProvider: LLMProvider;
+      if (providerType === "preset") {
+        const preset = PROVIDER_PRESETS[selectedPreset];
+        currentProvider = {
+          id: provider?.id || selectedPreset,
+          name: preset.name,
+          base_url: preset.base_url,
+          api_key: apiKey,
+          supports_vision: true,
+          is_custom: false,
+        };
+      } else {
+        currentProvider = {
+          id: provider?.id || crypto.randomUUID(),
+          name: customName,
+          base_url: customUrl,
+          api_key: apiKey,
+          supports_vision: true,
+          is_custom: true,
+        };
+      }
+
+      providerIdToUse = currentProvider.id;
+      await commands.saveLlmProvider(currentProvider);
+
+      const result = await commands.fetchPostProcessModels(providerIdToUse);
+      if (result.status === "ok") {
+        setFetchedModels(result.data);
+        // If we're adding new models, auto-select them if none were selected or if they were already enabled
+        const newSelectedModels = new Set(selectedModels);
+        if (selectedModels.size === 0) {
+          result.data.forEach((id) => newSelectedModels.add(id));
+        }
+        setSelectedModels(newSelectedModels);
+      } else {
+        setFetchError(result.error);
+      }
+    } catch (error) {
+      setFetchError(String(error));
+    } finally {
+      setIsFetchingModels(false);
+    }
+  };
+
   // Available presets (filter out providers that already have an API key configured)
   const availablePresets = Object.entries(PROVIDER_PRESETS).filter(
     ([id]) =>
@@ -127,7 +185,12 @@ const ProviderDialog: React.FC<ProviderDialogProps> = ({
 
   const handleSave = () => {
     let providerData: LLMProvider;
-    let models: { id: string; name: string; vision?: boolean }[] = [];
+    let modelsToSave: { id: string; name: string; vision?: boolean }[] = [];
+    let enabledIds = new Set(selectedModels);
+
+    const allKnownModelIdsFromCheckboxes = Array.from(
+      new Set([...fetchedModels, ...providerModels.map((m) => m.model_id)]),
+    );
 
     if (providerType === "preset" && selectedPreset) {
       const preset = PROVIDER_PRESETS[selectedPreset];
@@ -139,8 +202,14 @@ const ProviderDialog: React.FC<ProviderDialogProps> = ({
         supports_vision: true,
         is_custom: false,
       };
-      // Preset providers: no hardcoded models, they're fetched via API after saving
-      models = [];
+      modelsToSave = allKnownModelIdsFromCheckboxes.map((id) => {
+        const existing = providerModels.find((m) => m.model_id === id);
+        return {
+          id: id,
+          name: id,
+          vision: existing?.supports_vision || false,
+        };
+      });
     } else if (providerType === "custom" && customName && customUrl) {
       providerData = {
         id: provider?.id || crypto.randomUUID(),
@@ -150,21 +219,36 @@ const ProviderDialog: React.FC<ProviderDialogProps> = ({
         supports_vision: true,
         is_custom: true,
       };
-      // Parse custom models and auto-select them all
-      if (customModels.trim()) {
-        models = customModels.split(",").map((m) => ({
-          id: m.trim(),
-          name: m.trim(),
-          vision: false,
-        }));
-        // Auto-select all custom models so they get saved as enabled
-        selectedModels = new Set(models.map((m) => m.id));
-      }
+
+      // Merge models from text field and fetched models
+      const textModelIds = customModels
+        .split(",")
+        .map((m) => m.trim())
+        .filter(Boolean);
+      const allModelIds = Array.from(
+        new Set([...textModelIds, ...allKnownModelIdsFromCheckboxes]),
+      );
+
+      modelsToSave = allModelIds.map((id) => {
+        const existing = providerModels.find((m) => m.model_id === id);
+        return {
+          id: id,
+          name: id,
+          vision: existing?.supports_vision || false,
+        };
+      });
+
+      // Auto-enable models newly added in the text field
+      textModelIds.forEach((id) => {
+        if (!providerModels.some((m) => m.model_id === id)) {
+          enabledIds.add(id);
+        }
+      });
     } else {
       return;
     }
 
-    onSave(providerData, models, selectedModels);
+    onSave(providerData, modelsToSave, enabledIds);
     onClose();
   };
 
@@ -176,9 +260,13 @@ const ProviderDialog: React.FC<ProviderDialogProps> = ({
 
   if (!isOpen) return null;
 
+  const allModelIds = Array.from(
+    new Set([...fetchedModels, ...providerModels.map((m) => m.model_id)]),
+  ).sort();
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-background border border-mid-gray/20 rounded-xl shadow-xl w-full max-w-lg max-h-[85vh] overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-background border border-mid-gray/20 rounded-xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-mid-gray/10">
           <h2 className="text-lg font-semibold">
@@ -233,6 +321,7 @@ const ProviderDialog: React.FC<ProviderDialogProps> = ({
                     onChange={(e) => {
                       setSelectedPreset(e.target.value);
                       setSelectedModels(new Set());
+                      setFetchedModels([]);
                     }}
                     className="w-full px-3 py-2 bg-background border border-mid-gray/30 rounded-lg text-sm focus:outline-none focus:border-logo-primary"
                   >
@@ -258,14 +347,75 @@ const ProviderDialog: React.FC<ProviderDialogProps> = ({
                 />
               </div>
 
-              {/* Info about model fetching for preset providers */}
+              {/* Models List */}
               {(selectedPreset || mode === "edit") && (
-                <div className="p-3 bg-mid-gray/5 border border-mid-gray/20 rounded-lg">
-                  <p className="text-sm text-mid-gray">
-                    After saving, click the <strong>Refresh</strong> button in
-                    any model dropdown to fetch available models from this
-                    provider.
-                  </p>
+                <div className="space-y-2 border-t border-mid-gray/10 pt-4">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium">Models</label>
+                    <div className="flex items-center gap-2">
+                      {allModelIds.length > 0 && (
+                        <>
+                          <button
+                            onClick={() =>
+                              setSelectedModels(new Set(allModelIds))
+                            }
+                            className="text-xs text-logo-primary hover:underline"
+                          >
+                            Check All
+                          </button>
+                          <span className="text-mid-gray/30 text-xs">|</span>
+                          <button
+                            onClick={() => setSelectedModels(new Set())}
+                            className="text-xs text-logo-primary hover:underline"
+                          >
+                            Uncheck All
+                          </button>
+                          <span className="text-mid-gray/30 text-xs">|</span>
+                        </>
+                      )}
+                      <button
+                        onClick={handleFetchModels}
+                        disabled={isFetchingModels || !apiKey.trim()}
+                        className="p-1 text-mid-gray hover:text-logo-primary transition-colors disabled:opacity-50"
+                        title="Refresh models"
+                      >
+                        <RefreshCcw
+                          className={`h-4 w-4 ${isFetchingModels ? "animate-spin" : ""}`}
+                        />
+                      </button>
+                    </div>
+                  </div>
+
+                  {fetchError && (
+                    <p className="text-xs text-red-500">{fetchError}</p>
+                  )}
+
+                  {allModelIds.length > 0 ? (
+                    <div className="grid grid-cols-1 gap-1 max-h-48 overflow-y-auto pr-2 border border-mid-gray/10 rounded-lg p-2">
+                      {allModelIds.map((modelId) => (
+                        <label
+                          key={modelId}
+                          className="flex items-center gap-2 p-1.5 hover:bg-mid-gray/5 rounded cursor-pointer text-sm"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedModels.has(modelId)}
+                            onChange={() => toggleModel(modelId)}
+                            className="rounded border-mid-gray/30 text-logo-primary focus:ring-logo-primary"
+                          />
+                          <span className="truncate">{modelId}</span>
+                        </label>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-3 bg-mid-gray/5 border border-mid-gray/20 rounded-lg">
+                      <p className="text-sm text-mid-gray">
+                        Enter your API key and click the{" "}
+                        <strong>Refresh</strong> button to fetch available
+                        models.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
             </>
@@ -306,9 +456,23 @@ const ProviderDialog: React.FC<ProviderDialogProps> = ({
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium">
-                  Models (comma-separated)
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="text-sm font-medium">
+                    Models (comma-separated)
+                  </label>
+                  <button
+                    onClick={handleFetchModels}
+                    disabled={
+                      isFetchingModels || !apiKey.trim() || !customUrl.trim()
+                    }
+                    className="p-1 text-mid-gray hover:text-logo-primary transition-colors disabled:opacity-50"
+                    title="Refresh models"
+                  >
+                    <RefreshCcw
+                      className={`h-4 w-4 ${isFetchingModels ? "animate-spin" : ""}`}
+                    />
+                  </button>
+                </div>
                 <input
                   type="text"
                   value={customModels}
@@ -317,12 +481,55 @@ const ProviderDialog: React.FC<ProviderDialogProps> = ({
                   className="w-full px-3 py-2 bg-background border border-mid-gray/30 rounded-lg text-sm focus:outline-none focus:border-logo-primary"
                 />
               </div>
+
+              {/* Models List for Custom Provider (if fetched) */}
+              {allModelIds.length > 0 && (
+                <div className="space-y-2 border-t border-mid-gray/10 pt-4">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm font-medium">
+                      Enabled Models
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setSelectedModels(new Set(allModelIds))}
+                        className="text-xs text-logo-primary hover:underline"
+                      >
+                        Check All
+                      </button>
+                      <span className="text-mid-gray/30 text-xs">|</span>
+                      <button
+                        onClick={() => setSelectedModels(new Set())}
+                        className="text-xs text-logo-primary hover:underline"
+                      >
+                        Uncheck All
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-1 max-h-48 overflow-y-auto pr-2 border border-mid-gray/10 rounded-lg p-2">
+                    {allModelIds.map((modelId) => (
+                      <label
+                        key={modelId}
+                        className="flex items-center gap-2 p-1.5 hover:bg-mid-gray/5 rounded cursor-pointer text-sm"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedModels.has(modelId)}
+                          onChange={() => toggleModel(modelId)}
+                          className="rounded border-mid-gray/30 text-logo-primary focus:ring-logo-primary"
+                        />
+                        <span className="truncate">{modelId}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
 
         {/* Footer */}
-        <div className="flex justify-between px-6 py-4 border-t border-mid-gray/10">
+        <div className="flex justify-between px-6 py-4 border-t border-mid-gray/10 bg-mid-gray/5">
           <div>
             {mode === "edit" && onDelete && (
               <button
@@ -353,12 +560,16 @@ const ProviderDialog: React.FC<ProviderDialogProps> = ({
 // Main Component
 export const LLMProviderSettings: React.FC = () => {
   const { t } = useTranslation();
-  const [providers, setProviders] = useState<LLMProvider[]>([]);
-  const [models, setModels] = useState<LLMModel[]>([]);
-  const [defaultModels, setDefaultModels] = useState<DefaultModels | null>(
-    null,
-  );
-  const [isLoading, setIsLoading] = useState(true);
+  const {
+    settings,
+    isLoading: settingsLoading,
+    refreshSettings,
+  } = useSettings();
+
+  const providers = settings?.llm_providers || [];
+  const models = settings?.llm_models || [];
+
+  const [isLoading, setIsLoading] = useState(false);
 
   // Dialog state
   const [dialogMode, setDialogMode] = useState<"add" | "edit">("add");
@@ -366,27 +577,6 @@ export const LLMProviderSettings: React.FC = () => {
   const [editingProvider, setEditingProvider] = useState<LLMProvider | null>(
     null,
   );
-
-  const loadData = async () => {
-    try {
-      const [p, m, d] = await Promise.all([
-        commands.getLlmProviders(),
-        commands.getLlmModels(),
-        commands.getDefaultModels(),
-      ]);
-      setProviders(p);
-      setModels(m);
-      setDefaultModels(d);
-    } catch (error) {
-      console.error("Failed to load data:", error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadData();
-  }, []);
 
   const openAddDialog = () => {
     setDialogMode("add");
@@ -423,7 +613,7 @@ export const LLMProviderSettings: React.FC = () => {
         await commands.saveLlmModel(newModel);
       }
 
-      await loadData();
+      await refreshSettings();
     } catch (error) {
       console.error("Failed to save provider:", error);
     }
@@ -434,7 +624,7 @@ export const LLMProviderSettings: React.FC = () => {
     try {
       await commands.deleteLlmProvider(editingProvider.id);
       setDialogOpen(false);
-      await loadData();
+      await refreshSettings();
     } catch (error) {
       console.error("Failed to delete provider:", error);
     }
@@ -445,7 +635,8 @@ export const LLMProviderSettings: React.FC = () => {
       await commands.setDefaultModel("chat", modelId);
       await commands.setDefaultModel("coherent", modelId);
       await commands.setDefaultModel("voice", modelId);
-      await loadData();
+      await commands.setDefaultModel("context_chat", modelId);
+      await refreshSettings();
     } catch (error) {
       console.error("Failed to set default model:", error);
     }
@@ -455,7 +646,20 @@ export const LLMProviderSettings: React.FC = () => {
   const getProviderModels = (providerId: string) =>
     models.filter((m) => m.provider_id === providerId);
 
-  if (isLoading) {
+  // Filter for enabled models and ensure provider has API key
+  const configuredProviderIds = new Set(
+    providers
+      .filter((p) => p.api_key && p.api_key.trim() !== "")
+      .map((p) => p.id),
+  );
+  const anyModelsEnabled = models.some(
+    (m) =>
+      m.enabled === true &&
+      m.provider_id &&
+      configuredProviderIds.has(m.provider_id),
+  );
+
+  if (settingsLoading) {
     return (
       <div className="flex items-center justify-center h-40">
         <div className="animate-spin h-6 w-6 border-2 border-logo-primary border-t-transparent rounded-full" />
@@ -544,9 +748,9 @@ export const LLMProviderSettings: React.FC = () => {
           grouped={true}
         >
           <ModelsDropdown
-            selectedValue={defaultModels?.chat || null}
+            selectedValue={settings?.default_chat_model_id || null}
             onSelect={handleSetDefaultModel}
-            disabled={models.filter((m) => m.enabled).length === 0}
+            disabled={!anyModelsEnabled}
             className="min-w-[280px]"
           />
         </SettingContainer>

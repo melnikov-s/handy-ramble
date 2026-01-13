@@ -21,6 +21,7 @@ import {
   PostProcessingSettings,
   RambleSettings,
   VoiceCommandSettings,
+  TextToSpeechSettings,
 } from "./settings";
 import { ChatHistorySettings } from "./settings/ChatHistorySettings";
 
@@ -58,6 +59,12 @@ export const SECTIONS_CONFIG = {
     labelKey: "sidebar.ramble",
     icon: MessageSquare,
     component: RambleSettings,
+    enabled: () => true,
+  },
+  textToSpeech: {
+    labelKey: "sidebar.textToSpeech",
+    icon: MessageSquare,
+    component: TextToSpeechSettings,
     enabled: () => true,
   },
   voiceCommands: {

@@ -195,8 +195,13 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
           commands.getAppSettings(),
         ]);
 
-        // Only show enabled models in the dropdown
-        const enabledModels = modelsResult.filter((m) => m.enabled);
+        // Filter models: enabled AND provider has API key
+        const configuredProviderIds = new Set(
+          providersResult.filter((p) => p.api_key).map((p) => p.id),
+        );
+        const enabledModels = modelsResult.filter(
+          (m) => m.enabled && configuredProviderIds.has(m.provider_id),
+        );
         setModels(enabledModels);
         setProviders(providersResult);
 
