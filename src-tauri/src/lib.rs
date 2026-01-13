@@ -245,6 +245,17 @@ fn initialize_core_logic(app_handle: &AppHandle) {
                     log::info!("No transcription available to copy");
                 }
             }
+            "copy_last_voice_interaction" => {
+                use tauri_plugin_clipboard_manager::ClipboardExt;
+                let settings = settings::get_settings(app);
+                if let Some(text) = settings.last_voice_interaction {
+                    if let Err(e) = app.clipboard().write_text(&text) {
+                        log::error!("Failed to copy last voice interaction to clipboard: {}", e);
+                    } else {
+                        log::info!("Copied last voice interaction to clipboard");
+                    }
+                }
+            }
             "chats_new" => {
                 // Open a new empty chat
                 if let Err(e) = commands::open_chat_window(app.clone(), None) {
@@ -344,6 +355,7 @@ pub fn run() {
         shortcut::change_ramble_prompt_setting,
         shortcut::change_ramble_use_vision_model_setting,
         shortcut::change_ramble_vision_model_setting,
+        shortcut::change_context_chat_prompt_setting,
         shortcut::reset_ramble_prompt_to_default,
         shortcut::change_hold_threshold_setting,
         shortcut::change_clipboard_content_cutoff_setting,
@@ -402,6 +414,8 @@ pub fn run() {
         commands::audio::set_clamshell_microphone,
         commands::audio::get_clamshell_microphone,
         commands::audio::is_recording,
+        commands::add_context_image,
+        commands::copy_last_voice_interaction,
         commands::transcription::set_model_unload_timeout,
         commands::transcription::get_model_load_status,
         commands::transcription::unload_model_manually,

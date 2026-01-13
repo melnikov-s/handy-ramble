@@ -163,6 +163,9 @@ pub fn delete_llm_model(app: AppHandle, model_id: String) -> Result<(), String> 
     if settings.default_voice_model_id.as_ref() == Some(&model_id) {
         settings.default_voice_model_id = None;
     }
+    if settings.default_context_chat_model_id.as_ref() == Some(&model_id) {
+        settings.default_context_chat_model_id = None;
+    }
 
     settings::write_settings(&app, settings);
     Ok(())
@@ -190,9 +193,10 @@ pub fn set_default_model(
         "chat" => settings.default_chat_model_id = model_id,
         "coherent" => settings.default_coherent_model_id = model_id,
         "voice" => settings.default_voice_model_id = model_id,
+        "context_chat" => settings.default_context_chat_model_id = model_id,
         _ => {
             return Err(format!(
-                "Unknown feature '{}'. Valid: chat, coherent, voice",
+                "Unknown feature '{}'. Valid: chat, coherent, voice, context_chat",
                 feature
             ))
         }
@@ -211,6 +215,7 @@ pub fn get_default_models(app: AppHandle) -> DefaultModels {
         chat: settings.default_chat_model_id.clone(),
         coherent: settings.default_coherent_model_id.clone(),
         voice: settings.default_voice_model_id.clone(),
+        context_chat: settings.default_context_chat_model_id.clone(),
     }
 }
 
@@ -219,4 +224,5 @@ pub struct DefaultModels {
     pub chat: Option<String>,
     pub coherent: Option<String>,
     pub voice: Option<String>,
+    pub context_chat: Option<String>,
 }

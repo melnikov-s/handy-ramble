@@ -324,6 +324,14 @@ async changeRambleVisionModelSetting(model: string) : Promise<Result<null, strin
     else return { status: "error", error: e  as any };
 }
 },
+async changeContextChatPromptSetting(prompt: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_context_chat_prompt_setting", { prompt }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async resetRamblePromptToDefault() : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("reset_ramble_prompt_to_default") };
@@ -769,6 +777,22 @@ async getClamshellMicrophone() : Promise<Result<string, string>> {
 },
 async isRecording() : Promise<boolean> {
     return await TAURI_INVOKE("is_recording");
+},
+async addContextImage(base64: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("add_context_image", { base64 }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+async copyLastVoiceInteraction() : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("copy_last_voice_interaction") };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
 },
 async setModelUnloadTimeout(timeout: ModelUnloadTimeout) : Promise<void> {
     await TAURI_INVOKE("set_model_unload_timeout", { timeout });
@@ -1254,7 +1278,19 @@ unknown_command_terminal?: string;
  * Maximum characters to include from clipboard content in ${clipboard} variable
  * 0 = no cutoff (include all), other values = limit to N characters
  */
-clipboard_content_cutoff?: number }
+clipboard_content_cutoff?: number; 
+/**
+ * Prompt for the context chat mode
+ */
+context_chat_prompt?: string; 
+/**
+ * The last response from a voice interaction (Context Chat)
+ */
+last_voice_interaction?: string | null; 
+/**
+ * Default model ID for context chat mode
+ */
+default_context_chat_model_id?: string | null }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
 export type ChatMessage = { role: string; content: string; images: string[] | null }
@@ -1262,7 +1298,7 @@ export type ChatResponse = { content: string; grounding_metadata: GroundingMetad
 export type ChatSummary = { id: number; title: string; created_at: number; updated_at: number; message_count: number }
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard"
 export type CustomSounds = { start: boolean; stop: boolean }
-export type DefaultModels = { chat: string | null; coherent: string | null; voice: string | null }
+export type DefaultModels = { chat: string | null; coherent: string | null; voice: string | null; context_chat: string | null }
 /**
  * Detected app info (for tracking history)
  */

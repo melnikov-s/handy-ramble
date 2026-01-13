@@ -190,6 +190,16 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
     )
     .expect("failed to create copy last transcription item");
 
+    // Create the "Copy Last Voice Interaction" menu item
+    let copy_last_voice_interaction_i = MenuItem::with_id(
+        app,
+        "copy_last_voice_interaction",
+        &strings.copy_last_voice_interaction,
+        settings.last_voice_interaction.is_some(),
+        None::<&str>,
+    )
+    .expect("failed to create copy last voice interaction item");
+
     // Create the Chats submenu
     let chats_submenu = Submenu::with_id(app, "chats_menu", &strings.chats, true)
         .expect("failed to create chats submenu");
@@ -239,6 +249,7 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
                     &version_i,
                     &separator(),
                     &copy_last_i,
+                    &copy_last_voice_interaction_i,
                     &separator(),
                     &chats_submenu,
                     &separator(),
@@ -264,6 +275,7 @@ pub fn update_tray_menu(app: &AppHandle, state: &TrayIconState, locale: Option<&
                 &version_i,
                 &separator(),
                 &copy_last_i,
+                &copy_last_voice_interaction_i,
                 &separator(),
                 &chats_submenu,
                 &separator(),

@@ -283,6 +283,32 @@ pub fn show_voice_command_recording_overlay(app_handle: &AppHandle) {
     }
 }
 
+/// Shows the context chat recording overlay window (gold theme)
+pub fn show_context_chat_recording_overlay(app_handle: &AppHandle) {
+    // Check if overlay should be shown based on position setting
+    let settings = settings::get_settings(app_handle);
+    if settings.overlay_position == OverlayPosition::None {
+        return;
+    }
+
+    if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
+        // Update position before showing to prevent flicker from position changes
+        if let Some((x, y)) = calculate_overlay_position(app_handle) {
+            let _ = overlay_window
+                .set_position(tauri::Position::Logical(tauri::LogicalPosition { x, y }));
+        }
+
+        let _ = overlay_window.show();
+
+        // On Windows, aggressively re-assert "topmost" in the native Z-order after showing
+        #[cfg(target_os = "windows")]
+        force_overlay_topmost(&overlay_window);
+
+        // Emit event to trigger fade-in animation with context_chat_recording state
+        let _ = overlay_window.emit("show-overlay", "context_chat_recording");
+    }
+}
+
 /// Shows the transcribing overlay window
 pub fn show_transcribing_overlay(app_handle: &AppHandle) {
     // Check if overlay should be shown based on position setting
@@ -324,6 +350,28 @@ pub fn show_voice_command_transcribing_overlay(app_handle: &AppHandle) {
 
         // Emit event to switch to voice_command_transcribing state
         let _ = overlay_window.emit("show-overlay", "voice_command_transcribing");
+    }
+}
+
+/// Shows the context chat processing overlay window (gold theme)
+pub fn show_context_chat_processing_overlay(app_handle: &AppHandle) {
+    // Check if overlay should be shown based on position setting
+    let settings = settings::get_settings(app_handle);
+    if settings.overlay_position == OverlayPosition::None {
+        return;
+    }
+
+    update_overlay_position(app_handle);
+
+    if let Some(overlay_window) = app_handle.get_webview_window("recording_overlay") {
+        let _ = overlay_window.show();
+
+        // On Windows, aggressively re-assert "topmost" in the native Z-order after showing
+        #[cfg(target_os = "windows")]
+        force_overlay_topmost(&overlay_window);
+
+        // Emit event to switch to context_chat_processing state
+        let _ = overlay_window.emit("show-overlay", "context_chat_processing");
     }
 }
 

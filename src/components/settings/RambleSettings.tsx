@@ -35,24 +35,7 @@ export const RambleSettings: React.FC = () => {
   const [newCategoryName, setNewCategoryName] = useState("");
   const [newCategoryIcon, setNewCategoryIcon] = useState("📝");
 
-  // Default models state for current selection
-  const [defaultModels, setDefaultModels] = useState<DefaultModels | null>(
-    null,
-  );
   const [isUpdating, setIsUpdating] = useState(false);
-
-  // Load defaults on mount
-  useEffect(() => {
-    const loadDefaults = async () => {
-      try {
-        const defaults = await commands.getDefaultModels();
-        setDefaultModels(defaults);
-      } catch (error) {
-        console.error("Failed to load default models:", error);
-      }
-    };
-    loadDefaults();
-  }, []);
 
   // Sync category prompts from settings
   useEffect(() => {
@@ -64,13 +47,12 @@ export const RambleSettings: React.FC = () => {
     setCategoryPrompts(prompts);
   }, [settings?.prompt_categories]);
 
-  const handleModelChange = async (modelId: string) => {
+  const handleModelChange = async (modelId: string | null) => {
+    if (!modelId) return;
     setIsUpdating(true);
     try {
       await commands.setDefaultModel("coherent", modelId);
-      // Reload defaults
-      const defaults = await commands.getDefaultModels();
-      setDefaultModels(defaults);
+      await refreshSettings();
     } catch (error) {
       console.error("Failed to change coherent model:", error);
     } finally {
@@ -203,7 +185,7 @@ export const RambleSettings: React.FC = () => {
           grouped={true}
         >
           <ModelsDropdown
-            selectedValue={defaultModels?.coherent || null}
+            selectedValue={settings?.default_coherent_model_id || null}
             onSelect={handleModelChange}
             disabled={isUpdating}
             className="min-w-[280px]"

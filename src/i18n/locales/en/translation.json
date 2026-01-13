@@ -10,6 +10,9 @@
     "medium": "Medium",
     "high": "High",
     "copyLastTranscription": "Copy Last Transcription",
+    "copyLastVoiceInteraction": "Copy Last Voice Interaction",
+    "voiceInteractions": "Voice Interactions",
+    "speechToText": "Speech to Text",
     "chats": "Chats",
     "newChat": "New Chat",
     "noSavedChats": "No Saved Chats"
@@ -17,6 +20,7 @@
   "sidebar": {
     "general": "General",
     "ramble": "Ramble to Coherent",
+    "textToSpeech": "Text to Speech",
     "voiceCommands": "Commands",
     "advanced": "Advanced",
     "postProcessing": "Post Process",
@@ -118,6 +122,10 @@
           "voice_command": {
             "name": "Voice Command",
             "description": "Activates voice command mode to control your computer."
+          },
+          "context_chat": {
+            "name": "Voice Interaction",
+            "description": "Talk to an AI about your current context (selection, clipboard, screen)."
           }
         },
         "errors": {
@@ -160,6 +168,27 @@
       "volume": {
         "title": "Volume",
         "description": "Adjust the volume of audio feedback sounds"
+      }
+    },
+    "tts": {
+      "title": "Text to Speech",
+      "enabled": {
+        "title": "Enable AI Speech",
+        "description": "Speak selected text aloud using high-quality local AI models."
+      },
+      "model": {
+        "title": "Speech Model",
+        "description": "Choose the AI voice model. Kokoro is recommended for natural sound."
+      },
+      "download": "Download Model",
+      "ready": "Ready for local use",
+      "speed": {
+        "title": "Speech Speed",
+        "description": "Adjust how fast the AI speaks."
+      },
+      "volume": {
+        "title": "Speech Volume",
+        "description": "Adjust the playback volume of the AI voice."
       }
     },
     "advanced": {

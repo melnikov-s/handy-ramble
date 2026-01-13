@@ -149,16 +149,6 @@ const PostProcessingSettingsApiComponent: React.FC = () => {
             onBlur={() => {}}
             className="flex-1 min-w-[380px]"
           />
-          <ResetButton
-            onClick={state.handleRefreshModels}
-            disabled={state.isFetchingModels || state.isAppleProvider}
-            ariaLabel={t("settings.postProcessing.api.model.refreshModels")}
-            className="flex h-10 w-10 items-center justify-center"
-          >
-            <RefreshCcw
-              className={`h-4 w-4 ${state.isFetchingModels ? "animate-spin" : ""}`}
-            />
-          </ResetButton>
         </div>
       </SettingContainer>
     </>

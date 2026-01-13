@@ -3,10 +3,15 @@ use crate::settings::get_settings;
 use crate::tts::kokoro::KokoroEngine;
 use crate::tts::TTSEngine;
 use anyhow::Result;
-use log::info;
+use log::{info, warn};
+use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::sync::Mutex;
+
+const KOKORO_VOICE_URL: &str =
+    "https://huggingface.co/onnx-community/Kokoro-82M-ONNX/resolve/main/voices/af_bella.bin";
+const KOKORO_VOICE_FILENAME: &str = "kokoro-af_bella.bin";
 
 pub struct TTSManager {
     app_handle: AppHandle,
@@ -55,6 +60,24 @@ impl TTSManager {
         Ok(())
     }
 
+    async fn ensure_voice_file(&self) -> Result<PathBuf> {
+        let voices_path = self
+            .model_manager
+            .get_models_dir()
+            .join(KOKORO_VOICE_FILENAME);
+
+        if voices_path.exists() {
+            return Ok(voices_path);
+        }
+
+        info!("Downloading Kokoro voice file: {}", KOKORO_VOICE_FILENAME);
+        let response = reqwest::get(KOKORO_VOICE_URL).await?.error_for_status()?;
+        let bytes = response.bytes().await?;
+        std::fs::write(&voices_path, &bytes)?;
+
+        Ok(voices_path)
+    }
+
     async fn ensure_engine_loaded(&self, model_id: &str) -> Result<()> {
         let mut engine_guard = self.engine.lock().await;
         if engine_guard.is_some() {
@@ -72,9 +95,16 @@ impl TTSManager {
         }
 
         let model_path = self.model_manager.get_model_path(model_id)?;
+        let voices_path = match self.ensure_voice_file().await {
+            Ok(path) => path,
+            Err(err) => {
+                warn!("Failed to download Kokoro voice file: {}", err);
+                return Err(err);
+            }
+        };
 
         let mut kokoro = KokoroEngine::new();
-        kokoro.load_model(model_path)?;
+        kokoro.load_model(model_path, voices_path)?;
 
         *engine_guard = Some(Box::new(kokoro) as Box<dyn TTSEngine>);
         info!("TTS engine loaded successfully");

@@ -12,8 +12,9 @@ use crate::settings::{
 };
 use crate::tray::{change_tray_icon, TrayIconState};
 use crate::utils::{
-    self, is_operation_paused, resume_current_operation, show_making_coherent_overlay,
-    show_recording_overlay, show_transcribing_overlay, show_voice_command_recording_overlay,
+    self, is_operation_paused, resume_current_operation, show_context_chat_processing_overlay,
+    show_context_chat_recording_overlay, show_making_coherent_overlay, show_recording_overlay,
+    show_transcribing_overlay, show_voice_command_recording_overlay,
     show_voice_command_transcribing_overlay,
 };
 use crate::{app_detection, known_apps};
@@ -777,7 +778,7 @@ impl ShortcutAction for SpeakSelectionAction {
         let app_handle = app.clone();
         let tts_manager = app.state::<Arc<TTSManager>>().inner().clone();
 
-        tokio::spawn(async move {
+        tauri::async_runtime::spawn(async move {
             debug!("[TTS] SpeakSelectionAction started");
 
             // 1. Get selected text
@@ -807,7 +808,7 @@ impl ShortcutAction for SpeakSelectionAction {
 
     fn stop(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) {
         let tts_manager = app.state::<Arc<TTSManager>>().inner().clone();
-        tokio::spawn(async move {
+        tauri::async_runtime::spawn(async move {
             let _ = tts_manager.stop().await;
         });
     }
@@ -1998,6 +1999,202 @@ fn extract_app_name(transcription: &str) -> String {
     transcription.trim().to_string()
 }
 
+// Context Chat Action
+pub struct ContextChatAction;
+
+impl ShortcutAction for ContextChatAction {
+    fn interaction_behavior(&self) -> InteractionBehavior {
+        InteractionBehavior::Hybrid
+    }
+
+    fn start(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) -> bool {
+        debug!("[ACTION] ContextChatAction::start called");
+
+        if is_operation_paused(app, binding_id) {
+            resume_current_operation(app);
+            return true;
+        }
+
+        let tm = app.state::<Arc<TranscriptionManager>>();
+        tm.initiate_model_load();
+
+        let binding_id = binding_id.to_string();
+        change_tray_icon(app, TrayIconState::Recording);
+        show_context_chat_recording_overlay(app);
+
+        let rm = app.state::<Arc<AudioRecordingManager>>();
+        let rm_clone = Arc::clone(&rm);
+        let app_clone = app.clone();
+        std::thread::spawn(move || {
+            play_feedback_sound_blocking(&app_clone, SoundType::Start);
+            rm_clone.apply_mute();
+        });
+
+        rm.try_start_recording(&binding_id)
+    }
+
+    fn stop(&self, app: &AppHandle, binding_id: &str, _shortcut_str: &str) {
+        let toggle_state_manager = app.state::<ManagedToggleState>();
+        if let Ok(mut states) = toggle_state_manager.lock() {
+            states.active_toggles.insert(binding_id.to_string(), false);
+        }
+
+        let ah = app.clone();
+        let rm = Arc::clone(&app.state::<Arc<AudioRecordingManager>>());
+        let tm = Arc::clone(&app.state::<Arc<TranscriptionManager>>());
+
+        change_tray_icon(app, TrayIconState::Transcribing);
+        show_context_chat_processing_overlay(app);
+
+        rm.remove_mute();
+        play_feedback_sound(app, SoundType::Stop);
+
+        let binding_id = binding_id.to_string();
+        let samples = rm.stop_recording(&binding_id);
+
+        tauri::async_runtime::spawn(async move {
+            if let Some(samples) = samples {
+                match tm.transcribe(samples) {
+                    Ok(transcription) => {
+                        debug!("Context chat transcription: '{}'", transcription);
+
+                        match process_context_chat(&ah, &transcription).await {
+                            Ok(response) => {
+                                // Save to last interaction
+                                let mut settings = get_settings(&ah);
+                                settings.last_voice_interaction = Some(response.clone());
+                                write_settings(&ah, settings);
+
+                                // Update tray menu (change_tray_icon does this)
+                                change_tray_icon(&ah, TrayIconState::Idle);
+
+                                let tts_manager = ah.state::<Arc<TTSManager>>();
+                                if let Err(e) = tts_manager.speak(&response).await {
+                                    error!("Failed to speak context chat response: {}", e);
+                                }
+                                utils::hide_recording_overlay(&ah);
+                            }
+                            Err(e) => {
+                                error!("Context chat processing failed: {}", e);
+                                utils::show_error_overlay(&ah, &e, false);
+                                change_tray_icon(&ah, TrayIconState::Idle);
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        error!("Context chat transcription error: {}", err);
+                        utils::show_error_overlay(
+                            &ah,
+                            &format!("Transcription error: {}", err),
+                            false,
+                        );
+                        change_tray_icon(&ah, TrayIconState::Idle);
+                    }
+                }
+            } else {
+                utils::hide_recording_overlay(&ah);
+                change_tray_icon(&ah, TrayIconState::Idle);
+            }
+        });
+    }
+}
+
+async fn process_context_chat(app: &AppHandle, transcription: &str) -> Result<String, String> {
+    let settings = get_settings(app);
+    let prompt_template = settings.context_chat_prompt.clone();
+
+    if prompt_template.trim().is_empty() {
+        return Err("Context chat prompt is empty".to_string());
+    }
+
+    let model_id = settings
+        .default_context_chat_model_id
+        .as_ref()
+        .or(settings.default_chat_model_id.as_ref())
+        .ok_or_else(|| "No context chat model configured".to_string())?;
+
+    let llm_config = resolve_llm_config(&settings, model_id)?;
+    let provider = llm_config.provider.clone();
+
+    // Get context
+    let audio_manager = app.state::<Arc<AudioRecordingManager>>();
+    let selection = audio_manager.get_selection_context();
+    let vision_context = audio_manager.get_vision_context();
+
+    // Get clipboard content
+    let clipboard_content = match clipboard::get_clipboard_content(app) {
+        Ok(Some(content)) => {
+            let cutoff = settings.clipboard_content_cutoff;
+            if cutoff > 0 && content.len() > cutoff as usize {
+                content.chars().take(cutoff as usize).collect::<String>()
+            } else {
+                content
+            }
+        }
+        _ => String::new(),
+    };
+
+    // Prepare prompt
+    let processed_prompt = prompt_template
+        .replace("${selection}", &selection.unwrap_or_default())
+        .replace("${clipboard}", &clipboard_content)
+        .replace("${prompt}", transcription);
+
+    // Create client
+    let client = crate::llm_client::create_client(&provider, llm_config.api_key)
+        .map_err(|e| format!("Failed to create client: {}", e))?;
+
+    // Build message
+    let message = if provider.supports_vision && !vision_context.is_empty() {
+        let mut parts = vec![ChatCompletionRequestUserMessageContentPart::Text(
+            ChatCompletionRequestMessageContentPartTextArgs::default()
+                .text(processed_prompt)
+                .build()
+                .map_err(|e| e.to_string())?,
+        )];
+
+        for base64_image in vision_context {
+            let image_part = ChatCompletionRequestMessageContentPartImageArgs::default()
+                .image_url(format!("data:image/png;base64,{}", base64_image))
+                .build()
+                .map_err(|e| e.to_string())?;
+            parts.push(ChatCompletionRequestUserMessageContentPart::ImageUrl(
+                image_part,
+            ));
+        }
+
+        ChatCompletionRequestUserMessageArgs::default()
+            .content(ChatCompletionRequestUserMessageContent::Array(parts))
+            .build()
+            .map_err(|e| e.to_string())?
+    } else {
+        ChatCompletionRequestUserMessageArgs::default()
+            .content(processed_prompt)
+            .build()
+            .map_err(|e| e.to_string())?
+    };
+
+    let request = CreateChatCompletionRequestArgs::default()
+        .model(&llm_config.model.model_id)
+        .messages(vec![ChatCompletionRequestMessage::User(message)])
+        .build()
+        .map_err(|e| e.to_string())?;
+
+    let response = client
+        .chat()
+        .create(request)
+        .await
+        .map_err(|e| extract_llm_error(&e, &llm_config.model.model_id))?;
+
+    let llm_response = response
+        .choices
+        .first()
+        .and_then(|c| c.message.content.as_ref())
+        .ok_or_else(|| "LLM returned empty response".to_string())?;
+
+    Ok(llm_response.clone())
+}
+
 /// Extract text to print from transcription like "print hello world" -> "hello world"
 fn extract_print_text(transcription: &str) -> String {
     let lower = transcription.to_lowercase();
@@ -2038,6 +2235,10 @@ pub static ACTION_MAP: Lazy<HashMap<String, Arc<dyn ShortcutAction>>> = Lazy::ne
     map.insert(
         "speak_selection".to_string(),
         Arc::new(SpeakSelectionAction) as Arc<dyn ShortcutAction>,
+    );
+    map.insert(
+        "context_chat".to_string(),
+        Arc::new(ContextChatAction) as Arc<dyn ShortcutAction>,
     );
     map.insert(
         "test".to_string(),

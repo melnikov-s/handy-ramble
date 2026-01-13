@@ -8,7 +8,7 @@ import {
   PauseIcon,
   PlayIcon,
 } from "../components/icons";
-import { AlertCircle, X } from "lucide-react";
+import { AlertCircle, X, Camera } from "lucide-react";
 import "./RecordingOverlay.css";
 import { commands } from "@/bindings";
 import { syncLanguageFromSettings } from "@/i18n";
@@ -17,8 +17,10 @@ type OverlayState =
   | "recording"
   | "ramble_recording"
   | "voice_command_recording"
+  | "context_chat_recording"
   | "transcribing"
   | "voice_command_transcribing"
+  | "context_chat_processing"
   | "making_coherent"
   | "processing_command"
   | "paused"
@@ -72,6 +74,10 @@ const RecordingOverlay: React.FC = () => {
     state === "voice_command_transcribing" ||
     state === "processing_command";
 
+  // Helper to determine if current state is context chat related (gold theme)
+  const isContextChatState =
+    state === "context_chat_recording" || state === "context_chat_processing";
+
   // Context params count (for badge)
   const [contextParamsCount, setContextParamsCount] = useState(0);
 
@@ -93,6 +99,11 @@ const RecordingOverlay: React.FC = () => {
         }
       };
 
+      // Listen for vision-captured event to update counter
+      await register<void>("vision-captured", () => {
+        setContextParamsCount((prev) => prev + 1);
+      });
+
       // Listen for show-overlay event from Rust
       await register<string>("show-overlay", async (event) => {
         // Sync language from settings each time overlay is shown
@@ -103,6 +114,15 @@ const RecordingOverlay: React.FC = () => {
         setErrorMessage("");
         setIsVoiceCommandError(false);
         setIsVisible(true);
+
+        // Reset context count on new session
+        if (
+          overlayState === "recording" ||
+          overlayState === "voice_command_recording" ||
+          overlayState === "context_chat_recording"
+        ) {
+          setContextParamsCount(0);
+        }
 
         // Fetch current prompt mode from settings
         try {
@@ -121,7 +141,8 @@ const RecordingOverlay: React.FC = () => {
         // Reset mode known state only when a NEW recording session starts
         if (
           overlayState === "recording" ||
-          overlayState === "voice_command_recording"
+          overlayState === "voice_command_recording" ||
+          overlayState === "context_chat_recording"
         ) {
           setModeKnown(false);
           setIsQuickPressMode(false);
@@ -130,6 +151,7 @@ const RecordingOverlay: React.FC = () => {
           overlayState === "transcribing" ||
           overlayState === "ramble_transcribing" ||
           overlayState === "voice_command_transcribing" ||
+          overlayState === "context_chat_processing" ||
           overlayState === "making_coherent"
         ) {
           setModeKnown(false);
@@ -227,6 +249,23 @@ const RecordingOverlay: React.FC = () => {
     setState("recording");
   };
 
+  const handleScreenshot = async () => {
+    try {
+      const result = await commands.captureScreenMode(false);
+      if (result.status === "ok") {
+        await commands.addContextImage(result.data);
+        // Visual feedback - flash the overlay
+        const overlay = document.querySelector(".recording-overlay");
+        if (overlay) {
+          overlay.classList.add("screenshot-flash");
+          setTimeout(() => overlay.classList.remove("screenshot-flash"), 300);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to capture screenshot:", e);
+    }
+  };
+
   const handlePauseResume = () => {
     if (state === "paused" || state === "ramble_paused") {
       commands.resumeOperation();
@@ -271,6 +310,9 @@ const RecordingOverlay: React.FC = () => {
     if (state === "voice_command_recording") {
       // Voice command recording - always purple microphone, no category icons
       return <MicrophoneIcon color="#a855f7" />;
+    } else if (state === "context_chat_recording") {
+      // Context chat recording - always gold microphone
+      return <MicrophoneIcon color="#f59e0b" />;
     } else if (state === "recording" || state === "ramble_recording") {
       // In Refined mode, show category icon
       if (modeKnown && isQuickPressMode) {
@@ -280,9 +322,14 @@ const RecordingOverlay: React.FC = () => {
     } else if (state === "making_coherent") {
       // While refining, show the detected category icon
       return getCategoryIcon();
-    } else if (state === "processing_command") {
-      // Processing voice command - purple microphone
-      return <MicrophoneIcon color="#a855f7" />;
+    } else if (
+      state === "processing_command" ||
+      state === "context_chat_processing"
+    ) {
+      // Processing voice command or context chat
+      return (
+        <MicrophoneIcon color={isContextChatState ? "#f59e0b" : "#a855f7"} />
+      );
     } else if (
       state === "transcribing" ||
       state === "voice_command_transcribing"
@@ -308,14 +355,15 @@ const RecordingOverlay: React.FC = () => {
   return (
     <>
       <div
-        className={`recording-overlay bg-app-base ${isVisible ? "fade-in" : ""} ${state === "error" ? "error-state" : ""} ${isPaused ? "paused-state" : ""} ${isVoiceCommandState ? "voice-command-mode" : ""}`}
+        className={`recording-overlay bg-app-base ${isVisible ? "fade-in" : ""} ${state === "error" ? "error-state" : ""} ${isPaused ? "paused-state" : ""} ${isVoiceCommandState ? "voice-command-mode" : ""} ${isContextChatState ? "context-chat-mode" : ""}`}
       >
         <div className="overlay-left">{getIcon()}</div>
 
         <div className="overlay-middle">
           {(state === "recording" ||
             state === "ramble_recording" ||
-            state === "voice_command_recording") && (
+            state === "voice_command_recording" ||
+            state === "context_chat_recording") && (
             <div className="stacked-content">
               <div className="bars-container">
                 {levels.map((v, i) => (
@@ -361,7 +409,8 @@ const RecordingOverlay: React.FC = () => {
               </div>
             </div>
           )}
-          {state === "processing_command" && (
+          {(state === "processing_command" ||
+            state === "context_chat_processing") && (
             <div className="stacked-content">
               <div className="mode-label refining-label">
                 {t("overlay.processingCommand", "Processing...")}
@@ -388,6 +437,15 @@ const RecordingOverlay: React.FC = () => {
         </div>
 
         <div className="overlay-right">
+          {isContextChatState && state === "context_chat_recording" && (
+            <div
+              className={`vision-indicator ${contextParamsCount > 0 ? "has-vision" : ""}`}
+              onClick={handleScreenshot}
+              title={t("overlay.screenshot", "Capture Screenshot (S)")}
+            >
+              <Camera size={16} />
+            </div>
+          )}
           {(isRecording || isPaused) && (
             <>
               <div
@@ -401,9 +459,17 @@ const RecordingOverlay: React.FC = () => {
                 }
               >
                 {isPaused ? (
-                  <PlayIcon width={16} height={16} color="#1e40af" />
+                  <PlayIcon
+                    width={16}
+                    height={16}
+                    color={isContextChatState ? "#f59e0b" : "#1e40af"}
+                  />
                 ) : (
-                  <PauseIcon width={16} height={16} color="#1e40af" />
+                  <PauseIcon
+                    width={16}
+                    height={16}
+                    color={isContextChatState ? "#f59e0b" : "#1e40af"}
+                  />
                 )}
               </div>
               <div
@@ -412,7 +478,15 @@ const RecordingOverlay: React.FC = () => {
                   commands.cancelOperation();
                 }}
               >
-                <CancelIcon color="#1e40af" />
+                <CancelIcon
+                  color={
+                    isContextChatState
+                      ? "#f59e0b"
+                      : isVoiceCommandState
+                        ? "#a855f7"
+                        : "#1e40af"
+                  }
+                />
               </div>
             </>
           )}
