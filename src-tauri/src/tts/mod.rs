@@ -4,4 +4,5 @@ pub mod kokoro;
 pub trait TTSEngine: Send + Sync {
     async fn speak(&mut self, text: &str, speed: f32, volume: f32) -> anyhow::Result<()>;
     async fn stop(&self) -> anyhow::Result<()>;
+    fn is_playing(&self) -> bool;
 }

@@ -1,4 +1,5 @@
-use crate::managers::model::ModelManager; // Removed unused EngineType
+use crate::managers::model::ModelManager;
+use crate::overlay::{hide_recording_overlay, show_speaking_overlay};
 use crate::settings::get_settings;
 use crate::tts::kokoro::KokoroEngine;
 use crate::tts::TTSEngine;
@@ -9,14 +10,15 @@ use std::sync::Arc;
 use tauri::AppHandle;
 use tokio::sync::Mutex;
 
-const KOKORO_VOICE_URL: &str =
-    "https://huggingface.co/onnx-community/Kokoro-82M-ONNX/resolve/main/voices/af_bella.bin";
-const KOKORO_VOICE_FILENAME: &str = "kokoro-af_bella.bin";
+// kokorox expects a ZIP archive with NPZ voice data, not raw .bin files
+const KOKORO_VOICES_URL: &str =
+    "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin";
+const KOKORO_VOICES_FILENAME: &str = "kokoro-voices-v1.0.bin";
 
 pub struct TTSManager {
     app_handle: AppHandle,
     model_manager: Arc<ModelManager>,
-    engine: Mutex<Option<Box<dyn TTSEngine>>>,
+    engine: Arc<Mutex<Option<Box<dyn TTSEngine>>>>,
 }
 
 impl TTSManager {
@@ -24,7 +26,7 @@ impl TTSManager {
         Self {
             app_handle: app_handle.clone(),
             model_manager,
-            engine: Mutex::new(None),
+            engine: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -42,12 +44,42 @@ impl TTSManager {
         // Ensure engine is loaded
         self.ensure_engine_loaded(model_id).await?;
 
-        let mut engine_guard = self.engine.lock().await;
-        if let Some(engine) = engine_guard.as_mut() {
-            engine
-                .speak(text, settings.tts_speed, settings.tts_volume)
-                .await?;
+        // Show the speaking overlay
+        show_speaking_overlay(&self.app_handle);
+
+        {
+            let mut engine_guard = self.engine.lock().await;
+            if let Some(engine) = engine_guard.as_mut() {
+                engine
+                    .speak(text, settings.tts_speed, settings.tts_volume)
+                    .await?;
+            }
         }
+
+        // Spawn a task to monitor playback and hide overlay when done
+        let engine_clone = self.engine.clone();
+        let app_handle_clone = self.app_handle.clone();
+        tokio::spawn(async move {
+            // Poll until playback finishes
+            loop {
+                tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+
+                let engine_guard = engine_clone.lock().await;
+                if let Some(engine) = engine_guard.as_ref() {
+                    if !engine.is_playing() {
+                        drop(engine_guard);
+                        hide_recording_overlay(&app_handle_clone);
+                        info!("TTS playback finished, hiding overlay");
+                        break;
+                    }
+                } else {
+                    // Engine not loaded, hide overlay
+                    drop(engine_guard);
+                    hide_recording_overlay(&app_handle_clone);
+                    break;
+                }
+            }
+        });
 
         Ok(())
     }
@@ -57,21 +89,23 @@ impl TTSManager {
         if let Some(engine) = engine_guard.as_ref() {
             engine.stop().await?;
         }
+        // Hide overlay when stopped
+        hide_recording_overlay(&self.app_handle);
         Ok(())
     }
 
-    async fn ensure_voice_file(&self) -> Result<PathBuf> {
+    async fn ensure_voices_file(&self) -> Result<PathBuf> {
         let voices_path = self
             .model_manager
             .get_models_dir()
-            .join(KOKORO_VOICE_FILENAME);
+            .join(KOKORO_VOICES_FILENAME);
 
         if voices_path.exists() {
             return Ok(voices_path);
         }
 
-        info!("Downloading Kokoro voice file: {}", KOKORO_VOICE_FILENAME);
-        let response = reqwest::get(KOKORO_VOICE_URL).await?.error_for_status()?;
+        info!("Downloading Kokoro voices file: {}", KOKORO_VOICES_FILENAME);
+        let response = reqwest::get(KOKORO_VOICES_URL).await?.error_for_status()?;
         let bytes = response.bytes().await?;
         std::fs::write(&voices_path, &bytes)?;
 
@@ -95,16 +129,17 @@ impl TTSManager {
         }
 
         let model_path = self.model_manager.get_model_path(model_id)?;
-        let voices_path = match self.ensure_voice_file().await {
+
+        let voices_path = match self.ensure_voices_file().await {
             Ok(path) => path,
             Err(err) => {
-                warn!("Failed to download Kokoro voice file: {}", err);
+                warn!("Failed to download Kokoro voices file: {}", err);
                 return Err(err);
             }
         };
 
         let mut kokoro = KokoroEngine::new();
-        kokoro.load_model(model_path, voices_path)?;
+        kokoro.load_model(model_path, voices_path).await?;
 
         *engine_guard = Some(Box::new(kokoro) as Box<dyn TTSEngine>);
         info!("TTS engine loaded successfully");

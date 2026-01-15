@@ -2023,6 +2023,17 @@ impl ShortcutAction for ContextChatAction {
         show_context_chat_recording_overlay(app);
 
         let rm = app.state::<Arc<AudioRecordingManager>>();
+        
+        // Capture selection context at start (for hold/PTT behavior)
+        let app_clone_for_selection = app.clone();
+        let rm_for_selection = Arc::clone(&rm);
+        let _ = app.run_on_main_thread(move || {
+            if let Ok(Some(text)) = crate::clipboard::get_selected_text(&app_clone_for_selection) {
+                debug!("[CONTEXT_CHAT] Captured selection context at start: {} chars", text.len());
+                rm_for_selection.set_selection_context(text);
+            }
+        });
+
         let rm_clone = Arc::clone(&rm);
         let app_clone = app.clone();
         std::thread::spawn(move || {
@@ -2135,10 +2146,23 @@ async fn process_context_chat(app: &AppHandle, transcription: &str) -> Result<St
     };
 
     // Prepare prompt
+    let selection_text = selection.unwrap_or_default();
     let processed_prompt = prompt_template
-        .replace("${selection}", &selection.unwrap_or_default())
+        .replace("${selection}", &selection_text)
         .replace("${clipboard}", &clipboard_content)
         .replace("${prompt}", transcription);
+
+    info!(
+        "[CONTEXT_CHAT] Full prompt being sent to LLM:\n\
+         --- PROMPT START ---\n\
+         {}\n\
+         --- PROMPT END ---\n\
+         Selection: {} chars, Clipboard: {} chars, Transcription: '{}'",
+        processed_prompt,
+        selection_text.len(),
+        clipboard_content.len(),
+        transcription
+    );
 
     // Create client
     let client = crate::llm_client::create_client(&provider, llm_config.api_key)
