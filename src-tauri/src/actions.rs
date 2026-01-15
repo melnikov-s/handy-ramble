@@ -2023,13 +2023,16 @@ impl ShortcutAction for ContextChatAction {
         show_context_chat_recording_overlay(app);
 
         let rm = app.state::<Arc<AudioRecordingManager>>();
-        
+
         // Capture selection context at start (for hold/PTT behavior)
         let app_clone_for_selection = app.clone();
         let rm_for_selection = Arc::clone(&rm);
         let _ = app.run_on_main_thread(move || {
             if let Ok(Some(text)) = crate::clipboard::get_selected_text(&app_clone_for_selection) {
-                debug!("[CONTEXT_CHAT] Captured selection context at start: {} chars", text.len());
+                debug!(
+                    "[CONTEXT_CHAT] Captured selection context at start: {} chars",
+                    text.len()
+                );
                 rm_for_selection.set_selection_context(text);
             }
         });
@@ -2083,7 +2086,7 @@ impl ShortcutAction for ContextChatAction {
                                 if let Err(e) = tts_manager.speak(&response).await {
                                     error!("Failed to speak context chat response: {}", e);
                                 }
-                                utils::hide_recording_overlay(&ah);
+                                // Note: TTSManager handles hiding the overlay when speech finishes
                             }
                             Err(e) => {
                                 error!("Context chat processing failed: {}", e);
