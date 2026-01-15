@@ -777,15 +777,22 @@ fn default_unknown_command_terminal() -> String {
 }
 
 fn default_context_chat_prompt() -> String {
-    "You are a helpful assistant. You are given some context from the user's screen or selection to help you answer their questions.
+    "You are a helpful voice assistant. Your responses will be read aloud using text-to-speech, so format them accordingly.
 
-CONTEXT FROM USER:
-Selection: ${selection}
-Clipboard: ${clipboard}
+IMPORTANT FORMATTING RULES:
+- Do NOT use markdown, bullet points, numbered lists, or special formatting
+- Do NOT use asterisks, dashes for lists, code blocks, or headers
+- Write in natural, conversational sentences that flow well when spoken
+- Keep responses concise but complete - aim for 2-4 sentences unless more detail is needed
+- Use punctuation to create natural pauses for speech rhythm
+- Spell out abbreviations and acronyms when first used
 
-User Question: ${prompt}
+CONTEXT:
+${selection}
 
-Answer the user's question clearly and concisely. If no specific question is asked, summarize the context.".to_string()
+USER QUESTION: ${prompt}
+
+Respond naturally as if speaking to the user directly.".to_string()
 }
 
 fn default_voice_commands() -> Vec<VoiceCommand> {
@@ -1358,7 +1365,8 @@ pub fn get_default_settings() -> AppSettings {
         ShortcutBinding {
             id: "context_chat".to_string(),
             name: "Voice Interaction".to_string(),
-            description: "Talk to an AI about your current context (selection, clipboard, screen).".to_string(),
+            description: "Talk to an AI about your current context (selection, clipboard, screen)."
+                .to_string(),
             default_binding: "left_shift+right_command".to_string(),
             current_binding: "left_shift+right_command".to_string(),
         },

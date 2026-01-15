@@ -25,6 +25,7 @@ type OverlayState =
   | "processing_command"
   | "paused"
   | "ramble_paused"
+  | "speaking"
   | "error";
 
 // Prompt mode type matches Rust PromptMode enum
@@ -347,6 +348,9 @@ const RecordingOverlay: React.FC = () => {
         return getCategoryIcon();
       }
       return <MicrophoneIcon color="#1e40af" />;
+    } else if (state === "speaking") {
+      // Speaking state - show speaker/audio icon
+      return <span className="speaking-icon">🔊</span>;
     } else {
       return <TranscriptionIcon color="#1e40af" />;
     }
@@ -422,6 +426,18 @@ const RecordingOverlay: React.FC = () => {
               </div>
             </div>
           )}
+          {state === "speaking" && (
+            <div className="stacked-content">
+              <div className="mode-label speaking-label">
+                {t("overlay.speaking", "Speaking...")}
+              </div>
+              <div className="refining-indicator">
+                <div className="refining-dot"></div>
+                <div className="refining-dot"></div>
+                <div className="refining-dot"></div>
+              </div>
+            </div>
+          )}
 
           {state === "error" && (
             <div
@@ -489,6 +505,17 @@ const RecordingOverlay: React.FC = () => {
                 />
               </div>
             </>
+          )}
+          {state === "speaking" && (
+            <div
+              className="cancel-button"
+              onClick={() => {
+                commands.cancelOperation();
+              }}
+              title={t("overlay.stopSpeaking", "Stop (Esc)")}
+            >
+              <CancelIcon color="#1e40af" />
+            </div>
           )}
           {state === "error" && (
             <div
