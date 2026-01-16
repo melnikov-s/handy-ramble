@@ -1,10 +1,15 @@
-use crate::audio_toolkit::{list_input_devices, vad::SmoothedVad, AudioRecorder, SileroVad};
+use crate::audio_toolkit::{
+    list_input_devices, vad::SmoothedVad, AudioRecorder, SileroVad, SpeechSegment,
+};
 use crate::helpers::clamshell;
+use crate::managers::transcription::TranscriptionManager;
 use crate::settings::{get_settings, AppSettings};
 use crate::utils;
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
+use std::collections::BTreeMap;
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
-use std::thread;
+use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 use tauri::Manager;
 
@@ -101,6 +106,87 @@ const WHISPER_SAMPLE_RATE: usize = 16000;
 
 /* ──────────────────────────────────────────────────────────────── */
 
+pub struct StreamingTranscriptionSession {
+    segment_tx: mpsc::Sender<SpeechSegment>,
+    result_rx: mpsc::Receiver<(u64, anyhow::Result<String>)>,
+    worker_handle: Option<JoinHandle<()>>,
+    segments_text: BTreeMap<u64, String>,
+}
+
+impl StreamingTranscriptionSession {
+    pub fn new(transcription_manager: Arc<TranscriptionManager>) -> Self {
+        let (segment_tx, segment_rx) = mpsc::channel::<SpeechSegment>();
+        let (result_tx, result_rx) = mpsc::channel::<(u64, anyhow::Result<String>)>();
+
+        let worker_handle = thread::spawn(move || {
+            while let Ok(segment) = segment_rx.recv() {
+                debug!(
+                    "Streaming transcription: processing segment {} ({} samples)",
+                    segment.index,
+                    segment.samples.len()
+                );
+                let result = transcription_manager.transcribe(segment.samples);
+                if result_tx.send((segment.index, result)).is_err() {
+                    break;
+                }
+            }
+            debug!("Streaming transcription worker exiting");
+        });
+
+        Self {
+            segment_tx,
+            result_rx,
+            worker_handle: Some(worker_handle),
+            segments_text: BTreeMap::new(),
+        }
+    }
+
+    pub fn get_segment_sender(&self) -> mpsc::Sender<SpeechSegment> {
+        self.segment_tx.clone()
+    }
+
+    pub fn collect_pending_results(&mut self) {
+        while let Ok((index, result)) = self.result_rx.try_recv() {
+            match result {
+                Ok(text) => {
+                    if !text.is_empty() {
+                        debug!("Streaming transcription: segment {} = '{}'", index, text);
+                        self.segments_text.insert(index, text);
+                    }
+                }
+                Err(e) => {
+                    warn!("Streaming transcription: segment {} failed: {}", index, e);
+                }
+            }
+        }
+    }
+
+    pub fn finish(mut self) -> String {
+        drop(self.segment_tx);
+
+        if let Some(handle) = self.worker_handle.take() {
+            let _ = handle.join();
+        }
+
+        while let Ok((index, result)) = self.result_rx.try_recv() {
+            if let Ok(text) = result {
+                if !text.is_empty() {
+                    self.segments_text.insert(index, text);
+                }
+            }
+        }
+
+        let combined: Vec<&str> = self.segments_text.values().map(|s| s.as_str()).collect();
+        combined.join(" ")
+    }
+
+    pub fn segment_count(&self) -> usize {
+        self.segments_text.len()
+    }
+}
+
+/* ──────────────────────────────────────────────────────────────── */
+
 #[derive(Clone, Debug)]
 pub enum RecordingState {
     Idle,
@@ -162,6 +248,8 @@ pub struct AudioRecordingManager {
     coherent_mode: Arc<Mutex<bool>>,
     /// Stores the Base64 representation of screenshots captured during the session.
     vision_context: Arc<Mutex<Vec<String>>>,
+    /// Active streaming transcription session (transcribes segments while recording)
+    streaming_session: Arc<Mutex<Option<StreamingTranscriptionSession>>>,
 }
 
 impl AudioRecordingManager {
@@ -189,6 +277,7 @@ impl AudioRecordingManager {
             selection_context: Arc::new(Mutex::new(None)),
             coherent_mode: Arc::new(Mutex::new(false)),
             vision_context: Arc::new(Mutex::new(Vec::new())),
+            streaming_session: Arc::new(Mutex::new(None)),
         };
 
         // Always-on?  Open immediately.
@@ -441,7 +530,7 @@ impl AudioRecordingManager {
                 // Get current samples from recorder
                 let current_samples = if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
                     match rec.stop() {
-                        Ok(buf) => buf,
+                        Ok(result) => result.raw_full,
                         Err(e) => {
                             error!("stop() failed: {e}");
                             Vec::new()
@@ -504,15 +593,15 @@ impl AudioRecordingManager {
             // Stop capturing and save samples to the buffer
             if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
                 match rec.stop() {
-                    Ok(samples) => {
+                    Ok(result) => {
                         // Append to paused samples buffer
                         let mut paused = self.paused_samples.lock().unwrap();
                         debug!(
                             "Pausing: saving {} samples (had {} previously)",
-                            samples.len(),
+                            result.raw_full.len(),
                             paused.len()
                         );
-                        paused.extend(samples);
+                        paused.extend(result.raw_full);
                     }
                     Err(e) => {
                         error!("Failed to stop recorder during pause: {e}");
@@ -576,9 +665,12 @@ impl AudioRecordingManager {
                 *state = RecordingState::Idle;
                 drop(state);
 
+                // Stop segment emission and discard streaming session
                 if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
+                    rec.set_segment_sender(None);
                     let _ = rec.stop(); // Discard the result
                 }
+                let _ = self.streaming_session.lock().unwrap().take();
 
                 // Clear the paused samples buffer
                 self.paused_samples.lock().unwrap().clear();
@@ -631,5 +723,44 @@ impl AudioRecordingManager {
         let ctx = self.vision_context.lock().unwrap().clone();
         debug!("Retrieved vision context ({} images)", ctx.len());
         ctx
+    }
+
+    /// Starts a streaming transcription session that will transcribe audio segments
+    /// as they are detected during recording.
+    pub fn start_streaming_transcription(&self, transcription_manager: Arc<TranscriptionManager>) {
+        let session = StreamingTranscriptionSession::new(transcription_manager);
+        let segment_sender = session.get_segment_sender();
+
+        if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
+            rec.set_segment_sender(Some(segment_sender));
+        }
+
+        *self.streaming_session.lock().unwrap() = Some(session);
+        debug!("Streaming transcription session started");
+    }
+
+    /// Stops the streaming transcription session and returns the accumulated transcription.
+    /// This should be called after stop_recording() to get the pre-transcribed text.
+    pub fn finish_streaming_transcription(&self) -> Option<String> {
+        if let Some(rec) = self.recorder.lock().unwrap().as_ref() {
+            rec.set_segment_sender(None);
+        }
+
+        let session = self.streaming_session.lock().unwrap().take();
+        if let Some(session) = session {
+            let text = session.finish();
+            debug!(
+                "Streaming transcription session finished: {} chars",
+                text.len()
+            );
+            Some(text)
+        } else {
+            None
+        }
+    }
+
+    /// Returns true if there's an active streaming transcription session
+    pub fn has_streaming_session(&self) -> bool {
+        self.streaming_session.lock().unwrap().is_some()
     }
 }

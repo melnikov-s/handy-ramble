@@ -16,9 +16,19 @@ use crate::audio_toolkit::{
     VoiceActivityDetector,
 };
 
+#[derive(Clone, Debug)]
+pub struct SpeechSegment {
+    pub index: u64,
+    pub samples: Vec<f32>,
+}
+
+pub struct StopResult {
+    pub raw_full: Vec<f32>,
+}
+
 enum Cmd {
     Start,
-    Stop(mpsc::Sender<Vec<f32>>),
+    Stop(mpsc::Sender<StopResult>),
     Shutdown,
 }
 
@@ -28,6 +38,7 @@ pub struct AudioRecorder {
     worker_handle: Option<std::thread::JoinHandle<()>>,
     vad: Option<Arc<Mutex<Box<dyn vad::VoiceActivityDetector>>>>,
     level_cb: Option<Arc<dyn Fn(Vec<f32>) + Send + Sync + 'static>>,
+    segment_tx: Arc<Mutex<Option<mpsc::Sender<SpeechSegment>>>>,
 }
 
 impl AudioRecorder {
@@ -38,6 +49,7 @@ impl AudioRecorder {
             worker_handle: None,
             vad: None,
             level_cb: None,
+            segment_tx: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -52,6 +64,10 @@ impl AudioRecorder {
     {
         self.level_cb = Some(Arc::new(cb));
         self
+    }
+
+    pub fn set_segment_sender(&self, tx: Option<mpsc::Sender<SpeechSegment>>) {
+        *self.segment_tx.lock().unwrap() = tx;
     }
 
     pub fn open(&mut self, device: Option<Device>) -> Result<(), Box<dyn std::error::Error>> {
@@ -74,6 +90,7 @@ impl AudioRecorder {
         let vad = self.vad.clone();
         // Move the optional level callback into the worker thread
         let level_cb = self.level_cb.clone();
+        let segment_tx = self.segment_tx.clone();
 
         let worker = std::thread::spawn(move || {
             let config = AudioRecorder::get_preferred_config(&thread_device)
@@ -117,7 +134,7 @@ impl AudioRecorder {
             stream.play().expect("failed to start stream");
 
             // keep the stream alive while we process samples
-            run_consumer(sample_rate, vad, sample_rx, cmd_rx, level_cb);
+            run_consumer(sample_rate, vad, sample_rx, cmd_rx, level_cb, segment_tx);
             // stream is dropped here, after run_consumer returns
         });
 
@@ -135,12 +152,12 @@ impl AudioRecorder {
         Ok(())
     }
 
-    pub fn stop(&self) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
+    pub fn stop(&self) -> Result<StopResult, Box<dyn std::error::Error>> {
         let (resp_tx, resp_rx) = mpsc::channel();
         if let Some(tx) = &self.cmd_tx {
             tx.send(Cmd::Stop(resp_tx))?;
         }
-        Ok(resp_rx.recv()?) // wait for the samples
+        Ok(resp_rx.recv()?)
     }
 
     pub fn close(&mut self) -> Result<(), Box<dyn std::error::Error>> {
@@ -245,6 +262,7 @@ fn run_consumer(
     sample_rx: mpsc::Receiver<Vec<f32>>,
     cmd_rx: mpsc::Receiver<Cmd>,
     level_cb: Option<Arc<dyn Fn(Vec<f32>) + Send + Sync + 'static>>,
+    segment_tx: Arc<Mutex<Option<mpsc::Sender<SpeechSegment>>>>,
 ) {
     let mut frame_resampler = FrameResampler::new(
         in_sample_rate as usize,
@@ -254,6 +272,15 @@ fn run_consumer(
 
     let mut processed_samples = Vec::<f32>::new();
     let mut recording = false;
+
+    let mut raw_full: Vec<f32> = Vec::new();
+    let mut current_segment: Vec<f32> = Vec::new();
+    let mut in_segment = false;
+    let mut segment_index: u64 = 0;
+    let mut silence_run_frames: usize = 0;
+
+    const END_SILENCE_FRAMES: usize = 10; // ~300ms at 30ms/frame
+    const MIN_SEGMENT_SAMPLES: usize = 16000; // ~1 second minimum
 
     // ---------- spectrum visualisation setup ---------------------------- //
     const BUCKETS: usize = 16;
@@ -271,6 +298,12 @@ fn run_consumer(
         recording: bool,
         vad: &Option<Arc<Mutex<Box<dyn vad::VoiceActivityDetector>>>>,
         out_buf: &mut Vec<f32>,
+        raw_full: &mut Vec<f32>,
+        current_segment: &mut Vec<f32>,
+        in_segment: &mut bool,
+        segment_index: &mut u64,
+        silence_run_frames: &mut usize,
+        segment_tx: &Arc<Mutex<Option<mpsc::Sender<SpeechSegment>>>>,
     ) {
         if !recording {
             return;
@@ -279,11 +312,43 @@ fn run_consumer(
         if let Some(vad_arc) = vad {
             let mut det = vad_arc.lock().unwrap();
             match det.push_frame(samples).unwrap_or(VadFrame::Speech(samples)) {
-                VadFrame::Speech(buf) => out_buf.extend_from_slice(buf),
-                VadFrame::Noise => {}
+                VadFrame::Speech(buf) => {
+                    out_buf.extend_from_slice(buf);
+                    raw_full.extend_from_slice(buf);
+                    current_segment.extend_from_slice(buf);
+                    *in_segment = true;
+                    *silence_run_frames = 0;
+                }
+                VadFrame::Noise => {
+                    if *in_segment {
+                        *silence_run_frames += 1;
+                        if *silence_run_frames >= END_SILENCE_FRAMES {
+                            if current_segment.len() >= MIN_SEGMENT_SAMPLES {
+                                if let Some(tx) = segment_tx.lock().unwrap().as_ref() {
+                                    let segment = SpeechSegment {
+                                        index: *segment_index,
+                                        samples: std::mem::take(current_segment),
+                                    };
+                                    let _ = tx.send(segment);
+                                } else {
+                                    current_segment.clear();
+                                }
+                                *segment_index += 1;
+                            } else {
+                                current_segment.clear();
+                            }
+                            *in_segment = false;
+                            *silence_run_frames = 0;
+                        }
+                    }
+                }
             }
         } else {
             out_buf.extend_from_slice(samples);
+            raw_full.extend_from_slice(samples);
+            current_segment.extend_from_slice(samples);
+            *in_segment = true;
+            *silence_run_frames = 0;
         }
     }
 
@@ -302,7 +367,18 @@ fn run_consumer(
 
         // ---------- existing pipeline ------------------------------------ //
         frame_resampler.push(&raw, &mut |frame: &[f32]| {
-            handle_frame(frame, recording, &vad, &mut processed_samples)
+            handle_frame(
+                frame,
+                recording,
+                &vad,
+                &mut processed_samples,
+                &mut raw_full,
+                &mut current_segment,
+                &mut in_segment,
+                &mut segment_index,
+                &mut silence_run_frames,
+                &segment_tx,
+            )
         });
 
         // non-blocking check for a command
@@ -310,6 +386,11 @@ fn run_consumer(
             match cmd {
                 Cmd::Start => {
                     processed_samples.clear();
+                    raw_full.clear();
+                    current_segment.clear();
+                    in_segment = false;
+                    segment_index = 0;
+                    silence_run_frames = 0;
                     recording = true;
                     visualizer.reset(); // Reset visualization buffer
                     if let Some(v) = &vad {
@@ -321,10 +402,41 @@ fn run_consumer(
 
                     frame_resampler.finish(&mut |frame: &[f32]| {
                         // we still want to process the last few frames
-                        handle_frame(frame, true, &vad, &mut processed_samples)
+                        handle_frame(
+                            frame,
+                            true,
+                            &vad,
+                            &mut processed_samples,
+                            &mut raw_full,
+                            &mut current_segment,
+                            &mut in_segment,
+                            &mut segment_index,
+                            &mut silence_run_frames,
+                            &segment_tx,
+                        )
                     });
 
-                    let _ = reply_tx.send(std::mem::take(&mut processed_samples));
+                    // Emit final segment if in_segment and current_segment is non-empty
+                    if in_segment && !current_segment.is_empty() {
+                        if let Some(tx) = segment_tx.lock().unwrap().as_ref() {
+                            let segment = SpeechSegment {
+                                index: segment_index,
+                                samples: std::mem::take(&mut current_segment),
+                            };
+                            let _ = tx.send(segment);
+                        }
+                    }
+
+                    // Clear segment state
+                    current_segment.clear();
+                    in_segment = false;
+                    segment_index = 0;
+                    silence_run_frames = 0;
+
+                    let _ = reply_tx.send(StopResult {
+                        raw_full: std::mem::take(&mut raw_full),
+                    });
+                    processed_samples.clear();
                 }
                 Cmd::Shutdown => return,
             }
