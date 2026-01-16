@@ -468,6 +468,12 @@ impl ShortcutAction for TranscribeAction {
             }
         }
 
+        // Start streaming transcription session to transcribe audio segments as they're detected
+        if recording_started {
+            rm.start_streaming_transcription(Arc::clone(&tm));
+            debug!("Started streaming transcription session");
+        }
+
         debug!(
             "TranscribeAction::start completed in {:?}, returning {}",
             start_time.elapsed(),
@@ -519,6 +525,18 @@ impl ShortcutAction for TranscribeAction {
             samples.as_ref().map(|s| s.len()).unwrap_or(0)
         );
 
+        // Finish streaming transcription session and get pre-transcribed text
+        let streaming_text = rm.finish_streaming_transcription();
+        let has_streaming_text = streaming_text
+            .as_ref()
+            .map(|t| !t.is_empty())
+            .unwrap_or(false);
+        debug!(
+            "Streaming transcription finished: has_text={}, text='{}'",
+            has_streaming_text,
+            streaming_text.as_deref().unwrap_or("")
+        );
+
         tauri::async_runtime::spawn(async move {
             debug!(
                 "Starting async transcription task for binding: {}",
@@ -551,67 +569,81 @@ impl ShortcutAction for TranscribeAction {
 
                 let transcription_time = Instant::now();
 
-                // Try transcription with fallback chain: Parakeet -> Whisper -> Chunked -> Error
-                let transcription_result = tm.transcribe(samples.clone());
+                // Use streaming transcription if available, otherwise fall back to full transcription
+                let transcription = if has_streaming_text {
+                    debug!("Using streaming transcription result");
+                    streaming_text.unwrap()
+                } else {
+                    debug!("No streaming transcription available, falling back to full transcription");
+                    // Try transcription with fallback chain: Parakeet -> Whisper -> Chunked -> Error
+                    let transcription_result = tm.transcribe(samples.clone());
 
-                let transcription = match transcription_result {
-                    Ok(text) => {
-                        debug!(
-                            "Transcription succeeded in {:?}",
-                            transcription_time.elapsed()
-                        );
-                        text
-                    }
-                    Err(primary_err) => {
-                        warn!(
-                            "Primary transcription failed: {}. Attempting fallbacks...",
-                            primary_err
-                        );
+                    match transcription_result {
+                        Ok(text) => {
+                            debug!(
+                                "Transcription succeeded in {:?}",
+                                transcription_time.elapsed()
+                            );
+                            text
+                        }
+                        Err(primary_err) => {
+                            warn!(
+                                "Primary transcription failed: {}. Attempting fallbacks...",
+                                primary_err
+                            );
 
-                        // Fallback 1: Try Whisper if available
-                        let whisper_result = tm.transcribe_with_fallback(samples.clone()).await;
-                        match whisper_result {
-                            Ok(text) => {
-                                info!("Whisper fallback succeeded");
-                                text
-                            }
-                            Err(whisper_err) => {
-                                warn!(
-                                    "Whisper fallback failed: {}. Trying chunked transcription...",
-                                    whisper_err
-                                );
+                            // Fallback 1: Try Whisper if available
+                            let whisper_result =
+                                tm.transcribe_with_fallback(samples.clone()).await;
+                            match whisper_result {
+                                Ok(text) => {
+                                    info!("Whisper fallback succeeded");
+                                    text
+                                }
+                                Err(whisper_err) => {
+                                    warn!(
+                                        "Whisper fallback failed: {}. Trying chunked transcription...",
+                                        whisper_err
+                                    );
 
-                                // Fallback 2: Try chunked transcription
-                                match tm.transcribe_chunked(samples.clone()) {
-                                    Ok(text) => {
-                                        info!("Chunked transcription succeeded");
-                                        text
-                                    }
-                                    Err(chunk_err) => {
-                                        // All fallbacks failed - save error and show overlay
-                                        let error_msg = format!(
+                                    // Fallback 2: Try chunked transcription
+                                    match tm.transcribe_chunked(samples.clone()) {
+                                        Ok(text) => {
+                                            info!("Chunked transcription succeeded");
+                                            text
+                                        }
+                                        Err(chunk_err) => {
+                                            // All fallbacks failed - save error and show overlay
+                                            let error_msg = format!(
                                             "Transcription failed. Primary: {}. Whisper: {}. Chunked: {}",
                                             primary_err, whisper_err, chunk_err
                                         );
-                                        error!("{}", error_msg);
+                                            error!("{}", error_msg);
 
-                                        // Update entry with error status
-                                        if let Err(e) = hm
-                                            .update_transcription_error(entry_id, error_msg.clone())
-                                            .await
-                                        {
-                                            error!("Failed to update transcription error: {}", e);
+                                            // Update entry with error status
+                                            if let Err(e) = hm
+                                                .update_transcription_error(
+                                                    entry_id,
+                                                    error_msg.clone(),
+                                                )
+                                                .await
+                                            {
+                                                error!(
+                                                    "Failed to update transcription error: {}",
+                                                    e
+                                                );
+                                            }
+
+                                            // Show error overlay to user
+                                            utils::show_error_overlay(
+                                                &ah,
+                                                "Transcription failed. Recording saved to history.",
+                                                false,
+                                            );
+                                            utils::hide_recording_overlay(&ah);
+                                            change_tray_icon(&ah, TrayIconState::Idle);
+                                            return;
                                         }
-
-                                        // Show error overlay to user
-                                        utils::show_error_overlay(
-                                            &ah,
-                                            "Transcription failed. Recording saved to history.",
-                                            false,
-                                        );
-                                        utils::hide_recording_overlay(&ah);
-                                        change_tray_icon(&ah, TrayIconState::Idle);
-                                        return;
                                     }
                                 }
                             }
