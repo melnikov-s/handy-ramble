@@ -1109,6 +1109,15 @@ pub fn change_filler_word_filter_setting(
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_collapse_repeated_words_setting(app: AppHandle, enabled: bool) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.collapse_repeated_words = enabled;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn add_voice_command(app: AppHandle, command: settings::VoiceCommand) -> Result<Vec<settings::VoiceCommand>, String> {
     let mut settings = settings::get_settings(&app);
     

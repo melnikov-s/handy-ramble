@@ -5,6 +5,7 @@ import { TranslateToEnglish } from "../TranslateToEnglish";
 import { ModelUnloadTimeoutSetting } from "../ModelUnloadTimeout";
 import { CustomWords } from "../CustomWords";
 import { FillerWordFilter } from "../FillerWordFilter";
+import { CollapseRepeatedWords } from "../CollapseRepeatedWords";
 import { SettingsGroup } from "../../ui/SettingsGroup";
 import { StartHidden } from "../StartHidden";
 import { AutostartToggle } from "../AutostartToggle";
@@ -25,6 +26,7 @@ export const AdvancedSettings: React.FC = () => {
         <ModelUnloadTimeoutSetting descriptionMode="tooltip" grouped={true} />
         <CustomWords descriptionMode="tooltip" grouped />
         <FillerWordFilter descriptionMode="tooltip" grouped />
+        <CollapseRepeatedWords descriptionMode="tooltip" grouped />
       </SettingsGroup>
     </div>
   );

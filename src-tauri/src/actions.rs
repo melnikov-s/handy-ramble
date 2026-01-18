@@ -682,10 +682,14 @@ impl ShortcutAction for TranscribeAction {
                             }
                         }
 
-                        // Apply filler word filter before refinement
+                        // Apply filler word filter and collapse repeated words before refinement
                         let filtered_transcription = filter_filler_words(
                             &transcription,
                             settings.filler_word_filter.as_deref(),
+                        );
+                        let filtered_transcription = collapse_repeated_words(
+                            &filtered_transcription,
+                            settings.collapse_repeated_words,
                         );
 
                         match process_ramble_to_coherent(
@@ -714,10 +718,14 @@ impl ShortcutAction for TranscribeAction {
                     } else {
                         // Raw mode: standard processing path
                         // Raw mode NEVER does LLM post-processing - that's the whole point
-                        // Apply filler word filter to raw transcription
+                        // Apply filler word filter and collapse repeated words to raw transcription
                         let filtered_raw = filter_filler_words(
                             &transcription,
                             settings.filler_word_filter.as_deref(),
+                        );
+                        let filtered_raw = collapse_repeated_words(
+                            &filtered_raw,
+                            settings.collapse_repeated_words,
                         );
                         if filtered_raw != transcription {
                             final_text = filtered_raw.clone();
@@ -871,6 +879,37 @@ fn filter_filler_words(text: &str, pattern: Option<&str>) -> String {
             }
         }
         _ => text.to_string(),
+    }
+}
+
+/// Collapse repeated words in transcription (e.g., "I I I am" → "I am")
+fn collapse_repeated_words(text: &str, enabled: bool) -> String {
+    if !enabled {
+        return text.to_string();
+    }
+
+    // Match 3+ consecutive identical words and collapse to single instance
+    match regex::RegexBuilder::new(r"\b(\w+)(?:\s+\1){2,}\b")
+        .case_insensitive(true)
+        .build()
+    {
+        Ok(re) => {
+            let collapsed = re.replace_all(text, "$1").to_string();
+            // Clean up any double spaces created by collapse
+            let cleaned = collapsed.split_whitespace().collect::<Vec<_>>().join(" ");
+            if cleaned != text {
+                debug!(
+                    "Collapsed repeated words: {} chars -> {} chars",
+                    text.len(),
+                    cleaned.len()
+                );
+            }
+            cleaned
+        }
+        Err(e) => {
+            warn!("Failed to compile repeated word regex: {}", e);
+            text.to_string()
+        }
     }
 }
 

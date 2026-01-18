@@ -532,6 +532,9 @@ pub struct AppSettings {
     pub tts_volume: f32,
     #[serde(default)]
     pub filler_word_filter: Option<String>,
+    /// Whether to collapse repeated words (e.g., "I I I am" → "I am")
+    #[serde(default = "default_collapse_repeated_words")]
+    pub collapse_repeated_words: bool,
     /// Customizable initial prompt for the quick chat
     #[serde(default = "default_quick_chat_initial_prompt")]
     pub quick_chat_initial_prompt: String,
@@ -762,6 +765,10 @@ fn default_filler_word_filter() -> Option<String> {
     // Default pattern to filter common English filler words
     // Matches: um, uh, hmm, mhm, mm, ah, er, erm (with variations like umm, uhh, etc.)
     Some(r"\b(u+[hm]+|a+h+|e+r+m?|m+h?m+|h+m+)\b[,\s]*".to_string())
+}
+
+fn default_collapse_repeated_words() -> bool {
+    true
 }
 
 fn default_quick_chat_initial_prompt() -> String {
@@ -1439,6 +1446,7 @@ pub fn get_default_settings() -> AppSettings {
         tts_speed: default_tts_speed(),
         tts_volume: default_tts_volume(),
         filler_word_filter: default_filler_word_filter(),
+        collapse_repeated_words: default_collapse_repeated_words(),
         quick_chat_initial_prompt: default_quick_chat_initial_prompt(),
         // Unknown command agent settings
         unknown_command_agent_enabled: false,

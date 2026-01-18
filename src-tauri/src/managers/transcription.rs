@@ -427,6 +427,28 @@ impl TranscriptionManager {
             corrected_result
         };
 
+        // Collapse repeated words if enabled (e.g., "I I I am" → "I am")
+        let collapsed_result = if settings.collapse_repeated_words {
+            // Match 3+ consecutive identical words and collapse to single instance
+            match regex::RegexBuilder::new(r"\b(\w+)(?:\s+\1){2,}\b")
+                .case_insensitive(true)
+                .build()
+            {
+                Ok(re) => {
+                    let collapsed = re.replace_all(&filtered_result, "$1").to_string();
+                    // Clean up any double spaces left behind
+                    let space_re = regex::Regex::new(r"  +").unwrap();
+                    space_re.replace_all(&collapsed, " ").to_string()
+                }
+                Err(e) => {
+                    warn!("Failed to compile repeated word regex: {}", e);
+                    filtered_result
+                }
+            }
+        } else {
+            filtered_result
+        };
+
         let et = std::time::Instant::now();
         let translation_note = if settings.translate_to_english {
             " (translated)"
@@ -439,7 +461,7 @@ impl TranscriptionManager {
             translation_note
         );
 
-        let final_result = filtered_result.trim().to_string();
+        let final_result = collapsed_result.trim().to_string();
 
         if final_result.is_empty() {
             info!("Transcription result is empty");

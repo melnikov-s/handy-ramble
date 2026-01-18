@@ -496,6 +496,14 @@ async changeFillerWordFilterSetting(pattern: string | null) : Promise<Result<nul
     else return { status: "error", error: e  as any };
 }
 },
+async changeCollapseRepeatedWordsSetting(enabled: boolean) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_collapse_repeated_words_setting", { enabled }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async changeUnknownCommandTemplateSetting(template: string) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_unknown_command_template_setting", { template }) };
@@ -1257,6 +1265,10 @@ voice_command_default_model?: string;
  * User-defined voice commands
  */
 voice_commands?: VoiceCommand[]; tts_enabled?: boolean; tts_selected_model?: string | null; tts_speed?: number; tts_volume?: number; filler_word_filter?: string | null; 
+/**
+ * Whether to collapse repeated words (e.g., "I I I am" → "I am")
+ */
+collapse_repeated_words?: boolean; 
 /**
  * Customizable initial prompt for the quick chat
  */
