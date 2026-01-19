@@ -611,7 +611,10 @@ fn handle_behavior_release(binding_string: &str) {
                     let _ = app.run_on_main_thread(move || {
                         if let Ok(Some(text)) = crate::clipboard::get_selected_text(&app_clone) {
                             if let Some(mgr) = app_clone.try_state::<Arc<AudioRecordingManager>>() {
-                                debug!("[CONTEXT_CHAT] Captured selection context: {} chars", text.len());
+                                debug!(
+                                    "[CONTEXT_CHAT] Captured selection context: {} chars",
+                                    text.len()
+                                );
                                 mgr.set_selection_context(text);
                             }
                         }
@@ -686,7 +689,9 @@ fn handle_cancel() {
             crate::utils::cancel_current_operation(&app);
             force_reset_state();
         } else {
-            debug!("handle_cancel: NOT cancelling because state is Idle");
+            // Even if state is Idle, stop any active TTS playback
+            debug!("handle_cancel: state is Idle, stopping TTS if playing");
+            crate::utils::stop_tts_and_hide_overlay(&app);
         }
     }
 }

@@ -133,3 +133,16 @@ pub fn is_wayland() -> bool {
             .map(|v| v.to_lowercase() == "wayland")
             .unwrap_or(false)
 }
+
+/// Stop any active TTS playback and hide the overlay.
+/// This is used when Escape is pressed in Idle state to stop speaking.
+pub fn stop_tts_and_hide_overlay(app: &AppHandle) {
+    let tts_manager = app.state::<Arc<TTSManager>>();
+    let tts_manager_cloned = tts_manager.inner().clone();
+    tauri::async_runtime::spawn(async move {
+        let _ = tts_manager_cloned.stop().await;
+    });
+
+    hide_recording_overlay(app);
+    info!("TTS stopped and overlay hidden via Escape key");
+}

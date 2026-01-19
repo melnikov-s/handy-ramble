@@ -1,9 +1,10 @@
 use crate::tts::TTSEngine;
 use anyhow::Result;
 use kokorox::tts::koko::TTSKoko;
-use log::{info, debug, error};
+use log::{debug, error, info};
 use rodio::{OutputStreamBuilder, Sink};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -11,6 +12,8 @@ pub struct KokoroEngine {
     tts: Arc<RwLock<Option<TTSKoko>>>,
     _stream_handle: Option<SendWrapper<rodio::OutputStream>>,
     sink: Option<Sink>,
+    /// Flag to signal cancellation to the speak loop
+    is_cancelled: Arc<AtomicBool>,
 }
 
 struct SendWrapper<T>(T);
@@ -59,13 +62,13 @@ impl KokoroEngine {
                     Ok(h) => {
                         info!("Successfully opened audio output stream");
                         Some(h)
-                    },
+                    }
                     Err(e) => {
                         error!("Failed to open audio stream: {}", e);
                         None
                     }
                 }
-            },
+            }
             Err(e) => {
                 error!("Failed to create audio stream builder: {}", e);
                 None
@@ -80,6 +83,7 @@ impl KokoroEngine {
             tts: Arc::new(RwLock::new(None)),
             _stream_handle: stream_handle.map(SendWrapper),
             sink: None,
+            is_cancelled: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -109,21 +113,24 @@ impl TTSEngine for KokoroEngine {
             text, speed, volume
         );
 
-        info!("speak() called with text length: {}, speed: {}, volume: {}", text.len(), speed, volume);
-        
-        let sh = self
-            ._stream_handle
-            .as_ref()
-            .ok_or_else(|| {
-                error!("Audio output handle not initialized!");
-                anyhow::anyhow!("Audio output handle not initialized")
-            })?;
+        info!(
+            "speak() called with text length: {}, speed: {}, volume: {}",
+            text.len(),
+            speed,
+            volume
+        );
 
-        // Stop any currently playing audio
+        let sh = self._stream_handle.as_ref().ok_or_else(|| {
+            error!("Audio output handle not initialized!");
+            anyhow::anyhow!("Audio output handle not initialized")
+        })?;
+
+        // Stop any currently playing audio and reset cancellation flag
         if let Some(ref old_sink) = self.sink {
             info!("Stopping previous sink");
             old_sink.stop();
         }
+        self.is_cancelled.store(false, Ordering::SeqCst);
 
         // Create a new sink for streaming playback
         let mixer = sh.0.mixer();
@@ -140,7 +147,13 @@ impl TTSEngine for KokoroEngine {
         info!("Streaming {} sentences", sentences.len());
 
         // Generate and play each sentence as it's ready
+        let is_cancelled = self.is_cancelled.clone();
         for (i, sentence) in sentences.iter().enumerate() {
+            // Check for cancellation before generating each sentence
+            if is_cancelled.load(Ordering::SeqCst) {
+                info!("TTS cancelled, stopping generation at sentence {}", i + 1);
+                break;
+            }
             info!(
                 "Generating sentence {}/{}: '{}'",
                 i + 1,
@@ -158,9 +171,12 @@ impl TTSEngine for KokoroEngine {
             let tts_clone = self.tts.clone();
 
             // Run TTS generation in a blocking task to avoid blocking the async runtime
-            info!("Starting TTS audio generation for sentence {} (spawning blocking task)", i + 1);
+            info!(
+                "Starting TTS audio generation for sentence {} (spawning blocking task)",
+                i + 1
+            );
             let gen_start = std::time::Instant::now();
-            
+
             let samples_result = tokio::task::spawn_blocking(move || {
                 // Acquire read lock synchronously inside the blocking task
                 let tts_guard = tts_clone.blocking_read();
@@ -168,17 +184,17 @@ impl TTSEngine for KokoroEngine {
                     Some(t) => t,
                     None => return Err(anyhow::anyhow!("Kokoro TTS not initialized")),
                 };
-                
+
                 info!("Inside blocking task, calling tts_raw_audio...");
                 match tts.tts_raw_audio(
                     &sentence_clone,
-                    "en",           // language
-                    "af_bella",     // style/voice name
-                    speed_clone,    // speed
-                    None,           // initial_silence
-                    true,           // auto_detect_language
-                    false,          // force_style
-                    false,          // phonemes (input is text, not phonemes)
+                    "en",        // language
+                    "af_bella",  // style/voice name
+                    speed_clone, // speed
+                    None,        // initial_silence
+                    true,        // auto_detect_language
+                    false,       // force_style
+                    false,       // phonemes (input is text, not phonemes)
                 ) {
                     Ok(samples) => {
                         info!("tts_raw_audio returned {} samples", samples.len());
@@ -191,8 +207,12 @@ impl TTSEngine for KokoroEngine {
 
             let samples = match samples_result {
                 Ok(Ok(samples)) => {
-                    info!("TTS audio generation completed in {:?}, got {} samples ({:.2}s of audio)", 
-                        gen_start.elapsed(), samples.len(), samples.len() as f32 / 24000.0);
+                    info!(
+                        "TTS audio generation completed in {:?}, got {} samples ({:.2}s of audio)",
+                        gen_start.elapsed(),
+                        samples.len(),
+                        samples.len() as f32 / 24000.0
+                    );
                     samples
                 }
                 Ok(Err(e)) => {
@@ -205,13 +225,30 @@ impl TTSEngine for KokoroEngine {
                 }
             };
 
+            // Check for cancellation again before appending
+            if is_cancelled.load(Ordering::SeqCst) {
+                info!(
+                    "TTS cancelled after generation, not appending sentence {}",
+                    i + 1
+                );
+                break;
+            }
+
             // Append to the playing queue immediately
             if let Some(ref sink) = self.sink {
                 let source = rodio::buffer::SamplesBuffer::new(1, 24000, samples.clone());
-                info!("Appending {} samples to sink (sink empty before: {})", samples.len(), sink.empty());
+                info!(
+                    "Appending {} samples to sink (sink empty before: {})",
+                    samples.len(),
+                    sink.empty()
+                );
                 sink.append(source);
-                info!("Appended sentence {} to playback queue (sink empty after: {}, is_paused: {})", 
-                    i + 1, sink.empty(), sink.is_paused());
+                info!(
+                    "Appended sentence {} to playback queue (sink empty after: {}, is_paused: {})",
+                    i + 1,
+                    sink.empty(),
+                    sink.is_paused()
+                );
             } else {
                 error!("No sink available to append audio!");
             }
@@ -222,6 +259,9 @@ impl TTSEngine for KokoroEngine {
 
     async fn stop(&self) -> Result<()> {
         info!("Kokoro stop requested");
+        // Set cancellation flag to stop the generation loop
+        self.is_cancelled.store(true, Ordering::SeqCst);
+        // Stop the audio sink immediately
         if let Some(ref sink) = self.sink {
             sink.stop();
         }
