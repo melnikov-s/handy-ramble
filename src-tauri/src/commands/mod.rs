@@ -208,6 +208,7 @@ pub fn open_saved_chat(app: AppHandle, chat_id: i64) -> Result<String, String> {
 #[tauri::command]
 #[specta::specta]
 pub fn cancel_operation(app: AppHandle) {
+    log::info!("cancel_operation command called from frontend");
     cancel_current_operation(&app);
 }
 

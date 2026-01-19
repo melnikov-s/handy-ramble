@@ -14,7 +14,9 @@ pub use crate::tray::*;
 /// Centralized cancellation function that can be called from anywhere in the app.
 /// Handles cancelling both recording and transcription operations and updates UI state.
 pub fn cancel_current_operation(app: &AppHandle) {
-    info!("Initiating operation cancellation...");
+    // Capture backtrace to identify caller
+    let bt = std::backtrace::Backtrace::force_capture();
+    info!("Initiating operation cancellation... Backtrace:\n{}", bt);
 
     // First, reset all shortcut toggle states.
     // This is critical for non-push-to-talk mode where shortcuts toggle on/off

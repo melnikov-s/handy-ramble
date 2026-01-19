@@ -647,14 +647,16 @@ fn handle_behavior_release(binding_string: &str) {
 }
 
 fn handle_cancel() {
+    debug!("handle_cancel() invoked - Escape key detected");
     let state = get_state();
-    let app = {
+    let (app, current_state) = {
         let guard = match state.lock() {
             Ok(g) => g,
             Err(_) => return,
         };
-        guard.app_handle.clone()
+        (guard.app_handle.clone(), format!("{:?}", guard.state))
     };
+    debug!("handle_cancel: current state = {}", current_state);
 
     if let Some(app) = app {
         // Priority 1: Close focused Quick Chat window
@@ -678,10 +680,13 @@ fn handle_cancel() {
             )
         };
 
+        debug!("handle_cancel: should_cancel = {}", should_cancel);
         if should_cancel {
             info!("Cancel recording triggered via Escape");
             crate::utils::cancel_current_operation(&app);
             force_reset_state();
+        } else {
+            debug!("handle_cancel: NOT cancelling because state is Idle");
         }
     }
 }

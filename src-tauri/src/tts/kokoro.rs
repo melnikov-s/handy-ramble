@@ -1,7 +1,7 @@
 use crate::tts::TTSEngine;
 use anyhow::Result;
 use kokorox::tts::koko::TTSKoko;
-use log::info;
+use log::{info, debug, error};
 use rodio::{OutputStreamBuilder, Sink};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -51,19 +51,30 @@ fn split_into_sentences(text: &str) -> Vec<String> {
 impl KokoroEngine {
     pub fn new() -> Self {
         // Initialize rodio stream
+        info!("Initializing KokoroEngine audio output...");
         let stream_handle = match OutputStreamBuilder::from_default_device() {
-            Ok(builder) => match builder.open_stream() {
-                Ok(h) => Some(h),
-                Err(e) => {
-                    log::error!("Failed to open audio stream: {}", e);
-                    None
+            Ok(builder) => {
+                info!("Got audio output stream builder for default device");
+                match builder.open_stream() {
+                    Ok(h) => {
+                        info!("Successfully opened audio output stream");
+                        Some(h)
+                    },
+                    Err(e) => {
+                        error!("Failed to open audio stream: {}", e);
+                        None
+                    }
                 }
             },
             Err(e) => {
-                log::error!("Failed to create audio stream builder: {}", e);
+                error!("Failed to create audio stream builder: {}", e);
                 None
             }
         };
+
+        if stream_handle.is_none() {
+            error!("KokoroEngine initialized WITHOUT audio output - TTS will not work!");
+        }
 
         Self {
             tts: Arc::new(RwLock::new(None)),
@@ -98,32 +109,35 @@ impl TTSEngine for KokoroEngine {
             text, speed, volume
         );
 
+        info!("speak() called with text length: {}, speed: {}, volume: {}", text.len(), speed, volume);
+        
         let sh = self
             ._stream_handle
             .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Audio output handle not initialized"))?;
+            .ok_or_else(|| {
+                error!("Audio output handle not initialized!");
+                anyhow::anyhow!("Audio output handle not initialized")
+            })?;
 
         // Stop any currently playing audio
         if let Some(ref old_sink) = self.sink {
+            info!("Stopping previous sink");
             old_sink.stop();
         }
 
         // Create a new sink for streaming playback
         let mixer = sh.0.mixer();
+        info!("Got mixer from stream handle, creating new sink...");
         let (sink, queue_output) = Sink::new();
         sink.set_volume(volume);
+        info!("Created new sink with volume: {}", volume);
         mixer.add(queue_output);
         self.sink = Some(sink);
+        info!("Sink added to mixer, ready for audio");
 
         // Split text into sentences for streaming
         let sentences = split_into_sentences(text);
         info!("Streaming {} sentences", sentences.len());
-
-        // Get TTS instance
-        let tts_guard = self.tts.read().await;
-        let tts = tts_guard
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("Kokoro TTS not initialized"))?;
 
         // Generate and play each sentence as it's ready
         for (i, sentence) in sentences.iter().enumerate() {
@@ -138,28 +152,68 @@ impl TTSEngine for KokoroEngine {
                 }
             );
 
-            // Generate speech for this sentence
-            let samples = match tts.tts_raw_audio(
-                sentence, "en",       // language
-                "af_bella", // style/voice name
-                speed,      // speed
-                None,       // initial_silence
-                true,       // auto_detect_language
-                false,      // force_style
-                false,      // phonemes (input is text, not phonemes)
-            ) {
-                Ok(samples) => samples,
+            // Clone data needed for the blocking task
+            let sentence_clone = sentence.clone();
+            let speed_clone = speed;
+            let tts_clone = self.tts.clone();
+
+            // Run TTS generation in a blocking task to avoid blocking the async runtime
+            info!("Starting TTS audio generation for sentence {} (spawning blocking task)", i + 1);
+            let gen_start = std::time::Instant::now();
+            
+            let samples_result = tokio::task::spawn_blocking(move || {
+                // Acquire read lock synchronously inside the blocking task
+                let tts_guard = tts_clone.blocking_read();
+                let tts = match tts_guard.as_ref() {
+                    Some(t) => t,
+                    None => return Err(anyhow::anyhow!("Kokoro TTS not initialized")),
+                };
+                
+                info!("Inside blocking task, calling tts_raw_audio...");
+                match tts.tts_raw_audio(
+                    &sentence_clone,
+                    "en",           // language
+                    "af_bella",     // style/voice name
+                    speed_clone,    // speed
+                    None,           // initial_silence
+                    true,           // auto_detect_language
+                    false,          // force_style
+                    false,          // phonemes (input is text, not phonemes)
+                ) {
+                    Ok(samples) => {
+                        info!("tts_raw_audio returned {} samples", samples.len());
+                        Ok(samples)
+                    }
+                    Err(e) => Err(anyhow::anyhow!("TTS generation failed: {:?}", e)),
+                }
+            })
+            .await;
+
+            let samples = match samples_result {
+                Ok(Ok(samples)) => {
+                    info!("TTS audio generation completed in {:?}, got {} samples ({:.2}s of audio)", 
+                        gen_start.elapsed(), samples.len(), samples.len() as f32 / 24000.0);
+                    samples
+                }
+                Ok(Err(e)) => {
+                    error!("Failed to generate speech for sentence: {:?}", e);
+                    continue;
+                }
                 Err(e) => {
-                    log::warn!("Failed to generate speech for sentence: {:?}", e);
+                    error!("Blocking task panicked: {:?}", e);
                     continue;
                 }
             };
 
             // Append to the playing queue immediately
             if let Some(ref sink) = self.sink {
-                let source = rodio::buffer::SamplesBuffer::new(1, 24000, samples);
+                let source = rodio::buffer::SamplesBuffer::new(1, 24000, samples.clone());
+                info!("Appending {} samples to sink (sink empty before: {})", samples.len(), sink.empty());
                 sink.append(source);
-                info!("Appended sentence {} to playback queue", i + 1);
+                info!("Appended sentence {} to playback queue (sink empty after: {}, is_paused: {})", 
+                    i + 1, sink.empty(), sink.is_paused());
+            } else {
+                error!("No sink available to append audio!");
             }
         }
 

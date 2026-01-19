@@ -1229,6 +1229,7 @@ impl ShortcutAction for CancelAction {
     }
 
     fn start(&self, app: &AppHandle, _binding_id: &str, _shortcut_str: &str) -> bool {
+        info!("CancelAction triggered via shortcut");
         utils::cancel_current_operation(app);
         true
     }
