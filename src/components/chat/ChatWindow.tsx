@@ -152,6 +152,7 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
   const [initialPrompt, setInitialPrompt] = useState("");
   const [attachments, setAttachments] = useState<string[]>([]);
   const [chatIdState, setChatIdState] = useState<number | null>(null);
+  const [webSearchEnabled, setWebSearchEnabled] = useState(true); // Default to enabled for Gemini
   const { saveChat, updateChat, getChat, generateTitle, updateChatTitle } =
     useChatPersistence();
 
@@ -259,6 +260,13 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
   const initialPromptRef = useRef(initialPrompt);
   const initialContextRef = useRef(initialContext);
   const chatIdStateRef = useRef(chatIdState);
+  const webSearchEnabledRef = useRef(webSearchEnabled);
+
+  // Compute selected model's provider_id
+  const selectedModelProviderId = selectedModelId
+    ? (models.find((m) => m.id === selectedModelId)?.provider_id ?? null)
+    : null;
+  const selectedModelProviderIdRef = useRef(selectedModelProviderId);
 
   useEffect(() => {
     attachmentsRef.current = attachments;
@@ -266,12 +274,16 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
     initialPromptRef.current = initialPrompt;
     initialContextRef.current = initialContext;
     chatIdStateRef.current = chatIdState;
+    webSearchEnabledRef.current = webSearchEnabled;
+    selectedModelProviderIdRef.current = selectedModelProviderId;
   }, [
     attachments,
     selectedModelId,
     initialPrompt,
     initialContext,
     chatIdState,
+    webSearchEnabled,
+    selectedModelProviderId,
   ]);
 
   const [runtime] = useState(() => {
@@ -318,10 +330,15 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
         ];
 
         try {
+          // Use web search if enabled AND provider supports it (Gemini or Anthropic)
+          const enableGrounding =
+            webSearchEnabledRef.current &&
+            (selectedModelProviderIdRef.current === "gemini" ||
+              selectedModelProviderIdRef.current === "anthropic");
           const response = await commands.chatCompletion(
             formattedMessages as any,
             selectedModelIdRef.current,
-            true, // Always enable grounding (backend handles provider filtering)
+            enableGrounding,
           );
 
           if (response.status === "ok") {
@@ -442,6 +459,9 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
             setSelectedModelId={setSelectedModelId}
             models={models}
             isLoading={isLoading}
+            webSearchEnabled={webSearchEnabled}
+            setWebSearchEnabled={setWebSearchEnabled}
+            selectedModelProviderId={selectedModelProviderId}
           />
         </AssistantRuntimeProvider>
       </div>

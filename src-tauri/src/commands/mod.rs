@@ -328,6 +328,17 @@ pub fn open_log_dir(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Opens a URL in the system's default browser
+#[specta::specta]
+#[tauri::command]
+pub fn open_external_url(app: AppHandle, url: String) -> Result<(), String> {
+    app.opener()
+        .open_url(&url, None::<String>)
+        .map_err(|e| format!("Failed to open URL: {}", e))?;
+
+    Ok(())
+}
+
 #[specta::specta]
 #[tauri::command]
 pub fn open_app_data_dir(app: AppHandle) -> Result<(), String> {

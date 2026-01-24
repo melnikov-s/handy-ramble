@@ -23,10 +23,10 @@ import {
   ChevronDownIcon,
   Loader2Icon,
   GitForkIcon,
+  GlobeIcon,
 } from "lucide-react";
 import React, { useEffect } from "react";
 import type { FC } from "react";
-import { openUrl } from "@tauri-apps/plugin-opener";
 import { cn } from "@/lib/utils/cn";
 import { Button } from "@/components/ui/Button";
 
@@ -40,6 +40,9 @@ interface ThreadProps {
   setSelectedModelId: (id: string | null) => void;
   models: any[];
   isLoading: boolean;
+  webSearchEnabled: boolean;
+  setWebSearchEnabled: (enabled: boolean) => void;
+  selectedModelProviderId: string | null;
 }
 
 export const Thread: FC<ThreadProps> = ({
@@ -49,6 +52,9 @@ export const Thread: FC<ThreadProps> = ({
   setSelectedModelId,
   models,
   isLoading,
+  webSearchEnabled,
+  setWebSearchEnabled,
+  selectedModelProviderId,
 }) => {
   return (
     <ThreadPrimitive.Root className="aui-root flex h-full flex-col bg-[var(--color-background)]">
@@ -73,6 +79,9 @@ export const Thread: FC<ThreadProps> = ({
           setSelectedModelId={setSelectedModelId}
           models={models}
           isLoading={isLoading}
+          webSearchEnabled={webSearchEnabled}
+          setWebSearchEnabled={setWebSearchEnabled}
+          selectedModelProviderId={selectedModelProviderId}
         />
       </div>
     </ThreadPrimitive.Root>
@@ -94,7 +103,7 @@ const ThreadWelcome: FC = () => {
   );
 };
 
-import { CameraIcon, CropIcon } from "lucide-react";
+import { CameraIcon } from "lucide-react";
 import { commands } from "@/bindings";
 
 const Composer: FC<ThreadProps> = ({
@@ -104,6 +113,9 @@ const Composer: FC<ThreadProps> = ({
   setSelectedModelId,
   models,
   isLoading,
+  webSearchEnabled,
+  setWebSearchEnabled,
+  selectedModelProviderId,
 }) => {
   console.log("Composer rendering with attachments:", attachments.length);
 
@@ -131,13 +143,10 @@ const Composer: FC<ThreadProps> = ({
     }
   };
 
-  const handleClip = async () => {
-    try {
-      await commands.openClippingTool();
-    } catch (error) {
-      console.error("Failed to open clipping tool:", error);
-    }
-  };
+  // Check if web search is supported (Gemini and Anthropic)
+  const isWebSearchSupported =
+    selectedModelProviderId === "gemini" ||
+    selectedModelProviderId === "anthropic";
 
   const removeAttachment = (index: number) => {
     setAttachments((prev) => prev.filter((_, i) => i !== index));
@@ -185,13 +194,22 @@ const Composer: FC<ThreadProps> = ({
             >
               <CameraIcon className="h-4 w-4" />
             </button>
-            <button
-              onClick={handleClip}
-              className="rounded p-2 text-[var(--color-text)]/50 hover:bg-[var(--color-text)]/10 hover:text-[var(--color-text)] transition-colors"
-              title="Clip Region"
-            >
-              <CropIcon className="h-4 w-4" />
-            </button>
+            {isWebSearchSupported && (
+              <button
+                onClick={() => setWebSearchEnabled(!webSearchEnabled)}
+                className={cn(
+                  "rounded p-2 transition-colors",
+                  webSearchEnabled
+                    ? "bg-[var(--color-logo-primary)]/20 text-[var(--color-logo-primary)] hover:bg-[var(--color-logo-primary)]/30"
+                    : "text-[var(--color-text)]/50 hover:bg-[var(--color-text)]/10 hover:text-[var(--color-text)]",
+                )}
+                title={
+                  webSearchEnabled ? "Web Search Enabled" : "Enable Web Search"
+                }
+              >
+                <GlobeIcon className="h-4 w-4" />
+              </button>
+            )}
 
             <div className="mx-2 h-4 w-[1px] bg-[var(--color-text)]/10" />
 
@@ -280,10 +298,14 @@ const AssistantMessage: FC = () => {
                         onClick={async (e) => {
                           e.preventDefault();
                           if (props.href) {
-                            try {
-                              await openUrl(props.href);
-                            } catch (err) {
-                              console.error("Failed to open URL:", err);
+                            const result = await commands.openExternalUrl(
+                              props.href,
+                            );
+                            if (result.status === "error") {
+                              console.error(
+                                "Failed to open URL:",
+                                result.error,
+                              );
                               window.open(props.href, "_blank");
                             }
                           }
@@ -312,7 +334,8 @@ const AssistantMessage: FC = () => {
           </div>
           {groundingMetadata &&
             (groundingMetadata.chunks?.length > 0 ||
-              groundingMetadata.search_entry_point) && (
+              (groundingMetadata.search_entry_point &&
+                groundingMetadata.search_entry_point.trim().length > 0)) && (
               <div className="flex-shrink-0">
                 <SearchGrounding metadata={groundingMetadata} />
               </div>
@@ -326,7 +349,13 @@ const AssistantMessage: FC = () => {
 const SearchGrounding: FC<{ metadata: GroundingMetadata }> = ({ metadata }) => {
   const [isOpen, setIsOpen] = useState(false);
 
-  if (!metadata.chunks && !metadata.search_entry_point) return null;
+  // Don't show anything if there are no chunks AND no meaningful search entry point
+  const hasChunks = metadata.chunks && metadata.chunks.length > 0;
+  const hasEntryPoint = !!(
+    metadata.search_entry_point && metadata.search_entry_point.trim().length > 0
+  );
+
+  if (!hasChunks && !hasEntryPoint) return null;
 
   return (
     <div className="relative">
@@ -340,8 +369,8 @@ const SearchGrounding: FC<{ metadata: GroundingMetadata }> = ({ metadata }) => {
           className={cn("h-3 w-3 transition-transform", isOpen && "rotate-180")}
         />
       </button>
-      {isOpen && (
-        <div className="absolute bottom-full right-0 mb-2 z-50 flex max-h-[400px] w-80 flex-col gap-1.5 overflow-y-auto rounded-lg border border-[var(--color-text)]/20 bg-[var(--color-background)] p-3 shadow-xl">
+      {isOpen && (hasChunks || hasEntryPoint) && (
+        <div className="absolute bottom-full right-0 mb-2 z-50 flex max-h-[400px] min-h-[60px] w-80 flex-col gap-1.5 overflow-y-auto rounded-lg border border-[var(--color-text)]/20 bg-[var(--color-background)] p-3 shadow-xl">
           <div className="mb-2 flex items-center justify-between border-b border-[var(--color-text)]/10 pb-1">
             <span className="text-xs font-semibold">Search Sources</span>
             <button onClick={() => setIsOpen(false)}>
@@ -350,17 +379,19 @@ const SearchGrounding: FC<{ metadata: GroundingMetadata }> = ({ metadata }) => {
           </div>
           {metadata.search_entry_point && (
             <div
-              className="mb-1 overflow-x-auto pb-2 [&_a]:text-[var(--color-primary)] [&_a]:hover:underline [&_.google-search-chip]:whitespace-nowrap [&_.google-search-chip]:inline-block"
+              className="mb-4 overflow-x-auto pb-3 border-b border-[var(--color-text)]/10 [&_a]:text-[var(--color-primary)] [&_a]:hover:underline [&_.google-search-chip]:whitespace-nowrap [&_.google-search-chip]:inline-block"
               onClick={async (e) => {
                 const target = e.target as HTMLElement;
                 const anchor = target.closest("a");
                 if (anchor && anchor.href) {
                   e.preventDefault();
                   e.stopPropagation();
-                  try {
-                    await openUrl(anchor.href);
-                  } catch (err) {
-                    console.error("Failed to open URL from chip:", err);
+                  const result = await commands.openExternalUrl(anchor.href);
+                  if (result.status === "error") {
+                    console.error(
+                      "Failed to open URL from chip:",
+                      result.error,
+                    );
                     window.open(anchor.href, "_blank");
                   }
                 }
@@ -370,77 +401,86 @@ const SearchGrounding: FC<{ metadata: GroundingMetadata }> = ({ metadata }) => {
               }}
             />
           )}
-          {metadata.chunks.map((chunk, i) => {
-            let displayUrl = "";
-            let actualLink = chunk.uri || "#";
-            let isVertexRedirect = false;
+          {/* Source list with increased spacing */}
+          <div className="flex flex-col gap-2">
+            {hasChunks &&
+              metadata.chunks.map((chunk, i) => {
+                let displayUrl = "";
+                let actualLink = chunk.uri || "";
+                let isVertexRedirect = false;
 
-            try {
-              if (chunk.uri) {
-                const url = chunk.uri.toLowerCase();
-                // Check if it's a Vertex AI or Google grounding redirect
-                if (
-                  url.includes("vertex") ||
-                  url.includes("google.com/grounding")
-                ) {
-                  isVertexRedirect = true;
-                  const urlObj = new URL(chunk.uri);
-                  const extractedUrl =
-                    urlObj.searchParams.get("url") ||
-                    urlObj.searchParams.get("uri");
-                  if (extractedUrl) {
-                    actualLink = extractedUrl;
-                    try {
-                      const targetUrlObj = new URL(extractedUrl);
+                try {
+                  if (chunk.uri) {
+                    const url = chunk.uri.toLowerCase();
+                    // Check if it's a Vertex AI or Google grounding redirect
+                    if (
+                      url.includes("vertexaisearch") ||
+                      url.includes("vertex") ||
+                      url.includes("google.com/grounding")
+                    ) {
+                      isVertexRedirect = true;
+                      const urlObj = new URL(chunk.uri);
+                      const extractedUrl =
+                        urlObj.searchParams.get("url") ||
+                        urlObj.searchParams.get("uri");
+                      if (extractedUrl) {
+                        actualLink = extractedUrl;
+                        try {
+                          const targetUrlObj = new URL(extractedUrl);
+                          displayUrl = targetUrlObj.hostname;
+                        } catch {
+                          displayUrl = extractedUrl;
+                        }
+                      } else {
+                        // If no url param, just use the original link
+                        displayUrl = chunk.title || "Source";
+                      }
+                    } else if (url.startsWith("http")) {
+                      const targetUrlObj = new URL(chunk.uri);
                       displayUrl = targetUrlObj.hostname;
-                    } catch {
-                      displayUrl = extractedUrl;
                     }
                   }
-                } else if (url.startsWith("http")) {
-                  const targetUrlObj = new URL(chunk.uri);
-                  displayUrl = targetUrlObj.hostname;
+
+                  // Ensure actualLink has a protocol
+                  if (actualLink && !actualLink.startsWith("http")) {
+                    actualLink = `https://${actualLink}`;
+                  }
+                } catch (e) {
+                  console.error("Error parsing source URL:", e);
                 }
-              }
 
-              // Ensure actualLink has a protocol
-              if (actualLink !== "#" && !actualLink.startsWith("http")) {
-                actualLink = `https://${actualLink}`;
-              }
-            } catch (e) {
-              console.error("Error parsing source URL:", e);
-            }
+                const handleLinkClick = async () => {
+                  console.log("Opening URL:", actualLink);
+                  if (actualLink) {
+                    const result = await commands.openExternalUrl(actualLink);
+                    if (result.status === "error") {
+                      console.error("Failed to open URL:", result.error);
+                      // Fallback to window.open
+                      window.open(actualLink, "_blank");
+                    }
+                  }
+                };
 
-            const handleLinkClick = async (e: React.MouseEvent) => {
-              e.preventDefault();
-              e.stopPropagation();
-              if (actualLink && actualLink !== "#") {
-                try {
-                  await openUrl(actualLink);
-                } catch (err) {
-                  console.error("Failed to open URL:", err);
-                }
-              }
-            };
-
-            return (
-              <a
-                key={i}
-                href={actualLink}
-                onClick={handleLinkClick}
-                className="flex flex-col gap-0.5 rounded p-1 text-left hover:bg-[var(--color-text)]/5 w-full cursor-pointer no-underline group/source"
-              >
-                <span className="max-w-[280px] truncate font-medium text-[var(--color-primary)] group-hover/source:underline">
-                  {chunk.title || displayUrl || "Source"}
-                </span>
-                {displayUrl && !isVertexRedirect && (
-                  <span className="max-w-[280px] truncate text-[var(--color-text)]/40 text-[10px]">
-                    {displayUrl}
-                  </span>
-                )}
-              </a>
-            );
-          })}
+                return (
+                  <button
+                    key={i}
+                    onClick={handleLinkClick}
+                    className="flex flex-col gap-0.5 rounded p-2 text-left hover:bg-[var(--color-text)]/10 w-full cursor-pointer group/source"
+                  >
+                    {/* Domain name - primary display */}
+                    <span className="max-w-[280px] truncate font-medium text-[var(--color-primary)] group-hover/source:underline text-sm">
+                      {displayUrl || "Source"}
+                    </span>
+                    {/* Page title - secondary display (only if different from domain) */}
+                    {chunk.title && chunk.title !== displayUrl && (
+                      <span className="max-w-[280px] truncate text-[var(--color-text)]/50 text-xs">
+                        {chunk.title}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+          </div>
         </div>
       )}
     </div>

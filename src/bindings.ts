@@ -609,6 +609,17 @@ async openAppDataDir() : Promise<Result<null, string>> {
     else return { status: "error", error: e  as any };
 }
 },
+/**
+ * Opens a URL in the system's default browser
+ */
+async openExternalUrl(url: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("open_external_url", { url }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async getAvailableModels() : Promise<Result<ModelInfo[], string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("get_available_models") };
@@ -936,6 +947,7 @@ async removeAppCategoryMapping(bundleId: string) : Promise<Result<null, string>>
  * 
  * # Arguments
  * * `model_id` - Optional model ID to use. Falls back to `default_chat_model_id` if not provided.
+ * * `enable_grounding` - Whether to enable web search grounding (supported for Gemini and Anthropic)
  */
 async chatCompletion(messages: ChatMessage[], modelId: string | null, enableGrounding: boolean) : Promise<Result<ChatResponse, string>> {
     try {
