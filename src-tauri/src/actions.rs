@@ -904,29 +904,46 @@ fn collapse_repeated_words(text: &str, enabled: bool) -> String {
         return text.to_string();
     }
 
-    // Match 3+ consecutive identical words and collapse to single instance
-    match regex::RegexBuilder::new(r"\b(\w+)(?:\s+\1){2,}\b")
-        .case_insensitive(true)
-        .build()
-    {
-        Ok(re) => {
-            let collapsed = re.replace_all(text, "$1").to_string();
-            // Clean up any double spaces created by collapse
-            let cleaned = collapsed.split_whitespace().collect::<Vec<_>>().join(" ");
-            if cleaned != text {
-                debug!(
-                    "Collapsed repeated words: {} chars -> {} chars",
-                    text.len(),
-                    cleaned.len()
-                );
-            }
-            cleaned
+    // Manually collapse 3+ consecutive identical words (case-insensitive)
+    let words: Vec<&str> = text.split_whitespace().collect();
+    if words.is_empty() {
+        return text.to_string();
+    }
+
+    let mut result: Vec<&str> = Vec::new();
+    let mut i = 0;
+
+    while i < words.len() {
+        let current = words[i];
+        let mut count = 1;
+
+        // Count consecutive identical words (case-insensitive)
+        while i + count < words.len() && words[i + count].eq_ignore_ascii_case(current) {
+            count += 1;
         }
-        Err(e) => {
-            warn!("Failed to compile repeated word regex: {}", e);
-            text.to_string()
+
+        // Only collapse if 3 or more repetitions
+        if count >= 3 {
+            result.push(current);
+            i += count;
+        } else {
+            // Keep all words if fewer than 3 repetitions
+            for j in 0..count {
+                result.push(words[i + j]);
+            }
+            i += count;
         }
     }
+
+    let cleaned = result.join(" ");
+    if cleaned != text {
+        debug!(
+            "Collapsed repeated words: {} chars -> {} chars",
+            text.len(),
+            cleaned.len()
+        );
+    }
+    cleaned
 }
 
 /// Process transcription through LLM using ramble-specific settings
