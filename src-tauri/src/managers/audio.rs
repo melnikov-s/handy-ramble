@@ -692,6 +692,11 @@ impl AudioRecordingManager {
         *self.selection_context.lock().unwrap() = Some(text);
     }
 
+    /// Clears the selection context.
+    pub fn clear_selection_context(&self) {
+        *self.selection_context.lock().unwrap() = None;
+    }
+
     /// Retrieves the selection context, if any.
     pub fn get_selection_context(&self) -> Option<String> {
         self.selection_context.lock().unwrap().clone()

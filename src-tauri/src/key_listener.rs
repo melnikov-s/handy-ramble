@@ -603,8 +603,19 @@ fn handle_behavior_release(binding_string: &str) {
                 let is_context_chat = binding_id == "context_chat";
 
                 if is_voice_command {
-                    // Voice commands stay in voice command mode, no refining
-                    // The overlay was already set when start() was called
+                    // Voice commands need selection context but no refining mode
+                    let app_clone = app.clone();
+                    let _ = app.run_on_main_thread(move || {
+                        if let Ok(Some(text)) = crate::clipboard::get_selected_text(&app_clone) {
+                            if let Some(mgr) = app_clone.try_state::<Arc<AudioRecordingManager>>() {
+                                debug!(
+                                    "[VOICE_COMMAND] Captured selection context: {} chars",
+                                    text.len()
+                                );
+                                mgr.set_selection_context(text);
+                            }
+                        }
+                    });
                 } else if is_context_chat {
                     // Context chat needs selection but no refining mode
                     let app_clone = app.clone();

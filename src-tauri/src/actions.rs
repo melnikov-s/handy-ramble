@@ -406,6 +406,19 @@ impl ShortcutAction for TranscribeAction {
             binding_id
         );
 
+        let rm = app.state::<Arc<AudioRecordingManager>>();
+        rm.clear_selection_context();
+
+        // Capture selection context immediately at start - BEFORE OVERLAY to avoid focus issues.
+        // We do this synchronously on the main thread here to ensure we get the focus before overlays appear.
+        if let Ok(Some(text)) = crate::clipboard::get_selected_text(app) {
+            debug!(
+                "[TRANSCRIBE] Captured selection context at start: {} chars",
+                text.len()
+            );
+            rm.set_selection_context(text);
+        }
+
         // Check if we're resuming from a paused state
         if is_operation_paused(app, binding_id) {
             debug!("Resuming paused transcription for binding: {}", binding_id);
@@ -1999,8 +2012,12 @@ fn execute_builtin_command(
 ) -> Result<crate::voice_commands::CommandResult, String> {
     match command_id {
         "web_search" => {
-            // Extract search query from transcription
-            let query = extract_search_query(transcription);
+            // Extract search query - use selection if provided, otherwise extract from transcription
+            let query = if let Some(sel) = selection {
+                sel.to_string()
+            } else {
+                extract_search_query(transcription)
+            };
             if query.is_empty() {
                 return Ok(crate::voice_commands::CommandResult::Error(
                     "No search query provided".to_string(),
