@@ -8,6 +8,7 @@ import { AudioFeedback } from "../AudioFeedback";
 import { useSettings } from "../../../hooks/useSettings";
 import { VolumeSlider } from "../VolumeSlider";
 import { LLMProviderSettings } from "../LLMProviderSettings";
+import { SystemPromptFile } from "../SystemPromptFile";
 
 export const GeneralSettings: React.FC = () => {
   const { t } = useTranslation();
@@ -22,6 +23,9 @@ export const GeneralSettings: React.FC = () => {
         <RambleShortcut shortcutId="pause_toggle" grouped={true} />
       </SettingsGroup>
       <LLMProviderSettings />
+      <SettingsGroup title={t("settings.general.systemPromptFile.groupTitle")}>
+        <SystemPromptFile descriptionMode="tooltip" grouped={true} />
+      </SettingsGroup>
       <SettingsGroup title={t("settings.sound.title")}>
         <MicrophoneSelector descriptionMode="tooltip" grouped={true} />
         <AudioFeedback descriptionMode="tooltip" grouped={true} />

@@ -1,5 +1,5 @@
 use crate::llm_client::create_client;
-use crate::settings::get_settings;
+use crate::settings::{get_settings, get_system_prompt_content};
 use async_openai::types::{
     ChatCompletionRequestMessage, ChatCompletionRequestSystemMessageArgs,
     ChatCompletionRequestUserMessageArgs, CreateChatCompletionRequestArgs,
@@ -75,7 +75,7 @@ pub async fn chat_completion(
 
     // Use Gemini native API for all Gemini models (enables grounding)
     if provider.id == "gemini" {
-        return chat_completion_gemini_native(provider, &model.model_id, messages).await;
+        return chat_completion_gemini_native(&app, provider, &model.model_id, messages).await;
     }
 
     // Create the client
@@ -83,6 +83,15 @@ pub async fn chat_completion(
 
     // Convert messages to OpenAI format
     let mut openai_messages: Vec<ChatCompletionRequestMessage> = Vec::new();
+
+    // Inject system prompt if configured
+    if let Some(system_prompt) = get_system_prompt_content(&app) {
+        let system_msg = ChatCompletionRequestSystemMessageArgs::default()
+            .content(system_prompt)
+            .build()
+            .map_err(|e| e.to_string())?;
+        openai_messages.push(system_msg.into());
+    }
 
     for msg in messages {
         let openai_msg = match msg.role.as_str() {
@@ -190,6 +199,7 @@ pub async fn chat_completion(
 
 /// Native Gemini API call for search grounding
 async fn chat_completion_gemini_native(
+    app: &AppHandle,
     provider: &crate::settings::LLMProvider,
     model_id: &str,
     messages: Vec<ChatMessage>,
@@ -200,6 +210,20 @@ async fn chat_completion_gemini_native(
     );
 
     let mut contents = Vec::new();
+
+    // Inject system prompt as first user message if configured
+    if let Some(system_prompt) = get_system_prompt_content(app) {
+        contents.push(serde_json::json!({
+            "role": "user",
+            "parts": [{ "text": system_prompt }]
+        }));
+        // Add a model acknowledgment to maintain conversation flow
+        contents.push(serde_json::json!({
+            "role": "model",
+            "parts": [{ "text": "Understood. I will follow these instructions." }]
+        }));
+    }
+
     for msg in messages {
         let role = if msg.role == "assistant" {
             "model"

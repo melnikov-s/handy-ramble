@@ -562,6 +562,9 @@ pub struct AppSettings {
     /// Default model ID for context chat mode
     #[serde(default)]
     pub default_context_chat_model_id: Option<String>,
+    /// Path to a system prompt file that will be injected into all LLM calls
+    #[serde(default)]
+    pub system_prompt_file: Option<String>,
 }
 
 fn default_model() -> String {
@@ -1467,6 +1470,8 @@ pub fn get_default_settings() -> AppSettings {
         clipboard_content_cutoff: 0,
         context_chat_prompt: default_context_chat_prompt(),
         last_voice_interaction: None,
+        // System prompt file
+        system_prompt_file: None,
     }
 }
 
@@ -1671,6 +1676,40 @@ pub fn get_stored_binding(app: &AppHandle, id: &str) -> ShortcutBinding {
 pub fn get_history_limit(app: &AppHandle) -> usize {
     let settings = get_settings(app);
     settings.history_limit
+}
+
+/// Read the content of the system prompt file if configured.
+/// Returns None if no file is configured or if reading fails.
+pub fn get_system_prompt_content(app: &AppHandle) -> Option<String> {
+    let settings = get_settings(app);
+    let path = settings.system_prompt_file.as_ref()?;
+
+    if path.trim().is_empty() {
+        return None;
+    }
+
+    match std::fs::read_to_string(path) {
+        Ok(content) => {
+            if content.trim().is_empty() {
+                None
+            } else {
+                Some(content)
+            }
+        }
+        Err(e) => {
+            log::warn!("Failed to read system prompt file '{}': {}", path, e);
+            None
+        }
+    }
+}
+
+/// Prepend system prompt content to a user prompt if configured.
+/// If no system prompt is configured, returns the original prompt unchanged.
+pub fn inject_system_prompt(app: &AppHandle, user_prompt: &str) -> String {
+    match get_system_prompt_content(app) {
+        Some(system_prompt) => format!("{}\n\n---\n\n{}", system_prompt.trim(), user_prompt),
+        None => user_prompt.to_string(),
+    }
 }
 
 pub fn get_recording_retention_period(app: &AppHandle) -> RecordingRetentionPeriod {

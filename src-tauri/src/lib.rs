@@ -357,6 +357,7 @@ pub fn run() {
         shortcut::change_ramble_use_vision_model_setting,
         shortcut::change_ramble_vision_model_setting,
         shortcut::change_context_chat_prompt_setting,
+        shortcut::change_system_prompt_file_setting,
         shortcut::reset_ramble_prompt_to_default,
         shortcut::change_hold_threshold_setting,
         shortcut::change_clipboard_content_cutoff_setting,
@@ -511,6 +512,7 @@ pub fn run() {
             log::info!("Another instance attempted to start, ignoring.");
         }))
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_os::init())

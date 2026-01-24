@@ -83,6 +83,7 @@ ort = { version = "2.0.0-rc.9", features = ["ndarray"] }
 ndarray = "0.16"
 espeak-rs = "0.1.9"
 kokorox = "0.1.5"
+tauri-plugin-dialog = "2.6.0"
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.3"

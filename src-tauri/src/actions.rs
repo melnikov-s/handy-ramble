@@ -7,7 +7,7 @@ use crate::managers::history::HistoryManager;
 use crate::managers::transcription::TranscriptionManager;
 use crate::managers::tts::TTSManager;
 use crate::settings::{
-    get_settings, write_settings, AppSettings, DetectedApp, PromptMode,
+    get_settings, inject_system_prompt, write_settings, AppSettings, DetectedApp, PromptMode,
     APPLE_INTELLIGENCE_PROVIDER_ID,
 };
 use crate::tray::{change_tray_icon, TrayIconState};
@@ -237,6 +237,8 @@ async fn maybe_post_process_transcription(
 
     // Replace ${output} variable in the prompt with the actual text
     let processed_prompt = prompt.replace("${output}", transcription);
+    // Inject system prompt if configured
+    let processed_prompt = inject_system_prompt(app, &processed_prompt);
     debug!("Processed prompt length: {} chars", processed_prompt.len());
 
     if provider.id == APPLE_INTELLIGENCE_PROVIDER_ID {
@@ -574,7 +576,9 @@ impl ShortcutAction for TranscribeAction {
                     debug!("Using streaming transcription result");
                     streaming_text.unwrap()
                 } else {
-                    debug!("No streaming transcription available, falling back to full transcription");
+                    debug!(
+                        "No streaming transcription available, falling back to full transcription"
+                    );
                     // Try transcription with fallback chain: Parakeet -> Whisper -> Chunked -> Error
                     let transcription_result = tm.transcribe(samples.clone());
 
@@ -593,8 +597,7 @@ impl ShortcutAction for TranscribeAction {
                             );
 
                             // Fallback 1: Try Whisper if available
-                            let whisper_result =
-                                tm.transcribe_with_fallback(samples.clone()).await;
+                            let whisper_result = tm.transcribe_with_fallback(samples.clone()).await;
                             match whisper_result {
                                 Ok(text) => {
                                     info!("Whisper fallback succeeded");
@@ -1583,6 +1586,8 @@ async fn execute_via_llm(
     // Build prompt with available commands
     let prompt =
         crate::voice_commands::build_command_prompt(&settings.voice_commands, selection.as_deref());
+    // Inject system prompt if configured
+    let prompt = inject_system_prompt(app, &prompt);
 
     let user_message = ChatCompletionRequestUserMessageArgs::default()
         .content(format!("User command: \"{}\"", transcription))
@@ -2226,6 +2231,8 @@ async fn process_context_chat(app: &AppHandle, transcription: &str) -> Result<St
         .replace("${selection}", &selection_text)
         .replace("${clipboard}", &clipboard_content)
         .replace("${prompt}", transcription);
+    // Inject system prompt if configured
+    let processed_prompt = inject_system_prompt(app, &processed_prompt);
 
     info!(
         "[CONTEXT_CHAT] Full prompt being sent to LLM:\n\

@@ -46,7 +46,7 @@ pub fn init_shortcuts(app: &AppHandle) {
             continue;
         }
 
-        // For vision and pause, we use the current binding but we also register 
+        // For vision and pause, we use the current binding but we also register
         // common variants to ENSURE key swallowing works on macOS.
         if id == "vision_capture" || id == "pause_toggle" {
             register_swallowing_shortcuts(app, binding);
@@ -445,14 +445,14 @@ pub fn change_post_process_base_url_setting(
     base_url: String,
 ) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
-    
+
     // Find the provider in llm_providers
     let provider = settings
         .llm_providers
         .iter_mut()
         .find(|p| p.id == provider_id)
         .ok_or_else(|| format!("Provider '{}' not found", provider_id))?;
-    
+
     // Only allow editing custom providers
     if !provider.is_custom {
         return Err(format!(
@@ -489,14 +489,14 @@ pub fn change_post_process_api_key_setting(
     api_key: String,
 ) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
-    
+
     // Find the provider in llm_providers and update its API key
     let provider = settings
         .llm_providers
         .iter_mut()
         .find(|p| p.id == provider_id)
         .ok_or_else(|| format!("Provider '{}' not found", provider_id))?;
-    
+
     provider.api_key = api_key;
     settings::write_settings(&app, settings);
     Ok(())
@@ -556,11 +556,7 @@ pub fn update_post_process_prompt(
 ) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
 
-    if let Some(existing_prompt) = settings
-        .coherent_prompts
-        .iter_mut()
-        .find(|p| p.id == id)
-    {
+    if let Some(existing_prompt) = settings.coherent_prompts.iter_mut().find(|p| p.id == id) {
         existing_prompt.name = name;
         existing_prompt.prompt = prompt;
         settings::write_settings(&app, settings);
@@ -869,6 +865,18 @@ pub fn change_hold_threshold_setting(app: AppHandle, threshold_ms: u64) -> Resul
 
 #[tauri::command]
 #[specta::specta]
+pub fn change_system_prompt_file_setting(
+    app: AppHandle,
+    path: Option<String>,
+) -> Result<(), String> {
+    let mut settings = settings::get_settings(&app);
+    settings.system_prompt_file = path;
+    settings::write_settings(&app, settings);
+    Ok(())
+}
+
+#[tauri::command]
+#[specta::specta]
 pub fn change_clipboard_content_cutoff_setting(app: AppHandle, cutoff: u32) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
     settings.clipboard_content_cutoff = cutoff;
@@ -890,11 +898,7 @@ pub fn change_prompt_mode_setting(
 
 #[tauri::command]
 #[specta::specta]
-pub fn update_prompt_category(
-    app: AppHandle,
-    id: String,
-    prompt: String,
-) -> Result<(), String> {
+pub fn update_prompt_category(app: AppHandle, id: String, prompt: String) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
 
     if let Some(category) = settings.prompt_categories.iter_mut().find(|c| c.id == id) {
@@ -934,12 +938,16 @@ pub fn reset_prompt_category_to_default(app: AppHandle, id: String) -> Result<St
 #[specta::specta]
 pub fn change_default_category_setting(app: AppHandle, category_id: String) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
-    
+
     // Verify the category exists
-    if !settings.prompt_categories.iter().any(|c| c.id == category_id) {
+    if !settings
+        .prompt_categories
+        .iter()
+        .any(|c| c.id == category_id)
+    {
         return Err(format!("Category with id '{}' not found", category_id));
     }
-    
+
     settings.default_category_id = category_id;
     settings::write_settings(&app, settings);
     Ok(())
@@ -955,18 +963,18 @@ pub fn add_prompt_category(
     prompt: String,
 ) -> Result<settings::PromptCategory, String> {
     let mut settings = settings::get_settings(&app);
-    
+
     // Generate unique ID from name
     let base_id = name.to_lowercase().replace(' ', "_");
     let mut id = base_id.clone();
     let mut counter = 1;
-    
+
     // Ensure unique ID
     while settings.prompt_categories.iter().any(|c| c.id == id) {
         id = format!("{}_{}", base_id, counter);
         counter += 1;
     }
-    
+
     let new_category = settings::PromptCategory {
         id: id.clone(),
         name,
@@ -975,10 +983,10 @@ pub fn add_prompt_category(
         is_builtin: false,
         model_override: None,
     };
-    
+
     settings.prompt_categories.push(new_category.clone());
     settings::write_settings(&app, settings);
-    
+
     Ok(new_category)
 }
 
@@ -987,31 +995,31 @@ pub fn add_prompt_category(
 #[specta::specta]
 pub fn delete_prompt_category(app: AppHandle, id: String) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
-    
+
     // Find the category
     let category = settings.prompt_categories.iter().find(|c| c.id == id);
-    
+
     match category {
         None => return Err(format!("Category with id '{}' not found", id)),
-        Some(cat) if cat.is_builtin => {
-            return Err("Cannot delete built-in categories".to_string())
-        }
+        Some(cat) if cat.is_builtin => return Err("Cannot delete built-in categories".to_string()),
         _ => {}
     }
-    
+
     // Check if this category is the default
     if settings.default_category_id == id {
         // Reset default to "development"
         settings.default_category_id = "development".to_string();
     }
-    
+
     // Remove any app mappings that use this category
-    settings.app_category_mappings.retain(|m| m.category_id != id);
-    
+    settings
+        .app_category_mappings
+        .retain(|m| m.category_id != id);
+
     // Remove the category
     settings.prompt_categories.retain(|c| c.id != id);
     settings::write_settings(&app, settings);
-    
+
     Ok(())
 }
 
@@ -1025,7 +1033,7 @@ pub fn update_prompt_category_details(
     icon: String,
 ) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
-    
+
     if let Some(category) = settings.prompt_categories.iter_mut().find(|c| c.id == id) {
         category.name = name;
         category.icon = icon;
@@ -1045,7 +1053,7 @@ pub fn update_prompt_category_model_override(
     model_id: Option<String>,
 ) -> Result<(), String> {
     let mut settings = settings::get_settings(&app);
-    
+
     if let Some(category) = settings.prompt_categories.iter_mut().find(|c| c.id == id) {
         category.model_override = model_id;
         settings::write_settings(&app, settings);
@@ -1054,7 +1062,6 @@ pub fn update_prompt_category_model_override(
         Err(format!("Category with id '{}' not found", id))
     }
 }
-
 
 // Voice command settings commands
 
@@ -1081,7 +1088,9 @@ pub fn change_voice_command_default_model_setting(
 
 #[tauri::command]
 #[specta::specta]
-pub fn reset_voice_commands_to_default(app: AppHandle) -> Result<Vec<settings::VoiceCommand>, String> {
+pub fn reset_voice_commands_to_default(
+    app: AppHandle,
+) -> Result<Vec<settings::VoiceCommand>, String> {
     let mut settings = settings::get_settings(&app);
     settings.voice_commands = settings::get_default_settings().voice_commands;
     let commands = settings.voice_commands.clone();
@@ -1118,14 +1127,17 @@ pub fn change_collapse_repeated_words_setting(app: AppHandle, enabled: bool) -> 
 
 #[tauri::command]
 #[specta::specta]
-pub fn add_voice_command(app: AppHandle, command: settings::VoiceCommand) -> Result<Vec<settings::VoiceCommand>, String> {
+pub fn add_voice_command(
+    app: AppHandle,
+    command: settings::VoiceCommand,
+) -> Result<Vec<settings::VoiceCommand>, String> {
     let mut settings = settings::get_settings(&app);
-    
+
     // Check for duplicate ID
     if settings.voice_commands.iter().any(|c| c.id == command.id) {
         return Err(format!("Command with ID '{}' already exists", command.id));
     }
-    
+
     settings.voice_commands.push(command);
     let commands = settings.voice_commands.clone();
     settings::write_settings(&app, settings);
@@ -1134,16 +1146,23 @@ pub fn add_voice_command(app: AppHandle, command: settings::VoiceCommand) -> Res
 
 #[tauri::command]
 #[specta::specta]
-pub fn update_voice_command(app: AppHandle, command: settings::VoiceCommand) -> Result<Vec<settings::VoiceCommand>, String> {
+pub fn update_voice_command(
+    app: AppHandle,
+    command: settings::VoiceCommand,
+) -> Result<Vec<settings::VoiceCommand>, String> {
     let mut settings = settings::get_settings(&app);
-    
+
     // Find and update the command
-    if let Some(existing) = settings.voice_commands.iter_mut().find(|c| c.id == command.id) {
+    if let Some(existing) = settings
+        .voice_commands
+        .iter_mut()
+        .find(|c| c.id == command.id)
+    {
         *existing = command;
     } else {
         return Err(format!("Command with ID '{}' not found", command.id));
     }
-    
+
     let commands = settings.voice_commands.clone();
     settings::write_settings(&app, settings);
     Ok(commands)
@@ -1151,21 +1170,23 @@ pub fn update_voice_command(app: AppHandle, command: settings::VoiceCommand) -> 
 
 #[tauri::command]
 #[specta::specta]
-pub fn delete_voice_command(app: AppHandle, command_id: String) -> Result<Vec<settings::VoiceCommand>, String> {
+pub fn delete_voice_command(
+    app: AppHandle,
+    command_id: String,
+) -> Result<Vec<settings::VoiceCommand>, String> {
     let mut settings = settings::get_settings(&app);
-    
+
     let original_len = settings.voice_commands.len();
     settings.voice_commands.retain(|c| c.id != command_id);
-    
+
     if settings.voice_commands.len() == original_len {
         return Err(format!("Command with ID '{}' not found", command_id));
     }
-    
+
     let commands = settings.voice_commands.clone();
     settings::write_settings(&app, settings);
     Ok(commands)
 }
-
 
 /// Determine whether a shortcut string contains at least one non-modifier key.
 /// We allow single non-modifier keys (e.g. "f5" or "space") but disallow
@@ -1181,8 +1202,23 @@ fn validate_shortcut_string(raw: &str) -> Result<(), String> {
     }
 
     let modifiers = [
-        "ctrl", "control", "shift", "alt", "option", "meta", "command", "cmd", "super", "win",
-        "windows", "left_shift", "right_shift", "left_option", "right_option", "left_command", "right_command",
+        "ctrl",
+        "control",
+        "shift",
+        "alt",
+        "option",
+        "meta",
+        "command",
+        "cmd",
+        "super",
+        "win",
+        "windows",
+        "left_shift",
+        "right_shift",
+        "left_option",
+        "right_option",
+        "left_command",
+        "right_command",
     ];
     let has_non_modifier = raw
         .split('+')
@@ -1273,9 +1309,15 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
 
     let reg_result = app.global_shortcut().register(shortcut);
     match reg_result {
-        Ok(_) => debug!("Successfully registered shortcut: {} (id={})", binding.current_binding, binding.id),
+        Ok(_) => debug!(
+            "Successfully registered shortcut: {} (id={})",
+            binding.current_binding, binding.id
+        ),
         Err(e) => {
-            error!("Failed to register shortcut '{}' (id={}): {}", binding.current_binding, binding.id, e);
+            error!(
+                "Failed to register shortcut '{}' (id={}): {}",
+                binding.current_binding, binding.id, e
+            );
             return Err(e.to_string());
         }
     }
@@ -1300,7 +1342,7 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
                         }
                         return;
                     }
-                    
+
                     // Smart tap/hold detection for all other bindings
                     match event.state {
                         ShortcutState::Pressed => {
@@ -1312,7 +1354,7 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
                             if let Ok(mut timestamps) = get_press_timestamps().lock() {
                                 timestamps.insert(binding_id_for_closure.clone(), Instant::now());
                             }
-                            
+
                             // Check if already recording (toggle-off tap)
                             let toggle_state_manager = ah.state::<ManagedToggleState>();
                             {
@@ -1323,12 +1365,12 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
                                     .active_toggles
                                     .entry(binding_id_for_closure.clone())
                                     .or_insert(false);
-                                
+
                                 debug!(
                                     "[TOGGLE] Current active_toggles['{}'] = {}",
                                     binding_id_for_closure, *is_active
                                 );
-                                
+
                                 if *is_active {
                                     // Already recording - this is a toggle-off tap
                                     *is_active = false;
@@ -1340,7 +1382,7 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
                                     action.stop(ah, &binding_id_for_closure, &shortcut_string);
                                     return;
                                 }
-                                
+
                                 // Start recording
                                 *is_active = true;
                                 debug!(
@@ -1351,7 +1393,7 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
                             debug!("[TOGGLE] Shortcut {} start recording - calling action.start()", shortcut_string);
                             let started = action.start(ah, &binding_id_for_closure, &shortcut_string);
                             debug!("[TOGGLE] action.start() returned: {}", started);
-                            
+
                             // If start failed, reset the toggle state
                             if !started {
                                 debug!(
@@ -1369,10 +1411,10 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
                                 let threshold = settings.hold_threshold_ms as u64;
                                 let ah_clone = ah.clone();
                                 let binding_id_clone = binding_id_for_closure.clone();
-                                
+
                                     std::thread::spawn(move || {
                                         std::thread::sleep(std::time::Duration::from_millis(threshold));
-                                        
+
                                         // Check if still physically pressed AND recording is still active
                                         let is_still_physically_pressed = get_press_timestamps()
                                             .lock()
@@ -1386,7 +1428,7 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
                                             .ok()
                                             .and_then(|s| s.active_toggles.get(&binding_id_clone).copied())
                                             .unwrap_or(false);
-                                        
+
                                         if is_still_physically_pressed && is_still_active {
                                             // User has been holding for threshold ms - this is "hold" mode
                                             debug!("[TOGGLE] Threshold passed while still holding - emitting hold mode");
@@ -1408,16 +1450,16 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
                             } else {
                                 0
                             };
-                            
+
                             // Get threshold from settings
                             let settings = get_settings(ah);
                             let threshold = settings.hold_threshold_ms as u128;
-                            
+
                             debug!(
                                 "[TOGGLE] hold_duration={}ms threshold={}ms",
                                 hold_duration_ms, threshold
                             );
-                            
+
                             if hold_duration_ms >= threshold {
                                 // Long hold - PTT behavior, stop immediately
                                 let toggle_state_manager = ah.state::<ManagedToggleState>();
@@ -1435,10 +1477,10 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
                                     "[TOGGLE] Shortcut {} released after {}ms (PTT stop) - calling action.stop()",
                                     shortcut_string, hold_duration_ms
                                 );
-                                
+
                                 // Emit hold mode so UI can show "Raw" briefly before transitioning
                                 overlay::emit_mode_determined(ah, "hold");
-                                
+
                                 action.stop(ah, &binding_id_for_closure, &shortcut_string);
                             } else {
                                 // Quick tap - toggle mode = COHERENT mode in unified UX
@@ -1461,12 +1503,12 @@ pub fn register_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<()
                                     // Quick press = coherent mode (unified hotkey UX)
                                     let audio_manager = ah.state::<Arc<AudioRecordingManager>>();
                                     audio_manager.set_coherent_mode(true);
-                                    
+
                                     // Emit refining mode and update overlay SYNCHRONOUSLY
                                     // Ensure the state becomes 'ramble_recording' so UI shows 'Refined' label
                                     crate::utils::show_ramble_recording_overlay(ah);
                                     overlay::emit_mode_determined(ah, "refining");
-                                    
+
                                     // Spawn async ONLY for clipboard copy
                                     let ah_clone = ah.clone();
                                     let audio_manager_clone = Arc::clone(&audio_manager);
@@ -1571,15 +1613,18 @@ pub fn unregister_shortcut(app: &AppHandle, binding: ShortcutBinding) -> Result<
     Ok(())
 }
 
-/// Register multiple shortcut variants for the same action to ensure "swallowing" works 
+/// Register multiple shortcut variants for the same action to ensure "swallowing" works
 /// regardless of whether the user holds Shift or other modifiers.
 fn register_swallowing_shortcuts(app: &AppHandle, binding: ShortcutBinding) {
     let base_binding = binding.current_binding.clone();
     let id = binding.id.clone();
-    
+
     // Register the primary binding
     if let Err(e) = register_shortcut(app, binding.clone()) {
-        debug!("Primary swallowing shortcut {} for {} already registered or failed: {}", base_binding, id, e);
+        debug!(
+            "Primary swallowing shortcut {} for {} already registered or failed: {}",
+            base_binding, id, e
+        );
     }
 
     // Register a variant without Shift if it was something like Option+Shift+P
@@ -1597,7 +1642,10 @@ fn register_swallowing_shortcuts(app: &AppHandle, binding: ShortcutBinding) {
             let mut v_binding = binding.clone();
             v_binding.current_binding = variant.to_string();
             if let Err(e) = register_shortcut(app, v_binding) {
-                 debug!("Variant swallowing shortcut {} for {} already registered or failed: {}", variant, id, e);
+                debug!(
+                    "Variant swallowing shortcut {} for {} already registered or failed: {}",
+                    variant, id, e
+                );
             }
         }
     }

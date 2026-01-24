@@ -332,6 +332,14 @@ async changeContextChatPromptSetting(prompt: string) : Promise<Result<null, stri
     else return { status: "error", error: e  as any };
 }
 },
+async changeSystemPromptFileSetting(path: string | null) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("change_system_prompt_file_setting", { path }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
 async resetRamblePromptToDefault() : Promise<Result<string, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("reset_ramble_prompt_to_default") };
@@ -1302,7 +1310,11 @@ last_voice_interaction?: string | null;
 /**
  * Default model ID for context chat mode
  */
-default_context_chat_model_id?: string | null }
+default_context_chat_model_id?: string | null; 
+/**
+ * Path to a system prompt file that will be injected into all LLM calls
+ */
+system_prompt_file?: string | null }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
 export type ChatMessage = { role: string; content: string; images: string[] | null }

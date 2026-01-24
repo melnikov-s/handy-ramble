@@ -142,6 +142,13 @@
         "noResults": "No languages found",
         "auto": "Auto"
       },
+      "systemPromptFile": {
+        "groupTitle": "System Prompt",
+        "title": "System Prompt File",
+        "description": "Select a text or markdown file with instructions that will be included in every LLM call.",
+        "notSet": "No system prompt file selected",
+        "selectFile": "Select File"
+      },
       "pushToTalk": {
         "label": "Push To Talk",
         "description": "Hold to record, release to stop"
@@ -458,7 +465,9 @@
     "off": "Off",
     "yes": "Yes",
     "no": "No",
-    "noOptionsFound": "No options found"
+    "noOptionsFound": "No options found",
+    "change": "Change",
+    "clear": "Clear"
   },
   "accessibility": {
     "permissionsRequired": "Accessibility Permissions Required",
