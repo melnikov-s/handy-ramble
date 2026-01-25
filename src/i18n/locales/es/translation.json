@@ -3,10 +3,22 @@
     "settings": "Configuración...",
     "checkUpdates": "Buscar actualizaciones...",
     "quit": "Salir",
-    "cancel": "Cancel", "postProcessing": "Post Processing", "dynamic": "Dynamic", "low": "Low", "medium": "Medium", "high": "High", "copyLastTranscription": "Copy Last Transcription", "copyLastVoiceInteraction": "Copy Last Voice Interaction", "voiceInteractions": "Voice Interactions", "speechToText": "Speech to Text", "chats": "Chats", "newChat": "New Chat", "noSavedChats": "No Saved Chats"
+    "cancel": "Cancel",
+    "postProcessing": "Post Processing",
+    "dynamic": "Dynamic",
+    "low": "Low",
+    "medium": "Medium",
+    "high": "High",
+    "copyLastTranscription": "Copiar última transcripción",
+    "copyLastVoiceInteraction": "Copiar última interacción de voz",
+    "chats": "Chats",
+    "newChat": "New Chat",
+    "noSavedChats": "No Saved Chats"
   },
   "sidebar": {
-    "ramble": "Ramble to Coherent", "textToSpeech": "Text to Speech", "general": "General",
+    "ramble": "Ramble to Coherent",
+    "textToSpeech": "Text to Speech",
+    "general": "General",
     "advanced": "Avanzado",
     "postProcessing": "Post Proceso",
     "history": "Historial",
@@ -77,7 +89,9 @@
     "deleteModel": "Eliminar {{modelName}}"
   },
   "settings": {
-    "ramble": "Ramble to Coherent", "textToSpeech": "Text to Speech", "general": {
+    "ramble": "Ramble to Coherent",
+    "textToSpeech": "Text to Speech",
+    "general": {
       "title": "General",
       "shortcut": {
         "title": "Atajos de Ramble",
@@ -255,7 +269,17 @@
         "updatePrompt": "Actualizar Prompt",
         "deletePrompt": "Eliminar Prompt",
         "createPrompt": "Crear Prompt",
-        "cancel": "Cancel", "postProcessing": "Post Processing", "dynamic": "Dynamic", "low": "Low", "medium": "Medium", "high": "High", "copyLastTranscription": "Copy Last Transcription", "copyLastVoiceInteraction": "Copy Last Voice Interaction", "voiceInteractions": "Voice Interactions", "speechToText": "Speech to Text", "chats": "Chats", "newChat": "New Chat", "noSavedChats": "No Saved Chats",
+        "cancel": "Cancel",
+        "postProcessing": "Post Processing",
+        "dynamic": "Dynamic",
+        "low": "Low",
+        "medium": "Medium",
+        "high": "High",
+        "copyLastTranscription": "Copiar última transcripción",
+        "copyLastVoiceInteraction": "Copiar última interacción de voz",
+        "chats": "Chats",
+        "newChat": "New Chat",
+        "noSavedChats": "No Saved Chats",
         "selectToEdit": "Selecciona un prompt arriba para ver y editar sus detalles.",
         "createFirst": "Haz clic en 'Crear Nuevo Prompt' arriba para crear tu primer prompt de post procesamiento."
       }
@@ -384,7 +408,17 @@
   "common": {
     "loading": "Cargando...",
     "save": "Guardar",
-    "cancel": "Cancel", "postProcessing": "Post Processing", "dynamic": "Dynamic", "low": "Low", "medium": "Medium", "high": "High", "copyLastTranscription": "Copy Last Transcription", "copyLastVoiceInteraction": "Copy Last Voice Interaction", "voiceInteractions": "Voice Interactions", "speechToText": "Speech to Text", "chats": "Chats", "newChat": "New Chat", "noSavedChats": "No Saved Chats",
+    "cancel": "Cancel",
+    "postProcessing": "Post Processing",
+    "dynamic": "Dynamic",
+    "low": "Low",
+    "medium": "Medium",
+    "high": "High",
+    "copyLastTranscription": "Copiar última transcripción",
+    "copyLastVoiceInteraction": "Copiar última interacción de voz",
+    "chats": "Chats",
+    "newChat": "New Chat",
+    "noSavedChats": "No Saved Chats",
     "reset": "Restablecer",
     "add": "Agregar",
     "remove": "Eliminar",

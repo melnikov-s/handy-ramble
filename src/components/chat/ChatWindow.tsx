@@ -196,9 +196,14 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
           commands.getAppSettings(),
         ]);
 
-        // Filter models: enabled AND provider has API key
+        // Filter models: enabled AND provider is configured (has API key OR uses OAuth)
         const configuredProviderIds = new Set(
-          providersResult.filter((p) => p.api_key).map((p) => p.id),
+          providersResult
+            .filter((p) => {
+              // Provider is configured if it has an API key OR uses OAuth authentication
+              return p.api_key || (p as any).auth_method === "oauth";
+            })
+            .map((p) => p.id),
         );
         const enabledModels = modelsResult.filter(
           (m) => m.enabled && configuredProviderIds.has(m.provider_id),
@@ -330,10 +335,11 @@ export const ChatWindow: React.FC<ChatWindowProps> = ({
         ];
 
         try {
-          // Use web search if enabled AND provider supports it (Gemini or Anthropic)
+          // Use web search if enabled AND provider supports it (Gemini, Gemini OAuth, or Anthropic)
           const enableGrounding =
             webSearchEnabledRef.current &&
             (selectedModelProviderIdRef.current === "gemini" ||
+              selectedModelProviderIdRef.current === "gemini_oauth" ||
               selectedModelProviderIdRef.current === "anthropic");
           const response = await commands.chatCompletion(
             formattedMessages as any,

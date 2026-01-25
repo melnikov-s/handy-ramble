@@ -31,6 +31,7 @@ import { cn } from "@/lib/utils/cn";
 import { Button } from "@/components/ui/Button";
 
 import { ModelsDropdown } from "@/components/ui/ModelsDropdown";
+import { ReasoningEffortDropdown } from "@/components/ui/ReasoningEffortDropdown";
 import { Mermaid } from "./Mermaid";
 
 interface ThreadProps {
@@ -143,9 +144,10 @@ const Composer: FC<ThreadProps> = ({
     }
   };
 
-  // Check if web search is supported (Gemini and Anthropic)
+  // Check if web search is supported (Gemini, Gemini OAuth, and Anthropic)
   const isWebSearchSupported =
     selectedModelProviderId === "gemini" ||
+    selectedModelProviderId === "gemini_oauth" ||
     selectedModelProviderId === "anthropic";
 
   const removeAttachment = (index: number) => {
@@ -217,12 +219,20 @@ const Composer: FC<ThreadProps> = ({
             {isLoading ? (
               <Loader2Icon className="h-4 w-4 animate-spin text-[var(--color-text)]/30" />
             ) : (
-              <ModelsDropdown
-                selectedValue={selectedModelId}
-                onSelect={setSelectedModelId}
-                className="w-auto border-none bg-transparent hover:bg-[var(--color-text)]/5 text-xs h-8"
-                direction="up"
-              />
+              <div className="flex items-center gap-1">
+                <ModelsDropdown
+                  selectedValue={selectedModelId}
+                  onSelect={setSelectedModelId}
+                  className="w-auto border-none bg-transparent hover:bg-[var(--color-text)]/5 text-xs h-8"
+                  direction="up"
+                />
+                {selectedModelProviderId === "openai_oauth" && (
+                  <ReasoningEffortDropdown
+                    className="w-auto border-none bg-transparent hover:bg-[var(--color-text)]/5 text-xs h-8"
+                    direction="up"
+                  />
+                )}
+              </div>
             )}
           </div>
 

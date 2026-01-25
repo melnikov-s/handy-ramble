@@ -439,6 +439,14 @@ fn get_anthropic_models() -> Vec<FetchedModel> {
 }
 
 /// Get hardcoded OpenAI models for OAuth (API fetching not available with OAuth scopes)
+/// These are the actual Codex backend model names supported by ChatGPT Plus/Pro
+/// Models and their supported reasoning efforts:
+/// - gpt-5.2: none/low/medium/high/xhigh
+/// - gpt-5.2-codex: low/medium/high/xhigh
+/// - gpt-5.1-codex-max: low/medium/high/xhigh
+/// - gpt-5.1-codex: low/medium/high
+/// - gpt-5.1-codex-mini: medium/high
+/// - gpt-5.1: none/low/medium/high
 fn get_openai_oauth_models() -> Vec<FetchedModel> {
     vec![
         FetchedModel {
@@ -447,13 +455,28 @@ fn get_openai_oauth_models() -> Vec<FetchedModel> {
             supports_vision: true,
         },
         FetchedModel {
-            model_id: "gpt-5.2-mini".to_string(),
-            display_name: "GPT-5.2 Mini".to_string(),
+            model_id: "gpt-5.2-codex".to_string(),
+            display_name: "GPT-5.2 Codex".to_string(),
             supports_vision: true,
         },
         FetchedModel {
-            model_id: "gpt-5.2-nano".to_string(),
-            display_name: "GPT-5.2 Nano".to_string(),
+            model_id: "gpt-5.1-codex-max".to_string(),
+            display_name: "GPT-5.1 Codex Max".to_string(),
+            supports_vision: true,
+        },
+        FetchedModel {
+            model_id: "gpt-5.1-codex".to_string(),
+            display_name: "GPT-5.1 Codex".to_string(),
+            supports_vision: true,
+        },
+        FetchedModel {
+            model_id: "gpt-5.1-codex-mini".to_string(),
+            display_name: "GPT-5.1 Codex Mini".to_string(),
+            supports_vision: true,
+        },
+        FetchedModel {
+            model_id: "gpt-5.1".to_string(),
+            display_name: "GPT-5.1".to_string(),
             supports_vision: true,
         },
     ]

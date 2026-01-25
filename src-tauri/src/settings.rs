@@ -248,26 +248,6 @@ impl PromptMode {
             PromptMode::High => "▅",
         }
     }
-
-    /// Get the display name for this mode
-    pub fn display_name(&self) -> &'static str {
-        match self {
-            PromptMode::Dynamic => "Dynamic",
-            PromptMode::Low => "Low",
-            PromptMode::Medium => "Medium",
-            PromptMode::High => "High",
-        }
-    }
-
-    /// Get the category ID for this mode (used for prompt lookup)
-    pub fn category_id(&self) -> Option<&'static str> {
-        match self {
-            PromptMode::Dynamic => None, // Will be determined by app detection
-            PromptMode::Low => Some("low"),
-            PromptMode::Medium => Some("medium"),
-            PromptMode::High => Some("high"),
-        }
-    }
 }
 
 /// A prompt category that groups applications and defines processing style
@@ -487,6 +467,9 @@ pub struct AppSettings {
     /// Default model ID for voice commands
     #[serde(default)]
     pub default_voice_model_id: Option<String>,
+    /// OpenAI OAuth reasoning effort level (none, low, medium, high, xhigh)
+    #[serde(default = "default_openai_reasoning_effort")]
+    pub openai_reasoning_effort: String,
 
     // === Other settings ===
     #[serde(default)]
@@ -660,114 +643,14 @@ fn default_tts_volume() -> f32 {
     1.0
 }
 
-fn default_post_process_enabled() -> bool {
-    false
+fn default_openai_reasoning_effort() -> String {
+    "medium".to_string()
 }
 
 fn default_app_language() -> String {
     tauri_plugin_os::locale()
         .and_then(|l| l.split(['-', '_']).next().map(String::from))
         .unwrap_or_else(|| "en".to_string())
-}
-
-fn default_llm_provider_id() -> String {
-    "gemini".to_string()
-}
-
-fn default_post_process_provider_id() -> String {
-    "openai".to_string()
-}
-
-fn default_ramble_enabled() -> bool {
-    false
-}
-
-fn default_ramble_provider_id() -> String {
-    "gemini".to_string()
-}
-
-fn default_ramble_model() -> String {
-    "gemini-2-0-flash-lite".to_string()
-}
-
-fn default_ramble_use_vision_model() -> bool {
-    false
-}
-
-fn default_ramble_vision_model() -> String {
-    "gemini-2.0-flash".to_string()
-}
-
-fn default_ramble_prompt() -> String {
-    "You are transforming rambling speech into clean, well-structured text.
-
-The input is unfiltered speech-to-text. Your job is to make it readable while preserving all meaning.
-
-IMPORTANT: You are the user's proxy. Speak AS the user, not TO the user. Formulate the response as if the user is typing it. Preserve the user's perspective: do not change pronouns or perspective. If the user addresses \"you\", keep it as \"you\".
-
----
-
-INLINE INSTRUCTIONS - The speaker may give you direct commands during dictation:
-
-Explicit commands (always obey these):
-- \"Hey refiner, ...\" or \"Refiner: ...\" signals a direct instruction to you
-- Example: \"Hey refiner, ignore the last sentence\" → delete the preceding sentence
-- Example: \"Refiner: expand on that idea\" → elaborate on the previous point
-
-Natural correction patterns (interpret these as editing commands, not content):
-- \"scratch that\", \"delete that\", \"never mind\" → remove the immediately preceding content
-- \"ignore the last [X seconds/sentence/paragraph]\" → remove that content
-- \"go back and [change/fix/remove] ...\" → apply the edit retroactively
-- \"actually, make that ...\" → replace the previous statement with the correction
-- \"fill in the details here\", \"expand on this\" → elaborate on the topic
-- \"placeholder for [X]\" → insert a clear [TODO: X] marker
-
-These instructions are commands TO YOU—they should NOT appear in the output.
-When in doubt about whether something is an instruction vs. content, prefer treating it as an instruction if it clearly references editing the transcription itself.
-
----
-
-ACTIVELY DO:
-1. Remove filler words (um, uh, like, you know, basically, so, I mean)
-2. Fix run-on sentences—break them into clear, punctuated sentences
-3. Remove verbal repetition and redundancy
-4. Restructure for clarity and readability
-5. When the speaker corrects themselves, keep only the final version
-
-CODE DICTATION - Convert spoken code to actual syntax:
-- \"camel case foo bar\" → fooBar
-- \"pascal case foo bar\" → FooBar
-- \"snake case foo bar\" → foo_bar
-- \"open paren\", \"close bracket\" → (, ]
-- Natural descriptions like \"if A greater than B\" → if (a > b)
-
-FORMATTING - Use markdown for readability:
-- Break up large paragraphs into shorter ones
-- Use bullet points for lists of items or requirements
-- Use numbered lists for sequential steps or instructions
-- Use line breaks between distinct topics or ideas
-- Use code blocks or backticks for code/technical terms when appropriate
-The output should be easy to scan and reference later.
-
-PRESERVE THE MEANING OF (but rewrite for clarity):
-- Instructions and directives (first do X, start by checking Y)
-- Context and reasoning (why something matters)
-- Specific examples given
-- Sequence of steps or operations
-
-The output should be noticeably cleaner and more readable than the input while conveying the same information.
-
-Return ONLY the cleaned, formatted text. No preamble.
-
----
-
-<selection>
-${selection}
-</selection>
-
-<transcript>
-${output}
-</transcript>".to_string()
 }
 
 fn default_hold_threshold_ms() -> u64 {
@@ -1167,27 +1050,9 @@ fn default_llm_providers() -> Vec<LLMProvider> {
             auth_method: AuthMethod::ApiKey,
             supports_oauth: false,
         },
-        // OAuth providers (new - separate from API key providers)
-        LLMProvider {
-            id: "openai_oauth".to_string(),
-            name: "OpenAI (OAuth)".to_string(),
-            base_url: "https://api.openai.com/v1".to_string(),
-            api_key: String::new(),
-            supports_vision: true,
-            is_custom: false,
-            auth_method: AuthMethod::OAuth,
-            supports_oauth: true,
-        },
-        LLMProvider {
-            id: "gemini_oauth".to_string(),
-            name: "Google Gemini (OAuth)".to_string(),
-            base_url: "https://generativelanguage.googleapis.com/v1beta/openai".to_string(),
-            api_key: String::new(),
-            supports_vision: true,
-            is_custom: false,
-            auth_method: AuthMethod::OAuth,
-            supports_oauth: true,
-        },
+        // Note: OAuth providers (openai_oauth, gemini_oauth) are NOT included in defaults.
+        // They are available as presets in the "Add Provider" dialog and will be created
+        // when the user signs in via OAuth.
     ];
 
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
@@ -1481,6 +1346,7 @@ pub fn get_default_settings() -> AppSettings {
         default_coherent_model_id: Some("gemini-flash".to_string()),
         default_voice_model_id: Some("gemini-flash".to_string()),
         default_context_chat_model_id: None,
+        openai_reasoning_effort: default_openai_reasoning_effort(),
         // Other settings
         paste_method: PasteMethod::default(),
         clipboard_handling: ClipboardHandling::default(),
@@ -1534,12 +1400,6 @@ impl AppSettings {
     /// Get a model by ID
     pub fn get_model(&self, model_id: &str) -> Option<&LLMModel> {
         self.llm_models.iter().find(|model| model.id == model_id)
-    }
-
-    /// Get provider for a model
-    pub fn get_provider_for_model(&self, model_id: &str) -> Option<&LLMProvider> {
-        self.get_model(model_id)
-            .and_then(|model| self.get_provider(&model.provider_id))
     }
 }
 

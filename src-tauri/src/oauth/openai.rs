@@ -6,19 +6,29 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use super::config::get_openai_client_id;
 use super::pkce::PkceChallenge;
 use super::tokens::{extract_chatgpt_account_id, store_tokens, StoredTokens, TokenError};
 use super::OAuthProvider;
 
 /// OpenAI OAuth configuration (Codex CLI credentials)
-pub const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
+pub const DEFAULT_CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 // OpenAI uses a public client (no client secret)
 pub const AUTHORIZE_URL: &str = "https://auth.openai.com/oauth/authorize";
 pub const TOKEN_URL: &str = "https://auth.openai.com/oauth/token";
 pub const SCOPES: &str = "openid profile email offline_access";
 
-/// OpenAI API endpoint for ChatGPT
-pub const API_ENDPOINT: &str = "https://api.openai.com/v1";
+fn client_id() -> String {
+    match get_openai_client_id() {
+        Ok(Some(value)) => value,
+        Ok(None) => DEFAULT_CLIENT_ID.to_string(),
+        Err(_) => DEFAULT_CLIENT_ID.to_string(),
+    }
+}
+
+/// Codex API endpoint for ChatGPT OAuth (NOT the standard OpenAI API)
+/// ChatGPT Plus/Pro subscriptions use the Codex backend, not api.openai.com
+pub const API_ENDPOINT: &str = "https://chatgpt.com/backend-api";
 
 /// Token response from OpenAI
 #[derive(Debug, Deserialize)]
@@ -26,6 +36,7 @@ struct TokenResponse {
     access_token: String,
     refresh_token: Option<String>,
     expires_in: i64,
+    #[allow(dead_code)]
     token_type: String,
     #[allow(dead_code)]
     scope: Option<String>,
@@ -43,10 +54,11 @@ struct ErrorResponse {
 /// Build the OpenAI OAuth authorization URL
 pub fn build_auth_url(pkce: &PkceChallenge, state: &str) -> String {
     let redirect_uri = OAuthProvider::OpenAI.redirect_uri();
+    let client_id = client_id();
 
     let params = [
         ("response_type", "code"),
-        ("client_id", CLIENT_ID),
+        ("client_id", client_id.as_str()),
         ("redirect_uri", redirect_uri.as_str()),
         ("scope", SCOPES),
         ("code_challenge", &pkce.challenge),
@@ -69,10 +81,11 @@ pub fn build_auth_url(pkce: &PkceChallenge, state: &str) -> String {
 /// Exchange authorization code for tokens
 pub async fn exchange_code(code: &str, code_verifier: &str) -> Result<StoredTokens, TokenError> {
     let redirect_uri = OAuthProvider::OpenAI.redirect_uri();
+    let client_id = client_id();
 
     let params = [
         ("grant_type", "authorization_code"),
-        ("client_id", CLIENT_ID),
+        ("client_id", client_id.as_str()),
         ("code", code),
         ("code_verifier", code_verifier),
         ("redirect_uri", &redirect_uri),
@@ -141,10 +154,11 @@ pub async fn exchange_code(code: &str, code_verifier: &str) -> Result<StoredToke
 
 /// Refresh the access token using the refresh token
 pub async fn refresh_token(refresh_token: &str) -> Result<StoredTokens, TokenError> {
+    let client_id = client_id();
     let params = [
         ("grant_type", "refresh_token"),
         ("refresh_token", refresh_token),
-        ("client_id", CLIENT_ID),
+        ("client_id", client_id.as_str()),
     ];
 
     let client = reqwest::Client::new();

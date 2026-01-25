@@ -165,47 +165,6 @@ fn execute_applescript(_script: &str) -> CommandResult {
     CommandResult::Error("AppleScript is only supported on macOS".to_string())
 }
 
-/// Find the best matching command for the given spoken text
-/// Prioritizes matches that appear earlier in the text
-pub fn find_matching_command<'a>(
-    spoken_text: &str,
-    commands: &'a [VoiceCommand],
-) -> Option<&'a VoiceCommand> {
-    let spoken_lower = spoken_text.to_lowercase();
-
-    // Find all matching commands with their earliest match position
-    let mut matches: Vec<(&VoiceCommand, usize)> = Vec::new();
-
-    for command in commands {
-        let mut earliest_pos: Option<usize> = None;
-        for phrase in &command.phrases {
-            if let Some(pos) = spoken_lower.find(&phrase.to_lowercase()) {
-                match earliest_pos {
-                    None => earliest_pos = Some(pos),
-                    Some(current) if pos < current => earliest_pos = Some(pos),
-                    _ => {}
-                }
-            }
-        }
-        if let Some(pos) = earliest_pos {
-            matches.push((command, pos));
-        }
-    }
-
-    // Sort by position (earliest first) and return the best match
-    if !matches.is_empty() {
-        matches.sort_by_key(|(_, pos)| *pos);
-        let (best_match, _) = matches[0];
-        debug!(
-            "Matched command '{}' (earliest position in text)",
-            best_match.name
-        );
-        return Some(best_match);
-    }
-
-    None
-}
-
 /// Build the system prompt for LLM command interpretation
 pub fn build_command_prompt(commands: &[VoiceCommand], selection: Option<&str>) -> String {
     let mut prompt = String::from(

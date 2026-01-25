@@ -40,7 +40,7 @@ pub fn open_chat_window(app: AppHandle, context: Option<String>) -> Result<Strin
     let mut builder =
         WebviewWindowBuilder::new(&app, &window_label, tauri::WebviewUrl::App(url.into()))
             .title("Ramble Chat")
-            .inner_size(500.0, 600.0)
+            .inner_size(650.0, 600.0)
             .min_inner_size(400.0, 400.0)
             .resizable(true)
             .visible(true)
@@ -106,7 +106,7 @@ pub fn open_chat_window_with_messages(
     let mut builder =
         WebviewWindowBuilder::new(&app, &window_label, tauri::WebviewUrl::App(url.into()))
             .title("Ramble Chat")
-            .inner_size(500.0, 600.0)
+            .inner_size(650.0, 600.0)
             .min_inner_size(400.0, 400.0)
             .resizable(true)
             .visible(true)
@@ -162,7 +162,7 @@ pub fn open_saved_chat(app: AppHandle, chat_id: i64) -> Result<String, String> {
     let mut builder =
         WebviewWindowBuilder::new(&app, &window_label, tauri::WebviewUrl::App(url.into()))
             .title("Ramble Chat")
-            .inner_size(500.0, 600.0)
+            .inner_size(650.0, 600.0)
             .min_inner_size(400.0, 400.0)
             .resizable(true)
             .visible(true)

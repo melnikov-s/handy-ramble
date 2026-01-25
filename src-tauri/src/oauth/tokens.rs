@@ -1,16 +1,21 @@
 //! OAuth token storage and management
 //!
-//! Handles secure storage of OAuth tokens using the OS keychain.
+//! Handles local storage of OAuth tokens in the app data directory.
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use keyring::Entry;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tauri::{AppHandle, Manager};
 
 use super::OAuthProvider;
 
-/// Service name for keyring storage
-const KEYRING_SERVICE: &str = "com.handy.oauth";
+/// Filename for on-disk OAuth token storage
+const TOKEN_STORE_FILE: &str = "oauth_tokens.json";
+
+static TOKEN_STORE_PATH: OnceLock<PathBuf> = OnceLock::new();
 
 /// Stored OAuth tokens for a provider
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -37,24 +42,17 @@ impl StoredTokens {
         // Consider expired 5 minutes before actual expiry
         self.expires_at - 300 <= now
     }
-
-    /// Check if the access token will expire within the given seconds
-    pub fn expires_within(&self, seconds: i64) -> bool {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
-        self.expires_at - seconds <= now
-    }
 }
 
 /// Token storage error
 #[derive(Debug)]
 pub enum TokenError {
-    /// Failed to access keyring
-    KeyringError(String),
+    /// Failed to access token storage
+    StorageError(String),
     /// Failed to serialize/deserialize tokens
     SerializationError(String),
+    /// Required configuration is missing
+    ConfigMissing(String),
     /// Tokens not found
     NotFound,
     /// Token refresh failed
@@ -64,8 +62,9 @@ pub enum TokenError {
 impl std::fmt::Display for TokenError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TokenError::KeyringError(msg) => write!(f, "Keyring error: {}", msg),
+            TokenError::StorageError(msg) => write!(f, "Token storage error: {}", msg),
             TokenError::SerializationError(msg) => write!(f, "Serialization error: {}", msg),
+            TokenError::ConfigMissing(msg) => write!(f, "Missing configuration: {}", msg),
             TokenError::NotFound => write!(f, "Tokens not found"),
             TokenError::RefreshFailed(msg) => write!(f, "Token refresh failed: {}", msg),
         }
@@ -74,120 +73,126 @@ impl std::fmt::Display for TokenError {
 
 impl std::error::Error for TokenError {}
 
-/// Get the keyring entry for a provider
-fn get_entry(provider: OAuthProvider) -> Result<Entry, TokenError> {
-    Entry::new(KEYRING_SERVICE, provider.as_str())
-        .map_err(|e| TokenError::KeyringError(e.to_string()))
+#[derive(Debug, Serialize, Deserialize, Default)]
+struct TokenStoreFile {
+    tokens: HashMap<String, StoredTokens>,
+}
+
+pub fn init_token_store(app: &AppHandle) -> Result<(), TokenError> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| TokenError::StorageError(e.to_string()))?;
+
+    if let Err(e) = std::fs::create_dir_all(&app_data_dir) {
+        return Err(TokenError::StorageError(e.to_string()));
+    }
+
+    let path = app_data_dir.join(TOKEN_STORE_FILE);
+    let _ = TOKEN_STORE_PATH.set(path);
+    Ok(())
+}
+
+fn token_store_path() -> Result<PathBuf, TokenError> {
+    TOKEN_STORE_PATH
+        .get()
+        .cloned()
+        .ok_or_else(|| TokenError::ConfigMissing("OAuth token store not initialized".to_string()))
+}
+
+fn read_store(path: &Path) -> Result<TokenStoreFile, TokenError> {
+    let json = std::fs::read_to_string(path).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            TokenError::NotFound
+        } else {
+            TokenError::StorageError(e.to_string())
+        }
+    })?;
+
+    serde_json::from_str::<TokenStoreFile>(&json)
+        .map_err(|e| TokenError::SerializationError(e.to_string()))
+}
+
+fn read_store_or_default(path: &Path) -> Result<TokenStoreFile, TokenError> {
+    match read_store(path) {
+        Ok(store) => Ok(store),
+        Err(TokenError::NotFound) => Ok(TokenStoreFile::default()),
+        Err(e) => Err(e),
+    }
+}
+
+fn write_store(path: &Path, store: &TokenStoreFile) -> Result<(), TokenError> {
+    let json = serde_json::to_string_pretty(store)
+        .map_err(|e| TokenError::SerializationError(e.to_string()))?;
+
+    std::fs::write(path, json).map_err(|e| TokenError::StorageError(e.to_string()))
 }
 
 /// Store tokens for a provider
 pub fn store_tokens(provider: OAuthProvider, tokens: &StoredTokens) -> Result<(), TokenError> {
-    let entry = get_entry(provider)?;
-    let json =
-        serde_json::to_string(tokens).map_err(|e| TokenError::SerializationError(e.to_string()))?;
+    let path = token_store_path()?;
+    let mut store = read_store_or_default(&path)?;
+    store
+        .tokens
+        .insert(provider.as_str().to_string(), tokens.clone());
+    write_store(&path, &store)?;
 
-    entry
-        .set_password(&json)
-        .map_err(|e| TokenError::KeyringError(e.to_string()))?;
-
-    log::info!("Stored OAuth tokens for {}", provider.as_str());
+    log::info!(
+        "Stored OAuth tokens for {} in local token store",
+        provider.as_str()
+    );
     Ok(())
 }
 
 /// Load tokens for a provider
 pub fn load_tokens(provider: OAuthProvider) -> Result<StoredTokens, TokenError> {
-    log::info!("load_tokens: loading tokens for provider {:?}", provider);
+    log::info!(
+        "load_tokens: loading tokens for provider {:?} from local token store",
+        provider
+    );
 
-    let entry = match get_entry(provider) {
-        Ok(e) => {
-            log::info!("load_tokens: got keyring entry for {}", provider.as_str());
-            e
-        }
-        Err(e) => {
-            log::error!("load_tokens: failed to get keyring entry: {}", e);
-            return Err(e);
-        }
-    };
+    let path = token_store_path()?;
+    let store = read_store(&path)?;
+    let tokens = store
+        .tokens
+        .get(provider.as_str())
+        .cloned()
+        .ok_or(TokenError::NotFound)?;
 
-    let json = match entry.get_password() {
-        Ok(j) => {
-            log::info!(
-                "load_tokens: retrieved password from keyring (length={})",
-                j.len()
-            );
-            j
-        }
-        Err(e) => {
-            let err = match e {
-                keyring::Error::NoEntry => {
-                    log::warn!("load_tokens: no tokens found for {}", provider.as_str());
-                    TokenError::NotFound
-                }
-                _ => {
-                    log::error!("load_tokens: keyring error: {}", e);
-                    TokenError::KeyringError(e.to_string())
-                }
-            };
-            return Err(err);
-        }
-    };
-
-    let tokens: StoredTokens = match serde_json::from_str::<StoredTokens>(&json) {
-        Ok(t) => {
-            log::info!(
-                "load_tokens: successfully parsed tokens (email={:?}, expires_at={}, is_expired={})",
-                t.email,
-                t.expires_at,
-                t.is_expired()
-            );
-            t
-        }
-        Err(e) => {
-            log::error!("load_tokens: failed to parse tokens JSON: {}", e);
-            return Err(TokenError::SerializationError(e.to_string()));
-        }
-    };
-
+    log::info!(
+        "load_tokens: loaded tokens (email={:?}, expires_at={}, is_expired={})",
+        tokens.email,
+        tokens.expires_at,
+        tokens.is_expired()
+    );
     Ok(tokens)
 }
 
 /// Delete tokens for a provider
 pub fn delete_tokens(provider: OAuthProvider) -> Result<(), TokenError> {
-    let entry = get_entry(provider)?;
+    let path = token_store_path()?;
+    let mut store = read_store(&path)?;
+    let removed = store.tokens.remove(provider.as_str());
 
-    entry.delete_credential().map_err(|e| match e {
-        keyring::Error::NoEntry => TokenError::NotFound,
-        _ => TokenError::KeyringError(e.to_string()),
-    })?;
+    if removed.is_none() {
+        return Err(TokenError::NotFound);
+    }
 
-    log::info!("Deleted OAuth tokens for {}", provider.as_str());
-    Ok(())
-}
-
-/// Check if tokens exist for a provider
-pub fn has_tokens(provider: OAuthProvider) -> bool {
-    load_tokens(provider).is_ok()
-}
-
-/// Get a valid access token for a provider, refreshing if necessary
-///
-/// Returns None if not authenticated or refresh fails.
-pub fn get_valid_access_token(provider: OAuthProvider) -> Option<String> {
-    match load_tokens(provider) {
-        Ok(tokens) => {
-            if tokens.is_expired() {
-                log::info!("Access token expired for {}", provider.as_str());
-                None // Caller should trigger refresh
-            } else {
-                Some(tokens.access_token)
+    if store.tokens.is_empty() {
+        if let Err(e) = std::fs::remove_file(&path) {
+            if e.kind() != std::io::ErrorKind::NotFound {
+                return Err(TokenError::StorageError(e.to_string()));
             }
         }
-        Err(TokenError::NotFound) => None,
-        Err(e) => {
-            log::error!("Error loading tokens for {}: {}", provider.as_str(), e);
-            None
-        }
+    } else {
+        write_store(&path, &store)?;
     }
+
+    log::info!(
+        "Deleted OAuth tokens for {} from local token store",
+        provider.as_str()
+    );
+    Ok(())
 }
 
 /// Parse a JWT token and extract claims
@@ -247,24 +252,5 @@ mod tests {
             chatgpt_account_id: None,
         };
         assert!(expired_tokens.is_expired());
-    }
-
-    #[test]
-    fn test_expires_within() {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs() as i64;
-
-        let tokens = StoredTokens {
-            access_token: "test".to_string(),
-            refresh_token: "test".to_string(),
-            expires_at: now + 300, // Expires in 5 minutes
-            email: None,
-            chatgpt_account_id: None,
-        };
-
-        assert!(tokens.expires_within(600)); // Within 10 minutes
-        assert!(!tokens.expires_within(60)); // Not within 1 minute (has 5 min left)
     }
 }

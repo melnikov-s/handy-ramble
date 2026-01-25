@@ -6,6 +6,7 @@
 //!
 //! Anthropic does not support OAuth and continues to use API keys only.
 
+pub mod config;
 pub mod google;
 pub mod openai;
 pub mod pkce;
@@ -94,11 +95,4 @@ pub struct OAuthStatus {
     pub email: Option<String>,
     /// Token expiration timestamp (Unix seconds)
     pub expires_at: Option<i64>,
-}
-
-/// Request headers for making authenticated API calls
-#[derive(Debug, Clone, Serialize, Deserialize, Type)]
-pub struct OAuthHeaders {
-    /// Headers to include in API requests
-    pub headers: std::collections::HashMap<String, String>,
 }

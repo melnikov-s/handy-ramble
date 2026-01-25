@@ -183,62 +183,6 @@ impl HistoryManager {
         Ok(Connection::open(&self.db_path)?)
     }
 
-    /// Save a transcription to history (both database and WAV file)
-    pub async fn save_transcription(
-        &self,
-        audio_samples: Vec<f32>,
-        transcription_text: String,
-        post_processed_text: Option<String>,
-        post_process_prompt: Option<String>,
-    ) -> Result<()> {
-        let timestamp = Utc::now().timestamp();
-        let file_name = format!("ramble-{}.wav", timestamp);
-        let title = self.format_timestamp_title(timestamp);
-
-        // Save WAV file
-        let file_path = self.recordings_dir.join(&file_name);
-        save_wav_file(file_path, &audio_samples).await?;
-
-        // Save to database
-        self.save_to_database(
-            file_name,
-            timestamp,
-            title,
-            transcription_text,
-            post_processed_text,
-            post_process_prompt,
-        )?;
-
-        // Clean up old entries
-        self.cleanup_old_entries()?;
-
-        // Emit history updated event
-        if let Err(e) = self.app_handle.emit("history-updated", ()) {
-            error!("Failed to emit history-updated event: {}", e);
-        }
-
-        Ok(())
-    }
-
-    fn save_to_database(
-        &self,
-        file_name: String,
-        timestamp: i64,
-        title: String,
-        transcription_text: String,
-        post_processed_text: Option<String>,
-        post_process_prompt: Option<String>,
-    ) -> Result<()> {
-        let conn = self.get_connection()?;
-        conn.execute(
-            "INSERT INTO transcription_history (file_name, timestamp, saved, title, transcription_text, post_processed_text, post_process_prompt, transcription_status) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'success')",
-            params![file_name, timestamp, false, title, transcription_text, post_processed_text, post_process_prompt],
-        )?;
-
-        debug!("Saved transcription to database");
-        Ok(())
-    }
-
     /// Save just the recording (WAV file + minimal DB entry) before transcription.
     /// Returns the entry ID for later update.
     pub async fn save_recording_only(&self, audio_samples: &[f32]) -> Result<i64> {

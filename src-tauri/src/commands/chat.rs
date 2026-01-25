@@ -1,4 +1,4 @@
-use crate::llm_client::{create_client, get_api_key_for_provider};
+use crate::llm_client::{create_client, get_api_key_for_provider_async};
 use crate::settings::{get_settings, get_system_prompt_content};
 use async_openai::types::{
     ChatCompletionRequestMessage, ChatCompletionRequestSystemMessageArgs,
@@ -66,8 +66,8 @@ pub async fn chat_completion(
         )
     })?;
 
-    // Get API key or OAuth token using the OAuth-aware helper
-    let api_key = get_api_key_for_provider(provider)?;
+    // Get API key or OAuth token using the OAuth-aware helper (with auto-refresh)
+    let api_key = get_api_key_for_provider_async(provider).await?;
 
     // Use Gemini native API for all Gemini models (supports grounding)
     // Handle both "gemini" (API key) and "gemini_oauth" (OAuth) providers
@@ -94,6 +94,11 @@ pub async fn chat_completion(
             enable_grounding,
         )
         .await;
+    }
+
+    // Use Codex API for OpenAI OAuth (ChatGPT Plus/Pro subscription)
+    if provider.id == "openai_oauth" {
+        return chat_completion_openai_codex(&app, &api_key, &model.model_id, messages).await;
     }
 
     // Create the client
@@ -614,4 +619,375 @@ async fn chat_completion_anthropic_native(
         content: text_content,
         grounding_metadata,
     })
+}
+
+/// OpenAI Codex API call for ChatGPT Plus/Pro OAuth
+/// Uses the Codex backend at chatgpt.com/backend-api instead of api.openai.com
+async fn chat_completion_openai_codex(
+    app: &AppHandle,
+    access_token: &str,
+    model_id: &str,
+    messages: Vec<ChatMessage>,
+) -> Result<ChatResponse, String> {
+    use crate::oauth::openai::API_ENDPOINT;
+    use crate::oauth::tokens::load_tokens;
+    use crate::oauth::OAuthProvider;
+
+    // Load tokens to get chatgpt_account_id
+    let tokens = load_tokens(OAuthProvider::OpenAI)
+        .map_err(|e| format!("Failed to load OAuth tokens: {}", e))?;
+
+    let chatgpt_account_id = tokens
+        .chatgpt_account_id
+        .ok_or_else(|| "No ChatGPT account ID found in tokens".to_string())?;
+
+    // Get reasoning effort from settings
+    let settings = get_settings(app);
+    let reasoning_effort = get_valid_reasoning_effort(&settings.openai_reasoning_effort, model_id);
+
+    // Normalize model name for Codex API
+    let normalized_model = normalize_codex_model(model_id);
+
+    // Build input array in Responses API format
+    let mut input = Vec::new();
+
+    // Add system prompt as developer message if configured
+    if let Some(system_prompt) = get_system_prompt_content(app) {
+        input.push(serde_json::json!({
+            "type": "message",
+            "role": "developer",
+            "content": [{
+                "type": "input_text",
+                "text": system_prompt
+            }]
+        }));
+    }
+
+    // Convert messages to Responses API format
+    for msg in messages {
+        let role = match msg.role.as_str() {
+            "assistant" => "assistant",
+            "system" => "developer",
+            _ => "user",
+        };
+
+        let mut content_parts = Vec::new();
+
+        // Add text content
+        // Note: assistant messages require 'output_text', others use 'input_text'
+        let content_type = if role == "assistant" {
+            "output_text"
+        } else {
+            "input_text"
+        };
+
+        content_parts.push(serde_json::json!({
+            "type": content_type,
+            "text": msg.content
+        }));
+
+        // Add images if present
+        if let Some(images) = msg.images {
+            for base64_image in images {
+                content_parts.push(serde_json::json!({
+                    "type": "input_image",
+                    "image_url": format!("data:image/png;base64,{}", base64_image)
+                }));
+            }
+        }
+
+        input.push(serde_json::json!({
+            "type": "message",
+            "role": role,
+            "content": content_parts
+        }));
+    }
+
+    // Get Codex instructions for this model
+    let instructions = get_codex_instructions(&normalized_model);
+
+    // Build request body for Codex Responses API
+    // Note: stream must be true for the ChatGPT backend, but we handle the SSE response
+    let request_body = serde_json::json!({
+        "model": normalized_model,
+        "instructions": instructions,
+        "input": input,
+        "store": false,
+        "stream": true,
+        "reasoning": {
+            "effort": reasoning_effort,
+            "summary": "auto"
+        },
+        "text": {
+            "verbosity": "medium"
+        },
+        "include": ["reasoning.encrypted_content"]
+    });
+
+    let url = format!("{}/codex/responses", API_ENDPOINT);
+
+    log::info!(
+        "Codex API request:\n  URL: {}\n  Model: {}\n  Account ID: {}\n  Body: {}",
+        url,
+        normalized_model,
+        chatgpt_account_id,
+        serde_json::to_string_pretty(&request_body).unwrap_or_default()
+    );
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&url)
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .header("Authorization", format!("Bearer {}", access_token))
+        .header("chatgpt-account-id", &chatgpt_account_id)
+        .header("OpenAI-Beta", "responses=experimental")
+        .header("originator", "codex_cli_rs")
+        .header("accept", "text/event-stream")
+        .json(&request_body)
+        .send()
+        .await
+        .map_err(|e| format!("Codex API request failed: {}", e))?;
+
+    let status = response.status();
+    let response_text = response
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read Codex response: {}", e))?;
+
+    log::info!(
+        "Codex API response: status={}, body_length={}",
+        status,
+        response_text.len()
+    );
+    log::debug!("Codex API full response:\n{}", response_text);
+
+    if !status.is_success() {
+        // Check for usage limit errors and provide a clearer message
+        if response_text.contains("usage_limit_reached")
+            || response_text.contains("usage_not_included")
+            || response_text.contains("rate_limit_exceeded")
+        {
+            return Err(
+                "ChatGPT usage limit reached. Please try again later or check your subscription."
+                    .to_string(),
+            );
+        }
+        return Err(format!("Codex API error {}: {}", status, response_text));
+    }
+
+    // Parse SSE stream to extract final response
+    // The Codex API returns SSE events, we need to find the response.done event
+    let res_json = parse_codex_sse_response(&response_text)?;
+
+    // Parse Codex Responses API response
+    // The response format has an "output" array with message items
+    let output = res_json["output"]
+        .as_array()
+        .ok_or_else(|| "No output in Codex response".to_string())?;
+
+    let mut text_content = String::new();
+
+    for item in output {
+        if item["type"].as_str() == Some("message") {
+            if let Some(content) = item["content"].as_array() {
+                for part in content {
+                    if part["type"].as_str() == Some("output_text") {
+                        if let Some(text) = part["text"].as_str() {
+                            if !text_content.is_empty() {
+                                text_content.push('\n');
+                            }
+                            text_content.push_str(text);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if text_content.is_empty() {
+        return Err("No text content in Codex response".to_string());
+    }
+
+    Ok(ChatResponse {
+        content: text_content,
+        grounding_metadata: None,
+    })
+}
+
+/// Normalize model name for Codex API
+/// Maps user-friendly model names to Codex-supported variants
+fn normalize_codex_model(model: &str) -> String {
+    let normalized = model.to_lowercase();
+
+    // GPT-5.2 variants
+    if normalized.contains("gpt-5.2-codex") || normalized.contains("gpt 5.2 codex") {
+        return "gpt-5.2-codex".to_string();
+    }
+    if normalized.contains("gpt-5.2") || normalized.contains("gpt 5.2") {
+        return "gpt-5.2".to_string();
+    }
+
+    // GPT-5.1 Codex variants
+    if normalized.contains("gpt-5.1-codex-max") || normalized.contains("codex-max") {
+        return "gpt-5.1-codex-max".to_string();
+    }
+    if normalized.contains("gpt-5.1-codex-mini") || normalized.contains("codex-mini") {
+        return "gpt-5.1-codex-mini".to_string();
+    }
+    if normalized.contains("gpt-5.1-codex") || normalized.contains("gpt 5.1 codex") {
+        return "gpt-5.1-codex".to_string();
+    }
+
+    // GPT-5.1 general
+    if normalized.contains("gpt-5.1") || normalized.contains("gpt 5.1") {
+        return "gpt-5.1".to_string();
+    }
+
+    // Legacy GPT-5 (map to 5.1)
+    if normalized.contains("gpt-5") || normalized.contains("gpt 5") {
+        return "gpt-5.1".to_string();
+    }
+
+    // O-series models
+    if normalized.contains("o3") {
+        return "o3".to_string();
+    }
+    if normalized.contains("o4-mini") || normalized.contains("o4 mini") {
+        return "o4-mini".to_string();
+    }
+
+    // Default to gpt-5.1
+    "gpt-5.1".to_string()
+}
+
+/// Get Codex instructions (system prompt) for a given model
+/// These instructions are required by the Codex API
+fn get_codex_instructions(model: &str) -> String {
+    // Minimal instructions that work for our voice assistant use case
+    // The Codex API requires this field - without it, we get "Instructions are required"
+    //
+    // Note: The full Codex CLI fetches model-specific prompts from GitHub:
+    // https://github.com/openai/codex/tree/main/codex-rs/core
+    // For our simpler use case (voice transcription refinement), minimal instructions suffice.
+    let model_family = get_model_family(model);
+
+    match model_family {
+        "gpt-5.2-codex" | "codex" | "codex-max" => {
+            r#"You are a helpful AI assistant specialized in coding tasks. 
+You help users with programming questions, code review, debugging, and software development.
+Be concise, accurate, and provide practical solutions."#
+                .to_string()
+        }
+        _ => {
+            // General purpose models (gpt-5.2, gpt-5.1)
+            r#"You are a helpful AI assistant. 
+Provide clear, concise, and accurate responses.
+When helping with code or technical topics, be precise and practical."#
+                .to_string()
+        }
+    }
+}
+
+/// Get the model family for selecting appropriate instructions
+fn get_model_family(model: &str) -> &'static str {
+    let normalized = model.to_lowercase();
+
+    if normalized.contains("gpt-5.2-codex") {
+        return "gpt-5.2-codex";
+    }
+    if normalized.contains("codex-max") {
+        return "codex-max";
+    }
+    if normalized.contains("codex") {
+        return "codex";
+    }
+    if normalized.contains("gpt-5.2") {
+        return "gpt-5.2";
+    }
+    "gpt-5.1"
+}
+
+/// Parse SSE (Server-Sent Events) response from Codex API
+/// The API returns events like:
+///   data: {"type":"response.output_item.added",...}
+///   data: {"type":"response.done","response":{...}}
+/// We need to find the response.done event and extract the response object
+fn parse_codex_sse_response(sse_text: &str) -> Result<serde_json::Value, String> {
+    for line in sse_text.lines() {
+        if let Some(data) = line.strip_prefix("data: ") {
+            // Try to parse the JSON data
+            if let Ok(event) = serde_json::from_str::<serde_json::Value>(data) {
+                let event_type = event["type"].as_str().unwrap_or("");
+
+                // Look for response.done or response.completed event
+                if event_type == "response.done" || event_type == "response.completed" {
+                    if let Some(response) = event.get("response") {
+                        log::info!("Found response.done event with response object");
+                        return Ok(response.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    // If no response.done event found, try to parse the whole thing as JSON
+    // (fallback for non-streaming responses)
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(sse_text) {
+        return Ok(json);
+    }
+
+    Err("Could not find response.done event in SSE stream".to_string())
+}
+
+/// Get a valid reasoning effort for a model, adjusting if necessary
+/// Different models support different reasoning effort levels:
+/// - gpt-5.2: none/low/medium/high/xhigh
+/// - gpt-5.2-codex: low/medium/high/xhigh (no "none")
+/// - gpt-5.1-codex-max: low/medium/high/xhigh (no "none")
+/// - gpt-5.1-codex: low/medium/high (no "none", no "xhigh")
+/// - gpt-5.1-codex-mini: medium/high (only medium and high)
+/// - gpt-5.1: none/low/medium/high (no "xhigh")
+fn get_valid_reasoning_effort(requested_effort: &str, model_id: &str) -> String {
+    let normalized_model = model_id.to_lowercase();
+    let effort = requested_effort.to_lowercase();
+
+    // Determine model capabilities
+    let is_codex = normalized_model.contains("codex");
+    let is_mini = normalized_model.contains("mini");
+    let is_max = normalized_model.contains("max");
+
+    let supports_none =
+        !is_codex && (normalized_model.contains("gpt-5.2") || normalized_model.contains("gpt-5.1"));
+    let supports_xhigh = normalized_model.contains("gpt-5.2") || is_max;
+    let supports_low = !is_mini;
+
+    // Validate and adjust effort
+    match effort.as_str() {
+        "none" => {
+            if supports_none {
+                "none".to_string()
+            } else if supports_low {
+                "low".to_string()
+            } else {
+                "medium".to_string()
+            }
+        }
+        "low" => {
+            if supports_low {
+                "low".to_string()
+            } else {
+                "medium".to_string()
+            }
+        }
+        "medium" => "medium".to_string(),
+        "high" => "high".to_string(),
+        "xhigh" => {
+            if supports_xhigh {
+                "xhigh".to_string()
+            } else {
+                "high".to_string()
+            }
+        }
+        _ => "medium".to_string(), // Default fallback
+    }
 }

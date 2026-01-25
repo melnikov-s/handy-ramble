@@ -5,7 +5,7 @@ use crate::helpers::clamshell;
 use crate::managers::transcription::TranscriptionManager;
 use crate::settings::{get_settings, AppSettings};
 use crate::utils;
-use log::{debug, error, info, warn};
+use log::{debug, error, info};
 use std::collections::BTreeMap;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -145,22 +145,6 @@ impl StreamingTranscriptionSession {
         self.segment_tx.clone()
     }
 
-    pub fn collect_pending_results(&mut self) {
-        while let Ok((index, result)) = self.result_rx.try_recv() {
-            match result {
-                Ok(text) => {
-                    if !text.is_empty() {
-                        debug!("Streaming transcription: segment {} = '{}'", index, text);
-                        self.segments_text.insert(index, text);
-                    }
-                }
-                Err(e) => {
-                    warn!("Streaming transcription: segment {} failed: {}", index, e);
-                }
-            }
-        }
-    }
-
     pub fn finish(mut self) -> String {
         drop(self.segment_tx);
 
@@ -178,10 +162,6 @@ impl StreamingTranscriptionSession {
 
         let combined: Vec<&str> = self.segments_text.values().map(|s| s.as_str()).collect();
         combined.join(" ")
-    }
-
-    pub fn segment_count(&self) -> usize {
-        self.segments_text.len()
     }
 }
 
@@ -762,10 +742,5 @@ impl AudioRecordingManager {
         } else {
             None
         }
-    }
-
-    /// Returns true if there's an active streaming transcription session
-    pub fn has_streaming_session(&self) -> bool {
-        self.streaming_session.lock().unwrap().is_some()
     }
 }

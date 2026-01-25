@@ -466,21 +466,6 @@ pub fn change_post_process_base_url_setting(
     Ok(())
 }
 
-/// Generic helper to validate provider exists
-fn validate_provider_exists(
-    settings: &settings::AppSettings,
-    provider_id: &str,
-) -> Result<(), String> {
-    if !settings
-        .llm_providers
-        .iter()
-        .any(|provider| provider.id == provider_id)
-    {
-        return Err(format!("Provider '{}' not found", provider_id));
-    }
-    Ok(())
-}
-
 #[tauri::command]
 #[specta::specta]
 pub fn change_post_process_api_key_setting(
@@ -679,8 +664,11 @@ fn get_hardcoded_oauth_models(provider_id: &str) -> Vec<String> {
     match provider_id {
         "openai_oauth" => vec![
             "gpt-5.2".to_string(),
-            "gpt-5.2-mini".to_string(),
-            "gpt-5.2-nano".to_string(),
+            "gpt-5.2-codex".to_string(),
+            "gpt-5.1".to_string(),
+            "gpt-5.1-codex".to_string(),
+            "gpt-5.1-codex-max".to_string(),
+            "gpt-5.1-codex-mini".to_string(),
         ],
         "gemini_oauth" => vec![
             "gemini-2.5-flash".to_string(),

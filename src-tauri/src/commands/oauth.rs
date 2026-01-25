@@ -10,7 +10,7 @@ use tauri_plugin_opener::OpenerExt;
 
 use crate::oauth::pkce::{generate_state, PkceChallenge};
 use crate::oauth::server::wait_for_callback;
-use crate::oauth::tokens::{delete_tokens, load_tokens, StoredTokens};
+use crate::oauth::tokens::{delete_tokens, load_tokens};
 use crate::oauth::{google, openai, AuthResult, AuthStartResult, OAuthProvider, OAuthStatus};
 
 /// In-flight OAuth state storage
@@ -33,7 +33,9 @@ pub async fn oauth_start_auth(app: AppHandle, provider: String) -> Result<AuthSt
 
     // Build authorization URL based on provider
     let auth_url = match provider {
-        OAuthProvider::Google => google::build_auth_url(&pkce, &state),
+        OAuthProvider::Google => {
+            google::build_auth_url(&pkce, &state).map_err(|e| e.to_string())?
+        }
         OAuthProvider::OpenAI => openai::build_auth_url(&pkce, &state),
     };
 
@@ -72,19 +74,7 @@ pub async fn oauth_await_callback(provider: String, state: String) -> Result<Aut
             .ok_or_else(|| "Invalid or expired OAuth state".to_string())?
     };
 
-    // For Google, we need to handle the encoded state
-    let expected_state = match oauth_provider {
-        OAuthProvider::Google => {
-            // Google uses encoded state with verifier embedded
-            use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-            let state_data = serde_json::json!({
-                "state": state,
-                "verifier": verifier
-            });
-            URL_SAFE_NO_PAD.encode(state_data.to_string().as_bytes())
-        }
-        OAuthProvider::OpenAI => state.clone(),
-    };
+    let expected_state = state.clone();
 
     log::info!(
         "OAuth await_callback: starting for provider={}, state={}",

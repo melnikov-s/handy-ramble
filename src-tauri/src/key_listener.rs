@@ -78,8 +78,6 @@ enum ListenerState {
         /// Whether the key has been released (toggle mode)
         key_released: bool,
     },
-    /// Recording is paused
-    Paused { binding_id: String },
 }
 
 /// A registered binding maps a key string to an action ID
@@ -459,19 +457,6 @@ fn handle_behavior_press(binding_string: &str) -> bool {
                     return false;
                 }
             }
-            ListenerState::Paused { binding_id } => {
-                if binding_id == binding.binding_id {
-                    // Resume
-                    guard.state = ListenerState::Recording {
-                        binding_id: binding.binding_id.clone(),
-                        press_time: Instant::now(),
-                        key_released: false,
-                    };
-                    (app, binding.binding_id.clone(), behavior)
-                } else {
-                    return false;
-                }
-            }
             _ => return false,
         }
     };
@@ -688,10 +673,7 @@ fn handle_cancel() {
         // Priority 2: Cancel active recording
         let should_cancel = {
             let guard = state.lock().unwrap();
-            matches!(
-                &guard.state,
-                ListenerState::Recording { .. } | ListenerState::Paused { .. }
-            )
+            matches!(&guard.state, ListenerState::Recording { .. })
         };
 
         debug!("handle_cancel: should_cancel = {}", should_cancel);
@@ -715,10 +697,7 @@ fn handle_vision() {
             Err(_) => return,
         };
 
-        let is_active = matches!(
-            guard.state,
-            ListenerState::Recording { .. } | ListenerState::Paused { .. }
-        );
+        let is_active = matches!(guard.state, ListenerState::Recording { .. });
         // Only trigger if a modifier is held (to avoid accidental triggers while typing)
         let has_modifier = guard.shift_left_pressed || guard.shift_right_pressed; // Could add more modifiers
 
@@ -749,10 +728,7 @@ fn handle_pause() {
             Err(_) => return,
         };
 
-        let is_active = matches!(
-            guard.state,
-            ListenerState::Recording { .. } | ListenerState::Paused { .. }
-        );
+        let is_active = matches!(guard.state, ListenerState::Recording { .. });
         let has_modifier = guard.shift_left_pressed || guard.shift_right_pressed;
 
         (guard.app_handle.clone(), is_active, has_modifier)

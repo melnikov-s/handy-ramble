@@ -4,10 +4,22 @@
     "settings": "Cài đặt...",
     "checkUpdates": "Kiểm tra cập nhật...",
     "quit": "Thoát",
-    "cancel": "Cancel", "postProcessing": "Post Processing", "dynamic": "Dynamic", "low": "Low", "medium": "Medium", "high": "High", "copyLastTranscription": "Copy Last Transcription", "copyLastVoiceInteraction": "Copy Last Voice Interaction", "voiceInteractions": "Voice Interactions", "speechToText": "Speech to Text", "chats": "Chats", "newChat": "New Chat", "noSavedChats": "No Saved Chats"
+    "cancel": "Cancel",
+    "postProcessing": "Post Processing",
+    "dynamic": "Dynamic",
+    "low": "Low",
+    "medium": "Medium",
+    "high": "High",
+    "copyLastTranscription": "Sao chép bản chép lời cuối cùng",
+    "copyLastVoiceInteraction": "Sao chép tương tác giọng nói cuối cùng",
+    "chats": "Trò chuyện",
+    "newChat": "New Chat",
+    "noSavedChats": "No Saved Chats"
   },
   "sidebar": {
-    "ramble": "Ramble to Coherent", "textToSpeech": "Text to Speech", "general": "Chung",
+    "ramble": "Ramble to Coherent",
+    "textToSpeech": "Text to Speech",
+    "general": "Chung",
     "advanced": "Nâng cao",
     "postProcessing": "Xử lý sau",
     "history": "Lịch sử",
@@ -78,7 +90,9 @@
     "deleteModel": "Xóa {{modelName}}"
   },
   "settings": {
-    "ramble": "Ramble to Coherent", "textToSpeech": "Text to Speech", "general": {
+    "ramble": "Ramble to Coherent",
+    "textToSpeech": "Text to Speech",
+    "general": {
       "title": "Chung",
       "shortcut": {
         "title": "Phím tắt Ramble",
@@ -256,7 +270,17 @@
         "updatePrompt": "Cập nhật Prompt",
         "deletePrompt": "Xóa Prompt",
         "createPrompt": "Tạo Prompt",
-        "cancel": "Cancel", "postProcessing": "Post Processing", "dynamic": "Dynamic", "low": "Low", "medium": "Medium", "high": "High", "copyLastTranscription": "Copy Last Transcription", "copyLastVoiceInteraction": "Copy Last Voice Interaction", "voiceInteractions": "Voice Interactions", "speechToText": "Speech to Text", "chats": "Chats", "newChat": "New Chat", "noSavedChats": "No Saved Chats",
+        "cancel": "Cancel",
+        "postProcessing": "Post Processing",
+        "dynamic": "Dynamic",
+        "low": "Low",
+        "medium": "Medium",
+        "high": "High",
+        "copyLastTranscription": "Sao chép bản chép lời cuối cùng",
+        "copyLastVoiceInteraction": "Sao chép tương tác giọng nói cuối cùng",
+        "chats": "Trò chuyện",
+        "newChat": "New Chat",
+        "noSavedChats": "No Saved Chats",
         "selectToEdit": "Chọn một prompt ở trên để xem và chỉnh sửa chi tiết.",
         "createFirst": "Nhấn 'Tạo Prompt mới' ở trên để tạo prompt xử lý sau đầu tiên của bạn."
       }
@@ -385,7 +409,17 @@
   "common": {
     "loading": "Đang tải...",
     "save": "Lưu",
-    "cancel": "Cancel", "postProcessing": "Post Processing", "dynamic": "Dynamic", "low": "Low", "medium": "Medium", "high": "High", "copyLastTranscription": "Copy Last Transcription", "copyLastVoiceInteraction": "Copy Last Voice Interaction", "voiceInteractions": "Voice Interactions", "speechToText": "Speech to Text", "chats": "Chats", "newChat": "New Chat", "noSavedChats": "No Saved Chats",
+    "cancel": "Cancel",
+    "postProcessing": "Post Processing",
+    "dynamic": "Dynamic",
+    "low": "Low",
+    "medium": "Medium",
+    "high": "High",
+    "copyLastTranscription": "Sao chép bản chép lời cuối cùng",
+    "copyLastVoiceInteraction": "Sao chép tương tác giọng nói cuối cùng",
+    "chats": "Trò chuyện",
+    "newChat": "New Chat",
+    "noSavedChats": "No Saved Chats",
     "reset": "Đặt lại",
     "add": "Thêm",
     "remove": "Xóa",

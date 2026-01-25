@@ -1117,6 +1117,24 @@ async getDefaultModels() : Promise<DefaultModels> {
     return await TAURI_INVOKE("get_default_models");
 },
 /**
+ * Get the OpenAI reasoning effort setting
+ */
+async getOpenaiReasoningEffort() : Promise<string> {
+    return await TAURI_INVOKE("get_openai_reasoning_effort");
+},
+/**
+ * Set the OpenAI reasoning effort setting
+ * Valid values: "none", "low", "medium", "high", "xhigh"
+ */
+async setOpenaiReasoningEffort(effort: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("set_openai_reasoning_effort", { effort }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
  * Refresh models for ALL configured providers with API keys or OAuth
  * Returns the complete updated list of models
  */
@@ -1324,7 +1342,11 @@ default_coherent_model_id?: string | null;
 /**
  * Default model ID for voice commands
  */
-default_voice_model_id?: string | null; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; 
+default_voice_model_id?: string | null; 
+/**
+ * OpenAI OAuth reasoning effort level (none, low, medium, high, xhigh)
+ */
+openai_reasoning_effort?: string; paste_method?: PasteMethod; clipboard_handling?: ClipboardHandling; 
 /**
  * Prompts for coherent mode (transforms rambling speech to clean text)
  */

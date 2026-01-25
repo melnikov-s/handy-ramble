@@ -1,7 +1,7 @@
 use crate::tts::TTSEngine;
 use anyhow::Result;
 use kokorox::tts::koko::TTSKoko;
-use log::{debug, error, info};
+use log::{error, info};
 use rodio::{OutputStreamBuilder, Sink};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};

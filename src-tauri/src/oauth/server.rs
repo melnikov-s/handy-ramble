@@ -108,7 +108,7 @@ pub fn wait_for_callback(
                 log::info!("OAuth callback server received request: {}", url);
 
                 // Parse the callback
-                let result = parse_callback(&url, &expected_path, &expected_state);
+                let result = parse_callback(&url, provider, &expected_path, &expected_state);
                 log::info!("OAuth callback parse result: {:?}", result.is_ok());
 
                 // Send response to browser
@@ -164,6 +164,7 @@ pub fn wait_for_callback(
 /// Parse the callback URL and extract code and state
 fn parse_callback(
     url: &str,
+    provider: OAuthProvider,
     expected_path: &str,
     expected_state: &str,
 ) -> Result<CallbackResult, CallbackError> {
@@ -213,6 +214,14 @@ fn parse_callback(
         .clone();
 
     if state != expected_state {
+        if provider == OAuthProvider::Google {
+            if let Some((decoded_state, _)) = super::google::decode_state(&state) {
+                if decoded_state == expected_state {
+                    return Ok(CallbackResult { code, state });
+                }
+            }
+        }
+
         return Err(CallbackError::InvalidCallback(
             "State mismatch - possible CSRF attack".to_string(),
         ));

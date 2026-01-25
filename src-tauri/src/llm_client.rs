@@ -2,12 +2,13 @@ use crate::oauth::{google, openai as openai_oauth, tokens::load_tokens, OAuthPro
 use crate::settings::{AuthMethod, LLMProvider};
 use async_openai::{config::OpenAIConfig, Client};
 
-/// Get the API key to use for a provider
+/// Get the API key to use for a provider (sync version, no auto-refresh)
 ///
-/// For OAuth providers, this retrieves the access token from secure storage.
+/// For OAuth providers, this retrieves the access token from the local token store.
 /// For API key providers, this returns the stored API key.
 ///
 /// Returns an error if OAuth is selected but no valid token is available.
+/// Note: This version does NOT auto-refresh expired tokens. Use `get_api_key_for_provider_async` for auto-refresh.
 pub fn get_api_key_for_provider(provider: &LLMProvider) -> Result<String, String> {
     log::info!(
         "get_api_key_for_provider: id={}, auth_method={:?}, supports_oauth={}",
@@ -37,8 +38,8 @@ pub fn get_api_key_for_provider(provider: &LLMProvider) -> Result<String, String
                 }
             };
 
-            // Load tokens from secure storage
-            log::info!("get_api_key_for_provider: loading tokens from secure storage...");
+            // Load tokens from local token store
+            log::info!("get_api_key_for_provider: loading tokens from local token store...");
             let tokens = match load_tokens(oauth_provider) {
                 Ok(t) => {
                     log::info!(
@@ -58,10 +59,10 @@ pub fn get_api_key_for_provider(provider: &LLMProvider) -> Result<String, String
                 }
             };
 
-            // Check if token is expired
+            // Check if token is expired - caller should use async version for auto-refresh
             if tokens.is_expired() {
-                log::error!(
-                    "get_api_key_for_provider: OAuth token expired for {} (expires_at={})",
+                log::warn!(
+                    "get_api_key_for_provider: OAuth token expired for {} (expires_at={}), use async version for auto-refresh",
                     provider.name,
                     tokens.expires_at
                 );
@@ -91,6 +92,132 @@ pub fn get_api_key_for_provider(provider: &LLMProvider) -> Result<String, String
             }
             log::info!(
                 "get_api_key_for_provider: returning API key for {} (length={})",
+                provider.id,
+                provider.api_key.len()
+            );
+            Ok(provider.api_key.clone())
+        }
+    }
+}
+
+/// Get the API key to use for a provider (async version with auto-refresh)
+///
+/// For OAuth providers, this retrieves the access token from the local token store
+/// and automatically refreshes it if expired.
+/// For API key providers, this returns the stored API key.
+///
+/// Returns an error if OAuth is selected but no valid token is available and refresh fails.
+pub async fn get_api_key_for_provider_async(provider: &LLMProvider) -> Result<String, String> {
+    log::info!(
+        "get_api_key_for_provider_async: id={}, auth_method={:?}, supports_oauth={}",
+        provider.id,
+        provider.auth_method,
+        provider.supports_oauth
+    );
+    match provider.auth_method {
+        AuthMethod::OAuth => {
+            log::info!(
+                "get_api_key_for_provider_async: using OAuth flow for {}",
+                provider.id
+            );
+
+            // Determine which OAuth provider this is
+            let oauth_provider = match OAuthProvider::from_str(&provider.id) {
+                Some(p) => {
+                    log::info!(
+                        "get_api_key_for_provider_async: mapped to OAuth provider {:?}",
+                        p
+                    );
+                    p
+                }
+                None => {
+                    log::error!(
+                        "get_api_key_for_provider_async: OAuth not supported for provider: {}",
+                        provider.id
+                    );
+                    return Err(format!("OAuth not supported for provider: {}", provider.id));
+                }
+            };
+
+            // Load tokens from local token store
+            log::info!("get_api_key_for_provider_async: loading tokens from local token store...");
+            let mut tokens = match load_tokens(oauth_provider) {
+                Ok(t) => {
+                    log::info!(
+                        "get_api_key_for_provider_async: loaded tokens successfully (email={:?}, expires_at={}, is_expired={})",
+                        t.email,
+                        t.expires_at,
+                        t.is_expired()
+                    );
+                    t
+                }
+                Err(e) => {
+                    log::error!(
+                        "get_api_key_for_provider_async: failed to load OAuth tokens: {}",
+                        e
+                    );
+                    return Err(format!("Failed to load OAuth tokens: {}", e));
+                }
+            };
+
+            // Check if token is expired and try to refresh
+            if tokens.is_expired() {
+                log::info!(
+                    "get_api_key_for_provider_async: OAuth token expired for {}, attempting refresh...",
+                    provider.name
+                );
+
+                // Try to refresh the token
+                let refresh_result = match oauth_provider {
+                    OAuthProvider::Google => google::refresh_token(&tokens.refresh_token).await,
+                    OAuthProvider::OpenAI => {
+                        openai_oauth::refresh_token(&tokens.refresh_token).await
+                    }
+                };
+
+                match refresh_result {
+                    Ok(new_tokens) => {
+                        log::info!(
+                            "get_api_key_for_provider_async: successfully refreshed OAuth token for {} (new expires_at={})",
+                            provider.name,
+                            new_tokens.expires_at
+                        );
+                        tokens = new_tokens;
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "get_api_key_for_provider_async: failed to refresh OAuth token for {}: {}",
+                            provider.name,
+                            e
+                        );
+                        return Err(format!(
+                            "OAuth token expired for {} and refresh failed: {}. Please sign in again.",
+                            provider.name, e
+                        ));
+                    }
+                }
+            }
+
+            log::info!(
+                "get_api_key_for_provider_async: returning valid OAuth token for {}",
+                provider.id
+            );
+            Ok(tokens.access_token)
+        }
+        AuthMethod::ApiKey => {
+            log::info!(
+                "get_api_key_for_provider_async: using API key flow for {}",
+                provider.id
+            );
+            if provider.api_key.is_empty() {
+                log::error!(
+                    "get_api_key_for_provider_async: no API key configured for {}",
+                    provider.name
+                );
+                return Err(format!("No API key configured for {}", provider.name));
+            }
+            log::info!(
+                "get_api_key_for_provider_async: returning API key for {} (length={})",
                 provider.id,
                 provider.api_key.len()
             );
@@ -174,10 +301,4 @@ fn create_oauth_client(
         .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
 
     Ok(Client::with_config(config.clone()).with_http_client(http_client))
-}
-
-/// Create a client for a provider, automatically handling OAuth vs API key auth
-pub fn create_client_for_provider(provider: &LLMProvider) -> Result<Client<OpenAIConfig>, String> {
-    let api_key = get_api_key_for_provider(provider)?;
-    create_client(provider, api_key)
 }

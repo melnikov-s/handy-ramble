@@ -228,3 +228,31 @@ pub struct DefaultModels {
     pub voice: Option<String>,
     pub context_chat: Option<String>,
 }
+
+/// Get the OpenAI reasoning effort setting
+#[tauri::command]
+#[specta::specta]
+pub fn get_openai_reasoning_effort(app: AppHandle) -> String {
+    let settings = settings::get_settings(&app);
+    settings.openai_reasoning_effort
+}
+
+/// Set the OpenAI reasoning effort setting
+/// Valid values: "none", "low", "medium", "high", "xhigh"
+#[tauri::command]
+#[specta::specta]
+pub fn set_openai_reasoning_effort(app: AppHandle, effort: String) -> Result<(), String> {
+    let valid_efforts = ["none", "low", "medium", "high", "xhigh"];
+    if !valid_efforts.contains(&effort.as_str()) {
+        return Err(format!(
+            "Invalid reasoning effort '{}'. Valid values: {}",
+            effort,
+            valid_efforts.join(", ")
+        ));
+    }
+
+    let mut settings = settings::get_settings(&app);
+    settings.openai_reasoning_effort = effort;
+    settings::write_settings(&app, settings);
+    Ok(())
+}

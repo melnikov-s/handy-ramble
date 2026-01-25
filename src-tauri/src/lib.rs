@@ -126,6 +126,14 @@ fn show_main_window(app: &AppHandle) {
 }
 
 fn initialize_core_logic(app_handle: &AppHandle) {
+    if let Err(e) = oauth::tokens::init_token_store(app_handle) {
+        log::error!("Failed to initialize OAuth token store: {}", e);
+    }
+
+    if let Err(e) = oauth::config::init_oauth_config(app_handle) {
+        log::error!("Failed to initialize OAuth config: {}", e);
+    }
+
     // Initialize the input state (Enigo singleton for keyboard/mouse simulation)
     let enigo_state = input::EnigoState::new().expect("Failed to initialize input state (Enigo)");
     app_handle.manage(enigo_state);
@@ -457,6 +465,8 @@ pub fn run() {
         commands::providers::delete_llm_model,
         commands::providers::set_default_model,
         commands::providers::get_default_models,
+        commands::providers::get_openai_reasoning_effort,
+        commands::providers::set_openai_reasoning_effort,
         // Dynamic model fetching
         commands::fetch_models::refresh_all_models,
         commands::chat_persistence::save_chat,

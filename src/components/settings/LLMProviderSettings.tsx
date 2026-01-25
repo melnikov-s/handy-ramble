@@ -44,7 +44,7 @@ const PROVIDER_PRESETS: Record<
   // OAuth providers (new - separate from API key providers)
   openai_oauth: {
     name: "OpenAI (OAuth)",
-    base_url: "https://api.openai.com/v1",
+    base_url: "https://chatgpt.com/backend-api",
     supports_oauth: true,
     auth_method: "oauth",
   },
@@ -242,15 +242,21 @@ const ProviderDialog: React.FC<ProviderDialogProps> = ({
     }
   };
 
-  // Available presets (filter out providers whose exact ID already exists with configuration)
+  // Available presets (filter out providers that are already configured)
+  // For API key providers: configured means they have an API key
+  // For OAuth providers: they're always available in "Add Provider" since user can sign in from the dialog
   const availablePresets = Object.entries(PROVIDER_PRESETS).filter(
-    ([id]) =>
-      // Include if: (1) no existing provider with this exact ID has API key/OAuth, OR (2) we're editing this exact provider
+    ([id, preset]) =>
+      // Include if: (1) provider doesn't exist with configuration, OR (2) we're editing this exact provider
       !existingProviders.some((p) => {
         if (p.id !== id) return false;
-        const extProvider = p as LLMProvider & { auth_method?: string };
-        // Provider is configured if it has API key OR uses OAuth
-        return p.api_key || extProvider.auth_method === "oauth";
+        // For OAuth providers, they're "available" to add unless we're editing them
+        // The user will sign in through the dialog
+        if (preset.auth_method === "oauth") {
+          return false; // OAuth providers are always available to add
+        }
+        // For API key providers, check if they have an API key
+        return p.api_key && p.api_key.trim() !== "";
       }) ||
       (mode === "edit" && provider?.id === id),
   );

@@ -1,5 +1,4 @@
 #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-use crate::apple_intelligence;
 use crate::audio_feedback::{play_feedback_sound, play_feedback_sound_blocking, SoundType};
 use crate::clipboard;
 use crate::managers::audio::AudioRecordingManager;
@@ -8,7 +7,6 @@ use crate::managers::transcription::TranscriptionManager;
 use crate::managers::tts::TTSManager;
 use crate::settings::{
     get_settings, inject_system_prompt, write_settings, AppSettings, DetectedApp, PromptMode,
-    APPLE_INTELLIGENCE_PROVIDER_ID,
 };
 use crate::tray::{change_tray_icon, TrayIconState};
 use crate::utils::{
@@ -44,8 +42,8 @@ pub struct ResolvedLLMConfig {
 
 /// Resolve LLM configuration from a model ID
 /// Returns the provider, model, and API key needed to make an LLM call
-/// Supports both API key and OAuth authentication methods
-pub fn resolve_llm_config(
+/// Supports both API key and OAuth authentication methods (with auto-refresh for OAuth)
+pub async fn resolve_llm_config(
     settings: &AppSettings,
     model_id: &str,
 ) -> Result<ResolvedLLMConfig, String> {
@@ -64,8 +62,8 @@ pub fn resolve_llm_config(
             )
         })?;
 
-    // Get API key or OAuth token using the OAuth-aware helper
-    let api_key = crate::llm_client::get_api_key_for_provider(&provider)?;
+    // Get API key or OAuth token using the OAuth-aware helper (with auto-refresh)
+    let api_key = crate::llm_client::get_api_key_for_provider_async(&provider).await?;
 
     Ok(ResolvedLLMConfig {
         api_key,
@@ -82,6 +80,7 @@ pub enum InteractionBehavior {
     /// Tap (short press) = Toggle. Hold (long press) = Push-to-Talk.
     Hybrid,
     /// Action starts on Press and stops on Release.
+    #[allow(dead_code)]
     Momentary,
 }
 
@@ -161,342 +160,6 @@ fn record_detected_app(app: &AppHandle, bundle_id: &str, display_name: &str) {
 
     write_settings(app, settings);
     debug!("Recorded detected app: {} ({})", display_name, bundle_id);
-}
-
-async fn maybe_post_process_transcription(
-    app: &AppHandle,
-    settings: &AppSettings,
-    transcription: &str,
-) -> Result<Option<String>, String> {
-    // If this is called, we process. The caller (TranscribeAction) should check settings.post_process_enabled.
-    info!(
-        "Starting LLM post-processing for transcription ({} chars)",
-        transcription.len()
-    );
-    utils::log_to_frontend(app, "info", "Starting post-processing...");
-
-    // Get the model ID to use for coherent mode
-    let model_id = match settings.default_coherent_model_id.as_ref() {
-        Some(id) => id,
-        None => {
-            let msg = "No coherent model configured";
-            utils::log_to_frontend(app, "error", msg);
-            debug!("{}", msg);
-            return Err(msg.to_string());
-        }
-    };
-
-    // Resolve the LLM config using the unified helper
-    let llm_config = match resolve_llm_config(settings, model_id) {
-        Ok(config) => config,
-        Err(e) => {
-            utils::log_to_frontend(app, "error", &e);
-            debug!("{}", e);
-            return Err(e);
-        }
-    };
-
-    let provider = llm_config.provider.clone();
-    let model = llm_config.model.model_id.clone();
-
-    let selected_prompt_id = match &settings.coherent_selected_prompt_id {
-        Some(id) => id.clone(),
-        None => {
-            let msg = "No coherent prompt is selected";
-            debug!("{}", msg);
-            return Err(msg.to_string());
-        }
-    };
-
-    let prompt = match settings
-        .coherent_prompts
-        .iter()
-        .find(|prompt| prompt.id == selected_prompt_id)
-    {
-        Some(prompt) => prompt.prompt.clone(),
-        None => {
-            let msg = format!("Prompt '{}' was not found", selected_prompt_id);
-            debug!("{}", msg);
-            return Err(msg.to_string());
-        }
-    };
-
-    if prompt.trim().is_empty() {
-        let msg = "The selected post-processing prompt is empty";
-        debug!("{}", msg);
-        return Err(msg.to_string());
-    }
-
-    info!(
-        "Starting LLM post-processing with provider '{}' (model: {})",
-        provider.id, model
-    );
-
-    // Replace ${output} variable in the prompt with the actual text
-    let processed_prompt = prompt.replace("${output}", transcription);
-    // Inject system prompt if configured
-    let processed_prompt = inject_system_prompt(app, &processed_prompt);
-    debug!("Processed prompt length: {} chars", processed_prompt.len());
-
-    if provider.id == APPLE_INTELLIGENCE_PROVIDER_ID {
-        #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-        {
-            if !apple_intelligence::check_apple_intelligence_availability() {
-                let msg = "Apple Intelligence is not currently available on this device";
-                debug!("{}", msg);
-                return Err(msg.to_string());
-            }
-
-            let token_limit = model.trim().parse::<i32>().unwrap_or(0);
-            return match apple_intelligence::process_text(&processed_prompt, token_limit) {
-                Ok(result) => {
-                    if result.trim().is_empty() {
-                        let msg = "Apple Intelligence returned an empty response";
-                        debug!("{}", msg);
-                        Err(msg.to_string())
-                    } else {
-                        info!(
-                            "Apple Intelligence post-processing succeeded. Output length: {} chars",
-                            result.len()
-                        );
-                        utils::log_to_frontend(app, "info", "Post-processing complete");
-                        Ok(Some(result))
-                    }
-                }
-                Err(err) => {
-                    let msg = format!("Apple Intelligence post-processing failed: {}", err);
-                    error!("{}", msg);
-                    Err(msg)
-                }
-            };
-        }
-
-        #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
-        {
-            let msg = "Apple Intelligence provider selected on unsupported platform";
-            debug!("{}", msg);
-            return Err(msg.to_string());
-        }
-    }
-
-    // Use native Gemini API for Gemini providers (supports OAuth and grounding)
-    if provider.id == "gemini" || provider.id == "gemini_oauth" {
-        return post_process_gemini_native(
-            &provider,
-            &llm_config.api_key,
-            &model,
-            &processed_prompt,
-        )
-        .await;
-    }
-
-    // Create OpenAI-compatible client for other providers
-    let client = match crate::llm_client::create_client(&provider, llm_config.api_key.clone()) {
-        Ok(client) => client,
-        Err(e) => {
-            let msg = format!("Failed to create LLM client: {}", e);
-            utils::log_to_frontend(app, "error", &msg);
-            error!("{}", msg);
-            return Err(msg);
-        }
-    };
-
-    // Build the chat completion request
-    let message = match ChatCompletionRequestUserMessageArgs::default()
-        .content(processed_prompt)
-        .build()
-    {
-        Ok(msg) => ChatCompletionRequestMessage::User(msg),
-        Err(e) => {
-            let msg = format!("Failed to build chat message: {}", e);
-            error!("{}", msg);
-            return Err(msg);
-        }
-    };
-
-    let request = match CreateChatCompletionRequestArgs::default()
-        .model(&model)
-        .messages(vec![message])
-        .build()
-    {
-        Ok(req) => req,
-        Err(e) => {
-            let msg = format!("Failed to build chat completion request: {}", e);
-            error!("{}", msg);
-            return Err(msg);
-        }
-    };
-
-    // Send the request
-    match client.chat().create(request).await {
-        Ok(response) => {
-            if let Some(choice) = response.choices.first() {
-                if let Some(content) = &choice.message.content {
-                    info!(
-                        "LLM post-processing succeeded for provider '{}'. Output length: {} chars",
-                        provider.id,
-                        content.len()
-                    );
-                    utils::log_to_frontend(app, "info", "Post-processing complete");
-                    return Ok(Some(content.clone()));
-                }
-            }
-            let msg = "LLM API response has no content".to_string();
-            error!("{}", msg);
-            Err(msg)
-        }
-        Err(e) => {
-            let error_msg = extract_llm_error(&e, &model);
-            let msg = format!(
-                "LLM post-processing failed for provider '{}': {}",
-                provider.id, error_msg
-            );
-            utils::log_to_frontend(app, "error", &msg);
-            error!("{}", msg);
-            Err(error_msg)
-        }
-    }
-}
-
-/// Native Gemini API call for post-processing (supports OAuth and grounding)
-async fn post_process_gemini_native(
-    provider: &crate::settings::LLMProvider,
-    api_key: &str,
-    model_id: &str,
-    prompt: &str,
-) -> Result<Option<String>, String> {
-    use crate::settings::AuthMethod;
-
-    let contents = vec![serde_json::json!({
-        "role": "user",
-        "parts": [{ "text": prompt }]
-    })];
-
-    // Enable grounding (web search) for all Gemini post-processing
-    let inner_request_body = serde_json::json!({
-        "contents": contents,
-        "tools": [{
-            "google_search": {}
-        }]
-    });
-
-    // Branch based on auth method
-    let content = if provider.auth_method == AuthMethod::OAuth {
-        // OAuth: Use Code Assist API
-        post_process_gemini_code_assist(api_key, model_id, inner_request_body).await?
-    } else {
-        // API key: Use standard Generative Language API
-        post_process_gemini_api_key(api_key, model_id, inner_request_body).await?
-    };
-
-    info!(
-        "Gemini post-processing succeeded for provider '{}'. Output length: {} chars",
-        provider.id,
-        content.len()
-    );
-
-    Ok(Some(content))
-}
-
-/// Gemini post-processing using API key
-async fn post_process_gemini_api_key(
-    api_key: &str,
-    model_id: &str,
-    request_body: serde_json::Value,
-) -> Result<String, String> {
-    let url = format!(
-        "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
-        model_id, api_key
-    );
-
-    let client = reqwest::Client::new();
-    let response = client
-        .post(&url)
-        .header(reqwest::header::CONTENT_TYPE, "application/json")
-        .json(&request_body)
-        .send()
-        .await
-        .map_err(|e| format!("Gemini request failed: {}", e))?;
-
-    let status = response.status();
-    if !status.is_success() {
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("Gemini API error {}: {}", status, body));
-    }
-
-    let res_json: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse Gemini response: {}", e))?;
-
-    res_json["candidates"][0]["content"]["parts"][0]["text"]
-        .as_str()
-        .ok_or_else(|| "No text in Gemini response".to_string())
-        .map(|s| s.to_string())
-}
-
-/// Gemini post-processing using OAuth (Code Assist API)
-async fn post_process_gemini_code_assist(
-    access_token: &str,
-    model_id: &str,
-    inner_request_body: serde_json::Value,
-) -> Result<String, String> {
-    use crate::oauth::google::{
-        build_code_assist_url, ensure_project_id, unwrap_code_assist_response,
-        wrap_request_for_code_assist,
-    };
-
-    // Get or provision project ID
-    let project_id = ensure_project_id(access_token)
-        .await
-        .map_err(|e| format!("Failed to get project ID: {}", e))?;
-
-    info!(
-        "Using Code Assist API for post-processing with project '{}' and model '{}'",
-        project_id, model_id
-    );
-
-    // Build the Code Assist URL
-    let url = build_code_assist_url("generateContent", false);
-
-    // Wrap the request for Code Assist
-    let request_body = wrap_request_for_code_assist(&project_id, model_id, inner_request_body);
-
-    let client = reqwest::Client::new();
-    let response = client
-        .post(&url)
-        .header(reqwest::header::CONTENT_TYPE, "application/json")
-        .header("Authorization", format!("Bearer {}", access_token))
-        .header("User-Agent", "google-api-nodejs-client/9.15.1")
-        .header("X-Goog-Api-Client", "gl-node/22.17.0")
-        .header(
-            "Client-Metadata",
-            "ideType=IDE_UNSPECIFIED,platform=PLATFORM_UNSPECIFIED,pluginType=GEMINI",
-        )
-        .json(&request_body)
-        .send()
-        .await
-        .map_err(|e| format!("Code Assist request failed: {}", e))?;
-
-    let status = response.status();
-    if !status.is_success() {
-        let body = response.text().await.unwrap_or_default();
-        return Err(format!("Code Assist API error {}: {}", status, body));
-    }
-
-    let res_json: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse Code Assist response: {}", e))?;
-
-    // Unwrap the Code Assist response wrapper
-    let unwrapped = unwrap_code_assist_response(res_json)
-        .map_err(|e| format!("Failed to unwrap Code Assist response: {}", e))?;
-
-    unwrapped["candidates"][0]["content"]["parts"][0]["text"]
-        .as_str()
-        .ok_or_else(|| "No text in Code Assist response".to_string())
-        .map(|s| s.to_string())
 }
 
 async fn maybe_convert_chinese_variant(
@@ -1192,7 +855,7 @@ async fn process_ramble_to_coherent(
     };
 
     // Resolve the LLM config using the unified helper
-    let llm_config = resolve_llm_config(settings, model_id)?;
+    let llm_config = resolve_llm_config(settings, model_id).await?;
     let provider = llm_config.provider.clone();
     let model = llm_config.model.model_id.clone();
 
@@ -1754,7 +1417,7 @@ async fn execute_via_llm(
     };
 
     // Resolve the LLM config using the voice command default model
-    let llm_config = resolve_llm_config(settings, model)?;
+    let llm_config = resolve_llm_config(settings, model).await?;
     let provider = llm_config.provider.clone();
     let api_key = llm_config.api_key.clone();
     let api_model = llm_config.model.model_id.clone(); // The actual API model ID (e.g., "gemini-2.5-flash-lite")
@@ -2387,7 +2050,7 @@ async fn process_context_chat(app: &AppHandle, transcription: &str) -> Result<St
         .or(settings.default_chat_model_id.as_ref())
         .ok_or_else(|| "No context chat model configured".to_string())?;
 
-    let llm_config = resolve_llm_config(&settings, model_id)?;
+    let llm_config = resolve_llm_config(&settings, model_id).await?;
     let provider = llm_config.provider.clone();
 
     // Get context

@@ -5,20 +5,18 @@
 //! standard Generative Language API.
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::OnceLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
 
+use super::config::{get_google_client_id, get_google_client_secret};
 use super::pkce::PkceChallenge;
 use super::tokens::{store_tokens, StoredTokens, TokenError};
 use super::OAuthProvider;
 
 /// Google OAuth configuration (Gemini CLI credentials)
-pub const CLIENT_ID: &str =
-    "REDACTED_GOOGLE_OAUTH_CLIENT_ID";
-pub const CLIENT_SECRET: &str = "REDACTED_GOOGLE_OAUTH_CLIENT_SECRET";
 pub const AUTHORIZE_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";
 pub const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 pub const USERINFO_URL: &str = "https://www.googleapis.com/oauth2/v3/userinfo";
@@ -39,12 +37,21 @@ fn get_project_cache() -> &'static Mutex<Option<String>> {
     CACHED_PROJECT_ID.get_or_init(|| Mutex::new(None))
 }
 
+fn client_id() -> Result<String, TokenError> {
+    get_google_client_id()
+}
+
+fn client_secret() -> Result<String, TokenError> {
+    get_google_client_secret()
+}
+
 /// Token response from Google
 #[derive(Debug, Deserialize)]
 struct TokenResponse {
     access_token: String,
     refresh_token: Option<String>,
     expires_in: i64,
+    #[allow(dead_code)]
     token_type: String,
     #[allow(dead_code)]
     scope: Option<String>,
@@ -66,7 +73,8 @@ struct ErrorResponse {
 }
 
 /// Build the Google OAuth authorization URL
-pub fn build_auth_url(pkce: &PkceChallenge, state: &str) -> String {
+pub fn build_auth_url(pkce: &PkceChallenge, state: &str) -> Result<String, TokenError> {
+    let client_id = client_id()?;
     let redirect_uri = OAuthProvider::Google.redirect_uri();
 
     // Encode state with verifier for token exchange
@@ -77,7 +85,7 @@ pub fn build_auth_url(pkce: &PkceChallenge, state: &str) -> String {
     let encoded_state = URL_SAFE_NO_PAD.encode(state_data.to_string().as_bytes());
 
     let params = [
-        ("client_id", CLIENT_ID),
+        ("client_id", client_id.as_str()),
         ("response_type", "code"),
         ("redirect_uri", &redirect_uri),
         ("scope", SCOPES),
@@ -94,7 +102,7 @@ pub fn build_auth_url(pkce: &PkceChallenge, state: &str) -> String {
         .collect::<Vec<_>>()
         .join("&");
 
-    format!("{}?{}", AUTHORIZE_URL, query)
+    Ok(format!("{}?{}", AUTHORIZE_URL, query))
 }
 
 /// Decode the state parameter to extract the original state and verifier
@@ -108,6 +116,8 @@ pub fn decode_state(encoded_state: &str) -> Option<(String, String)> {
 
 /// Exchange authorization code for tokens
 pub async fn exchange_code(code: &str, code_verifier: &str) -> Result<StoredTokens, TokenError> {
+    let client_id = client_id()?;
+    let client_secret = client_secret()?;
     let redirect_uri = OAuthProvider::Google.redirect_uri();
 
     log::info!(
@@ -117,8 +127,8 @@ pub async fn exchange_code(code: &str, code_verifier: &str) -> Result<StoredToke
     );
 
     let params = [
-        ("client_id", CLIENT_ID),
-        ("client_secret", CLIENT_SECRET),
+        ("client_id", client_id.as_str()),
+        ("client_secret", client_secret.as_str()),
         ("code", code),
         ("grant_type", "authorization_code"),
         ("redirect_uri", &redirect_uri),
@@ -189,9 +199,11 @@ pub async fn exchange_code(code: &str, code_verifier: &str) -> Result<StoredToke
 
 /// Refresh the access token using the refresh token
 pub async fn refresh_token(refresh_token: &str) -> Result<StoredTokens, TokenError> {
+    let client_id = client_id()?;
+    let client_secret = client_secret()?;
     let params = [
-        ("client_id", CLIENT_ID),
-        ("client_secret", CLIENT_SECRET),
+        ("client_id", client_id.as_str()),
+        ("client_secret", client_secret.as_str()),
         ("refresh_token", refresh_token),
         ("grant_type", "refresh_token"),
     ];
@@ -295,15 +307,19 @@ pub fn get_request_headers(access_token: &str) -> HashMap<String, String> {
 struct LoadCodeAssistResponse {
     #[serde(rename = "cloudaicompanionProject")]
     cloudaicompanion_project: Option<String>,
+    #[allow(dead_code)]
     #[serde(rename = "currentTier")]
     current_tier: Option<TierInfo>,
+    #[allow(dead_code)]
     #[serde(rename = "allowedTiers")]
     allowed_tiers: Option<Vec<TierInfo>>,
 }
 
 #[derive(Debug, Deserialize)]
 struct TierInfo {
+    #[allow(dead_code)]
     id: Option<String>,
+    #[allow(dead_code)]
     #[serde(rename = "isDefault")]
     is_default: Option<bool>,
 }
@@ -360,13 +376,6 @@ pub async fn ensure_project_id(access_token: &str) -> Result<String, TokenError>
     }
 
     Ok(project_id)
-}
-
-/// Clear the cached project ID (e.g., on logout)
-pub async fn clear_project_cache() {
-    let mut cache = get_project_cache().lock().await;
-    *cache = None;
-    log::debug!("Cleared project cache");
 }
 
 /// Call loadCodeAssist endpoint to check for existing project

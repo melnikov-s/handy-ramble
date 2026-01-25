@@ -3,7 +3,17 @@
     "settings": "設定...",
     "checkUpdates": "アップデートを確認...",
     "quit": "終了",
-    "cancel": "Cancel", "postProcessing": "Post Processing", "dynamic": "Dynamic", "low": "Low", "medium": "Medium", "high": "High", "copyLastTranscription": "Copy Last Transcription", "copyLastVoiceInteraction": "Copy Last Voice Interaction", "voiceInteractions": "Voice Interactions", "speechToText": "Speech to Text", "chats": "Chats", "newChat": "New Chat", "noSavedChats": "No Saved Chats",
+    "cancel": "Cancel",
+    "postProcessing": "Post Processing",
+    "dynamic": "Dynamic",
+    "low": "Low",
+    "medium": "Medium",
+    "high": "High",
+    "copyLastTranscription": "最後の文字起こしをコピー",
+    "copyLastVoiceInteraction": "最後の音声対話をコピー",
+    "chats": "チャット",
+    "newChat": "New Chat",
+    "noSavedChats": "No Saved Chats",
     "postProcessing": "後処理",
     "dynamic": "ダイナミック",
     "low": "低",
@@ -11,7 +21,9 @@
     "high": "高"
   },
   "sidebar": {
-    "ramble": "Ramble to Coherent", "textToSpeech": "Text to Speech", "general": "一般",
+    "ramble": "Ramble to Coherent",
+    "textToSpeech": "Text to Speech",
+    "general": "一般",
     "advanced": "詳細設定",
     "postProcessing": "後処理",
     "history": "履歴",
@@ -82,7 +94,9 @@
     "deleteModel": "{{modelName}}を削除"
   },
   "settings": {
-    "ramble": "Ramble to Coherent", "textToSpeech": "Text to Speech", "general": {
+    "ramble": "Ramble to Coherent",
+    "textToSpeech": "Text to Speech",
+    "general": {
       "title": "一般",
       "shortcut": {
         "title": "Rambleショートカット",
@@ -260,7 +274,17 @@
         "updatePrompt": "プロンプトを更新",
         "deletePrompt": "プロンプトを削除",
         "createPrompt": "プロンプトを作成",
-        "cancel": "Cancel", "postProcessing": "Post Processing", "dynamic": "Dynamic", "low": "Low", "medium": "Medium", "high": "High", "copyLastTranscription": "Copy Last Transcription", "copyLastVoiceInteraction": "Copy Last Voice Interaction", "voiceInteractions": "Voice Interactions", "speechToText": "Speech to Text", "chats": "Chats", "newChat": "New Chat", "noSavedChats": "No Saved Chats",
+        "cancel": "Cancel",
+        "postProcessing": "Post Processing",
+        "dynamic": "Dynamic",
+        "low": "Low",
+        "medium": "Medium",
+        "high": "High",
+        "copyLastTranscription": "最後の文字起こしをコピー",
+        "copyLastVoiceInteraction": "最後の音声対話をコピー",
+        "chats": "チャット",
+        "newChat": "New Chat",
+        "noSavedChats": "No Saved Chats",
         "selectToEdit": "上からプロンプトを選択して、詳細を表示・編集します。",
         "createFirst": "上の「新しいプロンプトを作成」をクリックして、最初の後処理プロンプトを作成してください。"
       }
@@ -390,7 +414,17 @@
   "common": {
     "loading": "読み込み中...",
     "save": "保存",
-    "cancel": "Cancel", "postProcessing": "Post Processing", "dynamic": "Dynamic", "low": "Low", "medium": "Medium", "high": "High", "copyLastTranscription": "Copy Last Transcription", "copyLastVoiceInteraction": "Copy Last Voice Interaction", "voiceInteractions": "Voice Interactions", "speechToText": "Speech to Text", "chats": "Chats", "newChat": "New Chat", "noSavedChats": "No Saved Chats",
+    "cancel": "Cancel",
+    "postProcessing": "Post Processing",
+    "dynamic": "Dynamic",
+    "low": "Low",
+    "medium": "Medium",
+    "high": "High",
+    "copyLastTranscription": "最後の文字起こしをコピー",
+    "copyLastVoiceInteraction": "最後の音声対話をコピー",
+    "chats": "チャット",
+    "newChat": "New Chat",
+    "noSavedChats": "No Saved Chats",
     "reset": "リセット",
     "add": "追加",
     "remove": "削除",
