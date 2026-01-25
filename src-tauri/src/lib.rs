@@ -18,6 +18,7 @@ mod llm_client;
 #[cfg(target_os = "macos")]
 mod macos_input;
 mod managers;
+mod oauth;
 mod overlay;
 mod settings;
 mod shortcut;
@@ -467,6 +468,15 @@ pub fn run() {
         commands::chat_persistence::update_chat_title,
         commands::tts::speak_text,
         commands::tts::stop_tts,
+        // OAuth commands
+        commands::oauth::oauth_start_auth,
+        commands::oauth::oauth_await_callback,
+        commands::oauth::oauth_get_status,
+        commands::oauth::oauth_logout,
+        commands::oauth::oauth_refresh_token,
+        commands::oauth::oauth_get_access_token,
+        commands::oauth::oauth_get_request_headers,
+        commands::oauth::oauth_supports_provider,
     ]);
 
     #[cfg(debug_assertions)] // <- Only export on non-release builds

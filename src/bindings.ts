@@ -1117,7 +1117,7 @@ async getDefaultModels() : Promise<DefaultModels> {
     return await TAURI_INVOKE("get_default_models");
 },
 /**
- * Refresh models for ALL configured providers with API keys
+ * Refresh models for ALL configured providers with API keys or OAuth
  * Returns the complete updated list of models
  */
 async refreshAllModels() : Promise<Result<LLMModel[], string>> {
@@ -1199,6 +1199,94 @@ async stopTts() : Promise<Result<null, string>> {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
 }
+},
+/**
+ * Start the OAuth flow for a provider
+ * 
+ * Returns the authorization URL to open in the browser.
+ */
+async oauthStartAuth(provider: string) : Promise<Result<AuthStartResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("oauth_start_auth", { provider }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Wait for and complete the OAuth callback
+ * 
+ * This should be called after oauth_start_auth. It waits for the callback,
+ * exchanges the code for tokens, and stores them securely.
+ */
+async oauthAwaitCallback(provider: string, state: string) : Promise<Result<AuthResult, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("oauth_await_callback", { provider, state }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Get OAuth status for a provider
+ */
+async oauthGetStatus(provider: string) : Promise<Result<OAuthStatus, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("oauth_get_status", { provider }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Log out from OAuth for a provider
+ */
+async oauthLogout(provider: string) : Promise<Result<null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("oauth_logout", { provider }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Refresh the OAuth token for a provider
+ */
+async oauthRefreshToken(provider: string) : Promise<Result<boolean, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("oauth_refresh_token", { provider }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Get current access token for a provider (for making API calls)
+ */
+async oauthGetAccessToken(provider: string) : Promise<Result<string | null, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("oauth_get_access_token", { provider }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Get request headers for making authenticated API calls
+ */
+async oauthGetRequestHeaders(provider: string) : Promise<Result<Partial<{ [key in string]: string }>, string>> {
+    try {
+    return { status: "ok", data: await TAURI_INVOKE("oauth_get_request_headers", { provider }) };
+} catch (e) {
+    if(e instanceof Error) throw e;
+    else return { status: "error", error: e  as any };
+}
+},
+/**
+ * Check if OAuth is supported for a provider ID
+ */
+async oauthSupportsProvider(providerId: string) : Promise<boolean> {
+    return await TAURI_INVOKE("oauth_supports_provider", { providerId });
 }
 }
 
@@ -1328,6 +1416,46 @@ default_context_chat_model_id?: string | null;
  */
 system_prompt_file?: string | null }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
+/**
+ * Authentication method for LLM providers
+ */
+export type AuthMethod = 
+/**
+ * API key authentication (default)
+ */
+"api_key" | 
+/**
+ * OAuth 2.0 authentication (supported by Google and OpenAI)
+ */
+"oauth"
+/**
+ * Result of completing the OAuth flow
+ */
+export type AuthResult = { 
+/**
+ * Whether authentication was successful
+ */
+success: boolean; 
+/**
+ * User's email (if available)
+ */
+email: string | null; 
+/**
+ * Error message (if authentication failed)
+ */
+error: string | null }
+/**
+ * Result of starting the OAuth flow
+ */
+export type AuthStartResult = { 
+/**
+ * The URL to open in the browser for user authentication
+ */
+auth_url: string; 
+/**
+ * The state parameter for CSRF protection
+ */
+state: string }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
 export type ChatMessage = { role: string; content: string; images: string[] | null }
 export type ChatResponse = { content: string; grounding_metadata: GroundingMetadata | null }
@@ -1412,11 +1540,35 @@ supports_vision?: boolean;
 /**
  * Whether this is a user-added custom provider vs preset
  */
-is_custom?: boolean }
+is_custom?: boolean; 
+/**
+ * Authentication method (API key or OAuth)
+ */
+auth_method?: AuthMethod; 
+/**
+ * Whether this provider supports OAuth authentication
+ */
+supports_oauth?: boolean }
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
 export type ModelInfo = { id: string; name: string; description: string; filename: string; url: string | null; size_mb: number; is_downloaded: boolean; is_downloading: boolean; partial_size: number; is_directory: boolean; engine_type: EngineType; accuracy_score: number; speed_score: number }
 export type ModelLoadStatus = { is_loaded: boolean; current_model: string | null }
 export type ModelUnloadTimeout = "never" | "immediately" | "min_2" | "min_5" | "min_10" | "min_15" | "hour_1" | "sec_5"
+/**
+ * OAuth status for a provider
+ */
+export type OAuthStatus = { 
+/**
+ * Whether the user is authenticated
+ */
+authenticated: boolean; 
+/**
+ * User's email (if available and authenticated)
+ */
+email: string | null; 
+/**
+ * Token expiration timestamp (Unix seconds)
+ */
+expires_at: number | null }
 export type OverlayPosition = "none" | "top" | "bottom"
 export type PasteMethod = "ctrl_v" | "direct" | "none" | "shift_insert" | "ctrl_shift_v"
 /**

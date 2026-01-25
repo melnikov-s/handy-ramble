@@ -25,13 +25,20 @@ export const ModelsDropdown: React.FC<ModelsDropdownProps> = ({
 }) => {
   const { settings, isLoading } = useSettings();
 
-  // Filter for enabled models, deduplicate, and ensure provider has API key
+  // Filter for enabled models, deduplicate, and ensure provider is configured
   const providers = settings?.llm_providers || [];
   const models = settings?.llm_models || [];
 
   const configuredProviderIds = new Set(
     providers
-      .filter((p) => p.api_key && p.api_key.trim() !== "")
+      .filter((p) => {
+        const extProvider = p as typeof p & { auth_method?: string };
+        // Provider is configured if it has API key OR uses OAuth
+        return (
+          (p.api_key && p.api_key.trim() !== "") ||
+          extProvider.auth_method === "oauth"
+        );
+      })
       .map((p) => p.id),
   );
   const enabledModels = models.filter(

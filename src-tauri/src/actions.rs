@@ -44,6 +44,7 @@ pub struct ResolvedLLMConfig {
 
 /// Resolve LLM configuration from a model ID
 /// Returns the provider, model, and API key needed to make an LLM call
+/// Supports both API key and OAuth authentication methods
 pub fn resolve_llm_config(
     settings: &AppSettings,
     model_id: &str,
@@ -63,15 +64,11 @@ pub fn resolve_llm_config(
             )
         })?;
 
-    if provider.api_key.is_empty() {
-        return Err(format!(
-            "No API key configured for provider '{}'",
-            provider.name
-        ));
-    }
+    // Get API key or OAuth token using the OAuth-aware helper
+    let api_key = crate::llm_client::get_api_key_for_provider(&provider)?;
 
     Ok(ResolvedLLMConfig {
-        api_key: provider.api_key.clone(),
+        api_key,
         provider,
         model,
     })
@@ -282,7 +279,18 @@ async fn maybe_post_process_transcription(
         }
     }
 
-    // Create OpenAI-compatible client
+    // Use native Gemini API for Gemini providers (supports OAuth and grounding)
+    if provider.id == "gemini" || provider.id == "gemini_oauth" {
+        return post_process_gemini_native(
+            &provider,
+            &llm_config.api_key,
+            &model,
+            &processed_prompt,
+        )
+        .await;
+    }
+
+    // Create OpenAI-compatible client for other providers
     let client = match crate::llm_client::create_client(&provider, llm_config.api_key.clone()) {
         Ok(client) => client,
         Err(e) => {
@@ -348,6 +356,147 @@ async fn maybe_post_process_transcription(
             Err(error_msg)
         }
     }
+}
+
+/// Native Gemini API call for post-processing (supports OAuth and grounding)
+async fn post_process_gemini_native(
+    provider: &crate::settings::LLMProvider,
+    api_key: &str,
+    model_id: &str,
+    prompt: &str,
+) -> Result<Option<String>, String> {
+    use crate::settings::AuthMethod;
+
+    let contents = vec![serde_json::json!({
+        "role": "user",
+        "parts": [{ "text": prompt }]
+    })];
+
+    // Enable grounding (web search) for all Gemini post-processing
+    let inner_request_body = serde_json::json!({
+        "contents": contents,
+        "tools": [{
+            "google_search": {}
+        }]
+    });
+
+    // Branch based on auth method
+    let content = if provider.auth_method == AuthMethod::OAuth {
+        // OAuth: Use Code Assist API
+        post_process_gemini_code_assist(api_key, model_id, inner_request_body).await?
+    } else {
+        // API key: Use standard Generative Language API
+        post_process_gemini_api_key(api_key, model_id, inner_request_body).await?
+    };
+
+    info!(
+        "Gemini post-processing succeeded for provider '{}'. Output length: {} chars",
+        provider.id,
+        content.len()
+    );
+
+    Ok(Some(content))
+}
+
+/// Gemini post-processing using API key
+async fn post_process_gemini_api_key(
+    api_key: &str,
+    model_id: &str,
+    request_body: serde_json::Value,
+) -> Result<String, String> {
+    let url = format!(
+        "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+        model_id, api_key
+    );
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&url)
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .json(&request_body)
+        .send()
+        .await
+        .map_err(|e| format!("Gemini request failed: {}", e))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("Gemini API error {}: {}", status, body));
+    }
+
+    let res_json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse Gemini response: {}", e))?;
+
+    res_json["candidates"][0]["content"]["parts"][0]["text"]
+        .as_str()
+        .ok_or_else(|| "No text in Gemini response".to_string())
+        .map(|s| s.to_string())
+}
+
+/// Gemini post-processing using OAuth (Code Assist API)
+async fn post_process_gemini_code_assist(
+    access_token: &str,
+    model_id: &str,
+    inner_request_body: serde_json::Value,
+) -> Result<String, String> {
+    use crate::oauth::google::{
+        build_code_assist_url, ensure_project_id, unwrap_code_assist_response,
+        wrap_request_for_code_assist,
+    };
+
+    // Get or provision project ID
+    let project_id = ensure_project_id(access_token)
+        .await
+        .map_err(|e| format!("Failed to get project ID: {}", e))?;
+
+    info!(
+        "Using Code Assist API for post-processing with project '{}' and model '{}'",
+        project_id, model_id
+    );
+
+    // Build the Code Assist URL
+    let url = build_code_assist_url("generateContent", false);
+
+    // Wrap the request for Code Assist
+    let request_body = wrap_request_for_code_assist(&project_id, model_id, inner_request_body);
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&url)
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .header("Authorization", format!("Bearer {}", access_token))
+        .header("User-Agent", "google-api-nodejs-client/9.15.1")
+        .header("X-Goog-Api-Client", "gl-node/22.17.0")
+        .header(
+            "Client-Metadata",
+            "ideType=IDE_UNSPECIFIED,platform=PLATFORM_UNSPECIFIED,pluginType=GEMINI",
+        )
+        .json(&request_body)
+        .send()
+        .await
+        .map_err(|e| format!("Code Assist request failed: {}", e))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        return Err(format!("Code Assist API error {}: {}", status, body));
+    }
+
+    let res_json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse Code Assist response: {}", e))?;
+
+    // Unwrap the Code Assist response wrapper
+    let unwrapped = unwrap_code_assist_response(res_json)
+        .map_err(|e| format!("Failed to unwrap Code Assist response: {}", e))?;
+
+    unwrapped["candidates"][0]["content"]["parts"][0]["text"]
+        .as_str()
+        .ok_or_else(|| "No text in Code Assist response".to_string())
+        .map(|s| s.to_string())
 }
 
 async fn maybe_convert_chinese_variant(

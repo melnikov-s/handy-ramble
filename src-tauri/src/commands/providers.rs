@@ -77,6 +77,8 @@ pub fn save_llm_provider(app: AppHandle, provider: LLMProvider) -> Result<LLMPro
         existing.base_url = provider.base_url.clone();
         existing.api_key = provider.api_key.clone();
         existing.supports_vision = provider.supports_vision;
+        existing.auth_method = provider.auth_method;
+        existing.supports_oauth = provider.supports_oauth;
         // Don't update is_custom - preserve the original value
     } else {
         // Add new provider

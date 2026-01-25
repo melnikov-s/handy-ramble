@@ -85,6 +85,23 @@ espeak-rs = "0.1.9"
 kokorox = "0.1.5"
 tauri-plugin-dialog = "2.6.0"
 
+# OAuth dependencies
+sha2 = "0.10"
+rand = "0.8"
+tiny_http = "0.12"
+
+[target.'cfg(target_os = "macos")'.dependencies.keyring]
+version = "3"
+features = ["apple-native"]
+
+[target.'cfg(target_os = "windows")'.dependencies.keyring]
+version = "3"
+features = ["windows-native"]
+
+[target.'cfg(target_os = "linux")'.dependencies.keyring]
+version = "3"
+features = ["linux-native"]
+
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.3"
 

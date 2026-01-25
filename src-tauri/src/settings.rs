@@ -92,6 +92,18 @@ pub struct LLMPrompt {
     pub prompt: String,
 }
 
+/// Authentication method for LLM providers
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Type, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AuthMethod {
+    /// API key authentication (default)
+    #[default]
+    ApiKey,
+    /// OAuth 2.0 authentication (supported by Google and OpenAI)
+    #[serde(rename = "oauth")]
+    OAuth,
+}
+
 /// Unified LLM provider configuration
 /// Supports OpenAI, Anthropic, Gemini, OpenRouter, and custom enterprise proxies
 #[derive(Serialize, Deserialize, Debug, Clone, Type)]
@@ -111,6 +123,12 @@ pub struct LLMProvider {
     /// Whether this is a user-added custom provider vs preset
     #[serde(default)]
     pub is_custom: bool,
+    /// Authentication method (API key or OAuth)
+    #[serde(default)]
+    pub auth_method: AuthMethod,
+    /// Whether this provider supports OAuth authentication
+    #[serde(default)]
+    pub supports_oauth: bool,
 }
 
 /// Model configuration for a specific provider
@@ -1118,6 +1136,7 @@ ${output}
 
 fn default_llm_providers() -> Vec<LLMProvider> {
     let mut providers = vec![
+        // API Key providers (original)
         LLMProvider {
             id: "openai".to_string(),
             name: "OpenAI".to_string(),
@@ -1125,6 +1144,8 @@ fn default_llm_providers() -> Vec<LLMProvider> {
             api_key: String::new(),
             supports_vision: true,
             is_custom: false,
+            auth_method: AuthMethod::ApiKey,
+            supports_oauth: false,
         },
         LLMProvider {
             id: "anthropic".to_string(),
@@ -1133,6 +1154,8 @@ fn default_llm_providers() -> Vec<LLMProvider> {
             api_key: String::new(),
             supports_vision: true,
             is_custom: false,
+            auth_method: AuthMethod::ApiKey,
+            supports_oauth: false,
         },
         LLMProvider {
             id: "gemini".to_string(),
@@ -1141,6 +1164,29 @@ fn default_llm_providers() -> Vec<LLMProvider> {
             api_key: String::new(),
             supports_vision: true,
             is_custom: false,
+            auth_method: AuthMethod::ApiKey,
+            supports_oauth: false,
+        },
+        // OAuth providers (new - separate from API key providers)
+        LLMProvider {
+            id: "openai_oauth".to_string(),
+            name: "OpenAI (OAuth)".to_string(),
+            base_url: "https://api.openai.com/v1".to_string(),
+            api_key: String::new(),
+            supports_vision: true,
+            is_custom: false,
+            auth_method: AuthMethod::OAuth,
+            supports_oauth: true,
+        },
+        LLMProvider {
+            id: "gemini_oauth".to_string(),
+            name: "Google Gemini (OAuth)".to_string(),
+            base_url: "https://generativelanguage.googleapis.com/v1beta/openai".to_string(),
+            api_key: String::new(),
+            supports_vision: true,
+            is_custom: false,
+            auth_method: AuthMethod::OAuth,
+            supports_oauth: true,
         },
     ];
 
@@ -1154,6 +1200,8 @@ fn default_llm_providers() -> Vec<LLMProvider> {
                 api_key: String::new(),
                 supports_vision: false,
                 is_custom: false,
+                auth_method: AuthMethod::ApiKey,
+                supports_oauth: false,
             });
         }
     }

@@ -4,6 +4,7 @@ pub mod chat_persistence;
 pub mod fetch_models;
 pub mod history;
 pub mod models;
+pub mod oauth;
 pub mod providers;
 pub mod transcription;
 pub mod tts;

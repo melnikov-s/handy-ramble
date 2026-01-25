@@ -1,4 +1,4 @@
-use crate::llm_client::create_client;
+use crate::llm_client::{create_client, get_api_key_for_provider};
 use crate::settings::{get_settings, get_system_prompt_content};
 use async_openai::types::{
     ChatCompletionRequestMessage, ChatCompletionRequestSystemMessageArgs,
@@ -66,19 +66,16 @@ pub async fn chat_completion(
         )
     })?;
 
-    // Get API key from provider
-    if provider.api_key.is_empty() {
-        return Err(format!(
-            "No API key configured for provider: {}",
-            provider.name
-        ));
-    }
+    // Get API key or OAuth token using the OAuth-aware helper
+    let api_key = get_api_key_for_provider(provider)?;
 
     // Use Gemini native API for all Gemini models (supports grounding)
-    if provider.id == "gemini" {
+    // Handle both "gemini" (API key) and "gemini_oauth" (OAuth) providers
+    if provider.id == "gemini" || provider.id == "gemini_oauth" {
         return chat_completion_gemini_native(
             &app,
             provider,
+            &api_key,
             &model.model_id,
             messages,
             enable_grounding,
@@ -91,6 +88,7 @@ pub async fn chat_completion(
         return chat_completion_anthropic_native(
             &app,
             provider,
+            &api_key,
             &model.model_id,
             messages,
             enable_grounding,
@@ -99,7 +97,7 @@ pub async fn chat_completion(
     }
 
     // Create the client
-    let client = create_client(provider, provider.api_key.clone())?;
+    let client = create_client(provider, api_key.clone())?;
 
     // Convert messages to OpenAI format
     let mut openai_messages: Vec<ChatCompletionRequestMessage> = Vec::new();
@@ -221,14 +219,12 @@ pub async fn chat_completion(
 async fn chat_completion_gemini_native(
     app: &AppHandle,
     provider: &crate::settings::LLMProvider,
+    api_key: &str,
     model_id: &str,
     messages: Vec<ChatMessage>,
     enable_grounding: bool,
 ) -> Result<ChatResponse, String> {
-    let url = format!(
-        "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
-        model_id, provider.api_key
-    );
+    use crate::settings::AuthMethod;
 
     let mut contents = Vec::new();
 
@@ -287,7 +283,7 @@ async fn chat_completion_gemini_native(
         }));
     }
 
-    let request_body = if enable_grounding {
+    let inner_request_body = if enable_grounding {
         serde_json::json!({
             "contents": contents,
             "tools": [{
@@ -299,6 +295,27 @@ async fn chat_completion_gemini_native(
             "contents": contents
         })
     };
+
+    // Branch based on auth method
+    if provider.auth_method == AuthMethod::OAuth {
+        // OAuth: Use Code Assist API
+        chat_completion_gemini_code_assist(api_key, model_id, inner_request_body).await
+    } else {
+        // API key: Use standard Generative Language API
+        chat_completion_gemini_api_key(api_key, model_id, inner_request_body).await
+    }
+}
+
+/// Gemini API call using API key (standard Generative Language API)
+async fn chat_completion_gemini_api_key(
+    api_key: &str,
+    model_id: &str,
+    request_body: serde_json::Value,
+) -> Result<ChatResponse, String> {
+    let url = format!(
+        "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+        model_id, api_key
+    );
 
     let client = reqwest::Client::new();
     let response = client
@@ -320,6 +337,76 @@ async fn chat_completion_gemini_native(
         .await
         .map_err(|e| format!("Failed to parse response: {}", e))?;
 
+    parse_gemini_response(res_json)
+}
+
+/// Gemini API call using OAuth (Code Assist API)
+async fn chat_completion_gemini_code_assist(
+    access_token: &str,
+    model_id: &str,
+    inner_request_body: serde_json::Value,
+) -> Result<ChatResponse, String> {
+    use crate::oauth::google::{
+        build_code_assist_url, ensure_project_id, unwrap_code_assist_response,
+        wrap_request_for_code_assist,
+    };
+
+    // Get or provision project ID
+    let project_id = ensure_project_id(access_token)
+        .await
+        .map_err(|e| format!("Failed to get project ID: {}", e))?;
+
+    // Build the Code Assist URL
+    let url = build_code_assist_url("generateContent", false);
+
+    // Wrap the request for Code Assist
+    let request_body = wrap_request_for_code_assist(&project_id, model_id, inner_request_body);
+
+    log::info!(
+        "Code Assist API request:\n  URL: {}\n  Project: {}\n  Model: {}\n  Body: {}",
+        url,
+        project_id,
+        model_id,
+        serde_json::to_string_pretty(&request_body).unwrap_or_default()
+    );
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post(&url)
+        .header(reqwest::header::CONTENT_TYPE, "application/json")
+        .header("Authorization", format!("Bearer {}", access_token))
+        .header("User-Agent", "google-api-nodejs-client/9.15.1")
+        .header("X-Goog-Api-Client", "gl-node/22.17.0")
+        .header(
+            "Client-Metadata",
+            "ideType=IDE_UNSPECIFIED,platform=PLATFORM_UNSPECIFIED,pluginType=GEMINI",
+        )
+        .json(&request_body)
+        .send()
+        .await
+        .map_err(|e| format!("Code Assist request failed: {}", e))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        let body = response.text().await.unwrap_or_default();
+        log::error!("Code Assist API error: status={}, body={}", status, body);
+        return Err(format!("Code Assist API error {}: {}", status, body));
+    }
+
+    let res_json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse Code Assist response: {}", e))?;
+
+    // Unwrap the Code Assist response wrapper
+    let unwrapped = unwrap_code_assist_response(res_json)
+        .map_err(|e| format!("Failed to unwrap Code Assist response: {}", e))?;
+
+    parse_gemini_response(unwrapped)
+}
+
+/// Parse a standard Gemini API response (works for both API key and Code Assist)
+fn parse_gemini_response(res_json: serde_json::Value) -> Result<ChatResponse, String> {
     let candidate = &res_json["candidates"][0];
     let content = candidate["content"]["parts"][0]["text"]
         .as_str()
@@ -363,6 +450,7 @@ async fn chat_completion_gemini_native(
 async fn chat_completion_anthropic_native(
     app: &AppHandle,
     provider: &crate::settings::LLMProvider,
+    api_key: &str,
     model_id: &str,
     messages: Vec<ChatMessage>,
     enable_grounding: bool,
@@ -437,7 +525,7 @@ async fn chat_completion_anthropic_native(
     let response = client
         .post(&url)
         .header(reqwest::header::CONTENT_TYPE, "application/json")
-        .header("x-api-key", &provider.api_key)
+        .header("x-api-key", api_key)
         .header("anthropic-version", "2023-06-01")
         .json(&request_body)
         .send()

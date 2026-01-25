@@ -600,6 +600,11 @@ pub async fn fetch_post_process_models(
     app: AppHandle,
     provider_id: String,
 ) -> Result<Vec<String>, String> {
+    log::info!(
+        "fetch_post_process_models: called with provider_id={}",
+        provider_id
+    );
+
     let settings = settings::get_settings(&app);
 
     // Find the provider in unified llm_providers
@@ -607,33 +612,90 @@ pub async fn fetch_post_process_models(
         .llm_providers
         .iter()
         .find(|p| p.id == provider_id)
-        .ok_or_else(|| format!("Provider '{}' not found", provider_id))?;
+        .ok_or_else(|| {
+            log::error!(
+                "fetch_post_process_models: provider '{}' not found",
+                provider_id
+            );
+            format!("Provider '{}' not found", provider_id)
+        })?;
+
+    log::info!(
+        "fetch_post_process_models: found provider id={}, name={}, auth_method={:?}, supports_oauth={}",
+        provider.id,
+        provider.name,
+        provider.auth_method,
+        provider.supports_oauth
+    );
 
     if provider.id == APPLE_INTELLIGENCE_PROVIDER_ID {
         #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
         {
+            log::info!("fetch_post_process_models: returning Apple Intelligence model");
             return Ok(vec![APPLE_INTELLIGENCE_DEFAULT_MODEL_ID.to_string()]);
         }
 
         #[cfg(not(all(target_os = "macos", target_arch = "aarch64")))]
         {
+            log::error!(
+                "fetch_post_process_models: Apple Intelligence not available on this platform"
+            );
             return Err("Apple Intelligence is only available on Apple silicon Macs running macOS 15 or later.".to_string());
         }
     }
 
-    // Get API key from provider
-    let api_key = provider.api_key.clone();
-
-    // Skip fetching if no API key for providers that typically need one
-    if api_key.trim().is_empty() && !provider.is_custom {
-        return Err(format!(
-            "API key is required for {}. Please add an API key to list available models.",
-            provider.name
-        ));
+    // For OAuth providers, return hardcoded models (API fetching requires scopes we don't have)
+    if provider.auth_method == crate::settings::AuthMethod::OAuth {
+        log::info!(
+            "fetch_post_process_models: returning hardcoded models for OAuth provider {}",
+            provider.id
+        );
+        return Ok(get_hardcoded_oauth_models(&provider.id));
     }
 
+    // Get API key for API key providers
+    log::info!("fetch_post_process_models: getting API key for provider");
+    let api_key = match crate::llm_client::get_api_key_for_provider(provider) {
+        Ok(key) => {
+            log::info!(
+                "fetch_post_process_models: got API key (length={})",
+                key.len()
+            );
+            key
+        }
+        Err(e) => {
+            log::error!("fetch_post_process_models: failed to get API key: {}", e);
+            return Err(e);
+        }
+    };
+
     // For now, use manual HTTP request to have more control over the endpoint
+    log::info!("fetch_post_process_models: calling fetch_models_manual");
     fetch_models_manual(provider, api_key).await
+}
+
+/// Get hardcoded models for OAuth providers
+fn get_hardcoded_oauth_models(provider_id: &str) -> Vec<String> {
+    match provider_id {
+        "openai_oauth" => vec![
+            "gpt-5.2".to_string(),
+            "gpt-5.2-mini".to_string(),
+            "gpt-5.2-nano".to_string(),
+        ],
+        "gemini_oauth" => vec![
+            "gemini-2.5-flash".to_string(),
+            "gemini-2.5-pro".to_string(),
+            "gemini-3-flash-preview".to_string(),
+            "gemini-3-pro-preview".to_string(),
+        ],
+        _ => {
+            log::warn!(
+                "get_hardcoded_oauth_models: unknown OAuth provider {}, returning empty list",
+                provider_id
+            );
+            vec![]
+        }
+    }
 }
 
 /// Fetch models using manual HTTP request
@@ -642,10 +704,51 @@ async fn fetch_models_manual(
     provider: &crate::settings::LLMProvider,
     api_key: String,
 ) -> Result<Vec<String>, String> {
-    // Build the endpoint URL - use standard /models for most providers
-    let base_url = provider.base_url.trim_end_matches('/');
-    let models_endpoint = "models";
-    let endpoint = format!("{}/{}", base_url, models_endpoint);
+    use crate::oauth::{google, openai as openai_oauth, tokens::load_tokens, OAuthProvider};
+    use crate::settings::AuthMethod;
+
+    log::info!(
+        "fetch_models_manual: starting for provider id={}, auth_method={:?}",
+        provider.id,
+        provider.auth_method
+    );
+
+    // Build the endpoint URL
+    // Gemini uses a different endpoint for listing models than other OpenAI-compatible APIs
+    let endpoint = if provider.id == "gemini" || provider.id == "gemini_oauth" {
+        // Gemini native API for listing models
+        if provider.auth_method == AuthMethod::OAuth {
+            // OAuth: use bearer token, no key in URL
+            log::info!("fetch_models_manual: using Gemini OAuth endpoint");
+            "https://generativelanguage.googleapis.com/v1beta/models".to_string()
+        } else {
+            // API key: include key in URL
+            log::info!("fetch_models_manual: using Gemini API key endpoint");
+            format!(
+                "https://generativelanguage.googleapis.com/v1beta/models?key={}",
+                api_key
+            )
+        }
+    } else {
+        // Standard OpenAI-compatible endpoint
+        let base_url = provider.base_url.trim_end_matches('/');
+        log::info!(
+            "fetch_models_manual: using OpenAI-compatible endpoint: {}/models",
+            base_url
+        );
+        format!("{}/models", base_url)
+    };
+
+    log::info!(
+        "fetch_models_manual: endpoint URL: {}",
+        if provider.auth_method == AuthMethod::ApiKey
+            && (provider.id == "gemini" || provider.id == "gemini_oauth")
+        {
+            "https://generativelanguage.googleapis.com/v1beta/models?key=***"
+        } else {
+            &endpoint
+        }
+    );
 
     // Create HTTP client with headers
     let mut headers = reqwest::header::HeaderMap::new();
@@ -658,8 +761,61 @@ async fn fetch_models_manual(
         reqwest::header::HeaderValue::from_static("Ramble"),
     );
 
-    // Add provider-specific headers
-    if provider.id == "anthropic" {
+    // Add provider-specific headers based on auth method
+    if provider.auth_method == AuthMethod::OAuth {
+        log::info!("fetch_models_manual: adding OAuth headers");
+        // OAuth authentication - add provider-specific OAuth headers
+        if let Some(oauth_provider) = OAuthProvider::from_str(&provider.id) {
+            log::info!("fetch_models_manual: OAuth provider: {:?}", oauth_provider);
+            match oauth_provider {
+                OAuthProvider::Google => {
+                    log::info!("fetch_models_manual: adding Google OAuth headers");
+                    let oauth_headers = google::get_request_headers(&api_key);
+                    log::info!(
+                        "fetch_models_manual: Google headers count: {}",
+                        oauth_headers.len()
+                    );
+                    for (key, value) in oauth_headers {
+                        log::debug!(
+                            "fetch_models_manual: adding header {}: {}",
+                            key,
+                            if key.to_lowercase() == "authorization" {
+                                "***"
+                            } else {
+                                &value
+                            }
+                        );
+                        if let (Ok(header_name), Ok(header_value)) = (
+                            reqwest::header::HeaderName::from_bytes(key.as_bytes()),
+                            reqwest::header::HeaderValue::from_str(&value),
+                        ) {
+                            headers.insert(header_name, header_value);
+                        }
+                    }
+                }
+                OAuthProvider::OpenAI => {
+                    log::info!("fetch_models_manual: adding OpenAI OAuth headers");
+                    if let Ok(tokens) = load_tokens(oauth_provider) {
+                        let oauth_headers = openai_oauth::get_request_headers(&tokens);
+                        for (key, value) in oauth_headers {
+                            if let (Ok(header_name), Ok(header_value)) = (
+                                reqwest::header::HeaderName::from_bytes(key.as_bytes()),
+                                reqwest::header::HeaderValue::from_str(&value),
+                            ) {
+                                headers.insert(header_name, header_value);
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            log::warn!(
+                "fetch_models_manual: could not determine OAuth provider for {}",
+                provider.id
+            );
+        }
+    } else if provider.id == "anthropic" {
+        // Anthropic API key authentication
         if !api_key.is_empty() {
             headers.insert(
                 "x-api-key",
@@ -672,6 +828,7 @@ async fn fetch_models_manual(
             reqwest::header::HeaderValue::from_static("2023-06-01"),
         );
     } else if !api_key.is_empty() {
+        // Standard Bearer token authentication
         headers.insert(
             "Authorization",
             reqwest::header::HeaderValue::from_str(&format!("Bearer {}", api_key))
@@ -682,21 +839,31 @@ async fn fetch_models_manual(
     let http_client = reqwest::Client::builder()
         .default_headers(headers)
         .build()
-        .map_err(|e| format!("Failed to build HTTP client: {}", e))?;
+        .map_err(|e| {
+            log::error!("fetch_models_manual: failed to build HTTP client: {}", e);
+            format!("Failed to build HTTP client: {}", e)
+        })?;
 
     // Make the request
-    let response = http_client
-        .get(&endpoint)
-        .send()
-        .await
-        .map_err(|e| format!("Failed to fetch models: {}", e))?;
+    log::info!("fetch_models_manual: sending HTTP request...");
+    let response = http_client.get(&endpoint).send().await.map_err(|e| {
+        log::error!("fetch_models_manual: HTTP request failed: {}", e);
+        format!("Failed to fetch models: {}", e)
+    })?;
 
-    if !response.status().is_success() {
-        let status = response.status();
+    let status = response.status();
+    log::info!("fetch_models_manual: got response with status {}", status);
+
+    if !status.is_success() {
         let error_text = response
             .text()
             .await
             .unwrap_or_else(|_| "Unknown error".to_string());
+        log::error!(
+            "fetch_models_manual: request failed with status {}: {}",
+            status,
+            error_text
+        );
         return Err(format!(
             "Model list request failed ({}): {}",
             status, error_text
@@ -704,15 +871,29 @@ async fn fetch_models_manual(
     }
 
     // Parse the response
-    let parsed: serde_json::Value = response
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse response: {}", e))?;
+    let response_text = response.text().await.map_err(|e| {
+        log::error!("fetch_models_manual: failed to read response body: {}", e);
+        format!("Failed to read response: {}", e)
+    })?;
+
+    log::debug!(
+        "fetch_models_manual: response body (first 500 chars): {}",
+        &response_text.chars().take(500).collect::<String>()
+    );
+
+    let parsed: serde_json::Value = serde_json::from_str(&response_text).map_err(|e| {
+        log::error!("fetch_models_manual: failed to parse JSON response: {}", e);
+        format!("Failed to parse response: {}", e)
+    })?;
 
     let mut models = Vec::new();
 
     // Handle OpenAI format: { data: [ { id: "..." }, ... ] }
     if let Some(data) = parsed.get("data").and_then(|d| d.as_array()) {
+        log::info!(
+            "fetch_models_manual: parsing OpenAI format response with {} entries",
+            data.len()
+        );
         for entry in data {
             if let Some(id) = entry.get("id").and_then(|i| i.as_str()) {
                 models.push(id.to_string());
@@ -721,15 +902,59 @@ async fn fetch_models_manual(
             }
         }
     }
+    // Handle Gemini format: { models: [ { name: "models/gemini-1.5-flash", ... }, ... ] }
+    else if let Some(gemini_models) = parsed.get("models").and_then(|m| m.as_array()) {
+        log::info!(
+            "fetch_models_manual: parsing Gemini format response with {} entries",
+            gemini_models.len()
+        );
+        for entry in gemini_models {
+            if let Some(name) = entry.get("name").and_then(|n| n.as_str()) {
+                // Extract model ID from "models/gemini-1.5-flash" format
+                let model_id = name.strip_prefix("models/").unwrap_or(name);
+                // Only include models that support generateContent
+                if let Some(methods) = entry
+                    .get("supportedGenerationMethods")
+                    .and_then(|m| m.as_array())
+                {
+                    if methods
+                        .iter()
+                        .any(|m| m.as_str() == Some("generateContent"))
+                    {
+                        models.push(model_id.to_string());
+                    } else {
+                        log::debug!(
+                            "fetch_models_manual: skipping model {} (no generateContent support)",
+                            model_id
+                        );
+                    }
+                } else {
+                    log::debug!(
+                        "fetch_models_manual: skipping model {} (no supportedGenerationMethods)",
+                        model_id
+                    );
+                }
+            }
+        }
+    }
     // Handle array format: [ "model1", "model2", ... ]
     else if let Some(array) = parsed.as_array() {
+        log::info!(
+            "fetch_models_manual: parsing array format response with {} entries",
+            array.len()
+        );
         for entry in array {
             if let Some(model) = entry.as_str() {
                 models.push(model.to_string());
             }
         }
+    } else {
+        log::warn!(
+            "fetch_models_manual: unknown response format, could not find data/models/array"
+        );
     }
 
+    log::info!("fetch_models_manual: returning {} models", models.len());
     Ok(models)
 }
 

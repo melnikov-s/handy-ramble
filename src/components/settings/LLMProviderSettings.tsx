@@ -8,26 +8,51 @@ import { SettingContainer } from "../ui/SettingContainer";
 import { Button } from "../ui/Button";
 import { ModelsDropdown } from "../ui/ModelsDropdown";
 import { useSettings } from "../../hooks/useSettings";
+import { ProviderAuth, OAuthStatusBadge } from "./ProviderAuth";
+import { useOAuth } from "../../hooks/useOAuth";
 
 // Known provider presets (models are fetched dynamically via API)
+// API key providers and OAuth providers are separate entries
 const PROVIDER_PRESETS: Record<
   string,
   {
     name: string;
     base_url: string;
+    supports_oauth: boolean;
+    auth_method: "api_key" | "oauth";
   }
 > = {
+  // API Key providers (original)
   openai: {
     name: "OpenAI",
     base_url: "https://api.openai.com/v1",
+    supports_oauth: false,
+    auth_method: "api_key",
   },
   anthropic: {
     name: "Anthropic",
     base_url: "https://api.anthropic.com/v1",
+    supports_oauth: false,
+    auth_method: "api_key",
   },
   gemini: {
     name: "Google Gemini",
     base_url: "https://generativelanguage.googleapis.com/v1beta/openai",
+    supports_oauth: false,
+    auth_method: "api_key",
+  },
+  // OAuth providers (new - separate from API key providers)
+  openai_oauth: {
+    name: "OpenAI (OAuth)",
+    base_url: "https://api.openai.com/v1",
+    supports_oauth: true,
+    auth_method: "oauth",
+  },
+  gemini_oauth: {
+    name: "Google Gemini (OAuth)",
+    base_url: "https://generativelanguage.googleapis.com/v1beta/openai",
+    supports_oauth: true,
+    auth_method: "oauth",
   },
 };
 
@@ -64,11 +89,40 @@ const ProviderDialog: React.FC<ProviderDialogProps> = ({
   const [customName, setCustomName] = useState("");
   const [customUrl, setCustomUrl] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [authMethod, setAuthMethod] = useState<"api_key" | "oauth">("api_key");
   const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set());
   const [customModels, setCustomModels] = useState("");
   const [isFetchingModels, setIsFetchingModels] = useState(false);
   const [fetchedModels, setFetchedModels] = useState<string[]>([]);
   const [fetchError, setFetchError] = useState<string | null>(null);
+
+  // Get OAuth status for the current provider
+  const currentProviderId =
+    mode === "edit" ? (provider?.id ?? "") : selectedPreset || "";
+  const { status: oauthStatus } = useOAuth(currentProviderId);
+
+  // Check if current provider supports OAuth
+  // Note: supports_oauth is optional in bindings until regenerated
+  const currentSupportsOAuth =
+    providerType === "preset" && selectedPreset
+      ? (PROVIDER_PRESETS[selectedPreset]?.supports_oauth ?? false)
+      : ((
+          provider as LLMProvider & {
+            supports_oauth?: boolean;
+            auth_method?: string;
+          }
+        )?.supports_oauth ?? false);
+
+  // Get the auth method from the preset (fixed per preset, not user-selectable)
+  const presetAuthMethod =
+    providerType === "preset" && selectedPreset
+      ? PROVIDER_PRESETS[selectedPreset]?.auth_method
+      : undefined;
+
+  // Get current auth method from provider (defaults to api_key)
+  const providerAuthMethod = (
+    provider as LLMProvider & { auth_method?: string }
+  )?.auth_method as "api_key" | "oauth" | undefined;
 
   // Initialize form when dialog opens
   useEffect(() => {
@@ -86,6 +140,8 @@ const ProviderDialog: React.FC<ProviderDialogProps> = ({
           setSelectedPreset(provider.id);
         }
         setApiKey(provider.api_key || "");
+        // Set auth method from provider (default to api_key)
+        setAuthMethod(providerAuthMethod || "api_key");
         // Set enabled models
         const enabledIds = new Set(
           providerModels.filter((m) => m.enabled).map((m) => m.model_id),
@@ -107,11 +163,23 @@ const ProviderDialog: React.FC<ProviderDialogProps> = ({
         setCustomName("");
         setCustomUrl("");
         setApiKey("");
+        setAuthMethod("api_key");
         setSelectedModels(new Set());
         setCustomModels("");
       }
     }
-  }, [isOpen, mode, provider, providerModels]);
+  }, [isOpen, mode, provider, providerModels, providerAuthMethod]);
+
+  // Update authMethod when preset changes (auth method is fixed per preset)
+  useEffect(() => {
+    if (
+      providerType === "preset" &&
+      selectedPreset &&
+      PROVIDER_PRESETS[selectedPreset]
+    ) {
+      setAuthMethod(PROVIDER_PRESETS[selectedPreset].auth_method);
+    }
+  }, [providerType, selectedPreset]);
 
   const handleFetchModels = async () => {
     let providerIdToUse = provider?.id;
@@ -121,16 +189,23 @@ const ProviderDialog: React.FC<ProviderDialogProps> = ({
     try {
       // First, we must ensure the provider is saved with the current API key/URL
       // so the backend can use them to fetch models.
-      let currentProvider: LLMProvider;
+      // Use type assertion for extended provider fields
+      type ExtendedLLMProvider = LLMProvider & {
+        auth_method?: string;
+        supports_oauth?: boolean;
+      };
+      let currentProvider: ExtendedLLMProvider;
       if (providerType === "preset") {
         const preset = PROVIDER_PRESETS[selectedPreset];
         currentProvider = {
           id: provider?.id || selectedPreset,
           name: preset.name,
           base_url: preset.base_url,
-          api_key: apiKey,
+          api_key: preset.auth_method === "oauth" ? "" : apiKey,
           supports_vision: true,
           is_custom: false,
+          auth_method: preset.auth_method,
+          supports_oauth: preset.supports_oauth,
         };
       } else {
         currentProvider = {
@@ -140,6 +215,8 @@ const ProviderDialog: React.FC<ProviderDialogProps> = ({
           api_key: apiKey,
           supports_vision: true,
           is_custom: true,
+          auth_method: "api_key",
+          supports_oauth: false,
         };
       }
 
@@ -165,10 +242,16 @@ const ProviderDialog: React.FC<ProviderDialogProps> = ({
     }
   };
 
-  // Available presets (filter out providers that already have an API key configured)
+  // Available presets (filter out providers whose exact ID already exists with configuration)
   const availablePresets = Object.entries(PROVIDER_PRESETS).filter(
     ([id]) =>
-      !existingProviders.some((p) => p.id === id && p.api_key) ||
+      // Include if: (1) no existing provider with this exact ID has API key/OAuth, OR (2) we're editing this exact provider
+      !existingProviders.some((p) => {
+        if (p.id !== id) return false;
+        const extProvider = p as LLMProvider & { auth_method?: string };
+        // Provider is configured if it has API key OR uses OAuth
+        return p.api_key || extProvider.auth_method === "oauth";
+      }) ||
       (mode === "edit" && provider?.id === id),
   );
 
@@ -184,7 +267,12 @@ const ProviderDialog: React.FC<ProviderDialogProps> = ({
   };
 
   const handleSave = () => {
-    let providerData: LLMProvider;
+    // Use type assertion for extended provider fields
+    type ExtendedLLMProvider = LLMProvider & {
+      auth_method?: string;
+      supports_oauth?: boolean;
+    };
+    let providerData: ExtendedLLMProvider;
     let modelsToSave: { id: string; name: string; vision?: boolean }[] = [];
     let enabledIds = new Set(selectedModels);
 
@@ -194,13 +282,17 @@ const ProviderDialog: React.FC<ProviderDialogProps> = ({
 
     if (providerType === "preset" && selectedPreset) {
       const preset = PROVIDER_PRESETS[selectedPreset];
+      // Auth method is fixed per preset (OAuth providers use OAuth, API key providers use API key)
+      const effectiveAuthMethod = preset.auth_method;
       providerData = {
         id: selectedPreset,
         name: preset.name,
         base_url: preset.base_url,
-        api_key: apiKey,
+        api_key: effectiveAuthMethod === "oauth" ? "" : apiKey,
         supports_vision: true,
         is_custom: false,
+        auth_method: effectiveAuthMethod,
+        supports_oauth: preset.supports_oauth,
       };
       modelsToSave = allKnownModelIdsFromCheckboxes.map((id) => {
         const existing = providerModels.find((m) => m.model_id === id);
@@ -218,6 +310,8 @@ const ProviderDialog: React.FC<ProviderDialogProps> = ({
         api_key: apiKey,
         supports_vision: true,
         is_custom: true,
+        auth_method: "api_key", // Custom providers always use API key
+        supports_oauth: false,
       };
 
       // Merge models from text field and fetched models
@@ -252,9 +346,16 @@ const ProviderDialog: React.FC<ProviderDialogProps> = ({
     onClose();
   };
 
-  // API key is REQUIRED to save
+  // Determine if we can save based on auth method
+  // For OAuth: must be authenticated (oauthStatus?.authenticated)
+  // For API key: must have a valid API key
+  const hasValidAuth =
+    authMethod === "oauth"
+      ? oauthStatus?.authenticated === true
+      : apiKey.trim().length > 0;
+
   const canSave =
-    apiKey.trim() &&
+    hasValidAuth &&
     ((providerType === "preset" && selectedPreset) ||
       (providerType === "custom" && customName.trim() && customUrl.trim()));
 
@@ -335,17 +436,16 @@ const ProviderDialog: React.FC<ProviderDialogProps> = ({
                 </div>
               )}
 
-              {/* API Key */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium">API Key</label>
-                <input
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder="Enter API key..."
-                  className="w-full px-3 py-2 bg-background border border-mid-gray/30 rounded-lg text-sm focus:outline-none focus:border-logo-primary"
-                />
-              </div>
+              {/* Authentication - use ProviderAuth for OAuth-capable providers */}
+              <ProviderAuth
+                providerId={currentProviderId}
+                supportsOAuth={currentSupportsOAuth}
+                authMethod={authMethod}
+                apiKey={apiKey}
+                onAuthMethodChange={setAuthMethod}
+                onApiKeyChange={setApiKey}
+                fixedAuthMethod={providerType === "preset"}
+              />
 
               {/* Models List */}
               {(selectedPreset || mode === "edit") && (
@@ -375,7 +475,7 @@ const ProviderDialog: React.FC<ProviderDialogProps> = ({
                       )}
                       <button
                         onClick={handleFetchModels}
-                        disabled={isFetchingModels || !apiKey.trim()}
+                        disabled={isFetchingModels || !hasValidAuth}
                         className="p-1 text-mid-gray hover:text-logo-primary transition-colors disabled:opacity-50"
                         title="Refresh models"
                       >
@@ -410,7 +510,9 @@ const ProviderDialog: React.FC<ProviderDialogProps> = ({
                   ) : (
                     <div className="p-3 bg-mid-gray/5 border border-mid-gray/20 rounded-lg">
                       <p className="text-sm text-mid-gray">
-                        Enter your API key and click the{" "}
+                        {currentSupportsOAuth
+                          ? "Sign in or enter your API key, then click the "
+                          : "Enter your API key and click the "}
                         <strong>Refresh</strong> button to fetch available
                         models.
                       </p>
@@ -646,10 +748,17 @@ export const LLMProviderSettings: React.FC = () => {
   const getProviderModels = (providerId: string) =>
     models.filter((m) => m.provider_id === providerId);
 
-  // Filter for enabled models and ensure provider has API key
+  // Filter for enabled models and ensure provider has API key OR OAuth
   const configuredProviderIds = new Set(
     providers
-      .filter((p) => p.api_key && p.api_key.trim() !== "")
+      .filter((p) => {
+        const extProvider = p as LLMProvider & { auth_method?: string };
+        // Provider is configured if it has an API key OR uses OAuth
+        return (
+          (p.api_key && p.api_key.trim() !== "") ||
+          extProvider.auth_method === "oauth"
+        );
+      })
       .map((p) => p.id),
   );
   const anyModelsEnabled = models.some(
@@ -676,14 +785,26 @@ export const LLMProviderSettings: React.FC = () => {
         </div>
 
         <div className="px-4 pb-4 space-y-2">
-          {/* Provider rows - only show providers with API keys */}
+          {/* Provider rows - show providers with API keys OR OAuth auth */}
           {providers
-            .filter((p) => p.api_key)
+            .filter((p) => {
+              const extProvider = p as LLMProvider & {
+                auth_method?: string;
+                supports_oauth?: boolean;
+              };
+              // Show if has API key OR uses OAuth
+              return p.api_key || extProvider.auth_method === "oauth";
+            })
             .map((provider) => {
               const providerModels = getProviderModels(provider.id);
               const enabledCount = providerModels.filter(
                 (m) => m.enabled,
               ).length;
+              const extProvider = provider as LLMProvider & {
+                auth_method?: string;
+                supports_oauth?: boolean;
+              };
+              const usesOAuth = extProvider.auth_method === "oauth";
 
               return (
                 <button
@@ -695,7 +816,13 @@ export const LLMProviderSettings: React.FC = () => {
                     {provider.name}
                   </span>
 
-                  {provider.api_key ? (
+                  {usesOAuth ? (
+                    <OAuthStatusBadge
+                      providerId={provider.id}
+                      supportsOAuth={extProvider.supports_oauth ?? false}
+                      authMethod="oauth"
+                    />
+                  ) : provider.api_key ? (
                     <span className="text-xs text-green-600 bg-green-100 dark:bg-green-900/30 px-2 py-0.5 rounded">
                       Configured
                     </span>
